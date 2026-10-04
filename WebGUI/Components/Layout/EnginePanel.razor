@@ -1388,6 +1388,11 @@
                 case EngineUpdate.Eval e:
                     break;
 
+                // a search replaced by a newer one ends here instead of in a bestmove
+                case EngineUpdate.SearchStopped:
+                    pendingSearchFens.TryDequeue(out _);
+                    break;
+
                 case EngineUpdate.BestMove b:
                     whitePV = b.Item.PV;
                     searchInProgress = false;

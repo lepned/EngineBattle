@@ -10,7 +10,7 @@ namespace WebGUI.Services;
 
 public class GameReviewService : IAsyncDisposable
 {
-    private ChessLibrary.Engine.ChessEngineWithUCIProcessing _engine;
+    private ChessLibrary.AnalysisEngine _engine;
     private CancellationTokenSource _cts;
     private readonly ILogger<GameReviewService> _logger;
 

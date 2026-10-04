@@ -28,6 +28,15 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
 
     let engine = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig, logger, writeToConsole)
 
+    /// The board's position, or None when it has no legal move: then the request still ends, in
+    /// turn, with SearchStopped, and a running search is replaced.
+    let boardPosition () =
+      if board.AnyLegalMove() then Some (board.PositionWithMovesFromGraph())
+      else
+        logger.LogInformation ("No legal moves with FEN: " + board.FEN())
+        engine.Skip()
+        None
+
     member val Board = board with get, set
     member x.Engine = engine
     member x.TryGetMovePolicyAndTopForPosSequence(player:string, qMin:float, qMax:float) =
@@ -38,8 +47,7 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
       let distEngine = distributionEngine()
       tryGetMoveQAndTopForPosSequence distEngine board player qMin qMax
 
-    member x.Stop() =
-      engine.SendUCICommand Stop
+    member x.Stop() = engine.Stop()
 
     member x.StopDistributionEngine() =
       let distEngine = distributionEngine()
@@ -47,19 +55,17 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
       ChessEngine <- None
 
     member x.Reset() =
-      engine.SendUCICommand Stop
-      engine.SendUCICommand UciNewGame
-      let fen = board.FEN()
-      engine.SendUCICommand (Position fen)
+      engine.Stop()
+      engine.NewGame()
       SearchDict.Clear()
 
-    member x.Quit() = engine.ShutDownEngine()
+    member x.Quit() = engine.Quit()
 
-    member x.UCI() = engine.SendUCICommand UCI
+    member x.UCI() = engine.Raw "uci"
 
-    member x.NewGame() = engine.SendUCICommand UciNewGame
+    member x.NewGame() = engine.NewGame()
 
-    member x.AddSetoption (option: EngineOption) = engine.SendUCICommand (SetOption option)
+    member x.AddSetoption (option: EngineOption) = engine.SetOption option
 
     member x.GetEngineName () = engineConfig.Name
 
@@ -67,86 +73,28 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
 
     member _.BackendInfo() = engine.GetBackEnd()
 
+    // The searches below return at once: the engine takes the newest request, stops what it ran,
+    // and reports through the callback.
     member x.GoInfinite() =
-      engine.SendUCICommand Stop
-      let fen = board.FEN()
-      let moves = board.GetMoveHistoryToCurrentFen fen
-      board.PrintPosition moves
-      if board.AnyLegalMove() |> not then
-        let fen = board.FEN()
-        logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
-      else
-        let command = board.PositionWithMovesFromGraph()
-        printfn "Search command: %s" command
-        engine.SendUCICommand (PositionWithMoves command)
-        let isReady = engine.WaitForReadyOk()
-        if not isReady then
-          failwith $"Engine {engine.Name} did not respond to isready command before go infinite"
-        engine.SendUCICommand (GoInfinite)
+      boardPosition () |> Option.iter (fun pos -> engine.Analyse(pos, "go infinite" + engine.SearchMoveSuffix))
 
-    member x.SearchNodes (nodes, keepNodes : bool) =
-      engine.SendUCICommand Stop
-      let fen = board.FEN()
-      let moves = board.GetMoveHistoryToCurrentFen fen
-      board.PrintPosition moves
-      if board.AnyLegalMove() |> not then
-        logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
-      else
-        if not keepNodes then
-          SearchDict.Clear()
-        let graphCmds = board.PositionWithMovesFromGraph()
-        printfn "Search command: %s" graphCmds
-        engine.SendUCICommand (PositionWithMoves graphCmds)
-        let isReady = engine.WaitForReadyOk()
-        if not isReady then
-          failwith $"Engine {engine.Name} did not respond to isready command before go nodes"
-        engine.SendUCICommand (GoNodes nodes)
+    member x.SearchNodes (nodes: int, keepNodes : bool) =
+      if not keepNodes then SearchDict.Clear()
+      boardPosition () |> Option.iter (fun pos -> engine.Analyse(pos, sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix))
 
-    member x.SearchNodesWithCommand (nodes, commands:string, keepNodes : bool) =
-      engine.SendUCICommand Stop
-      let fen = board.FEN()
-      let moves = board.GetMoveHistoryToCurrentFen fen
-      moveBoard.PrintPosition moves
-      if moveBoard.AnyLegalMove() |> not then
-        logger.LogInformation ("In searchNodesWithCommands - no legal moves with command: " + commands)
-      else
-        if not keepNodes then
-          SearchDict.Clear()
-        printfn "Search command: %s" commands
-        engine.SendUCICommand (PositionWithMoves commands)
-        let isReady = engine.WaitForReadyOk()
-        if not isReady then
-          failwith $"Engine {engine.Name} did not respond to isready command before go nodes"
-        engine.SendUCICommand (GoNodes nodes)
+    member x.SearchNodesWithCommand (nodes: int, commands:string, keepNodes : bool) =
+      if not keepNodes then SearchDict.Clear()
+      engine.Analyse(commands, sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix)
 
     member x.SetSearchMoves (moves: string list) = engine.SetSearchMoves moves
     member x.ClearSearchMoves () = engine.ClearSearchMoves()
     member x.SearchMoves with get() = engine.SearchMoves
 
-    member x.DumpStats command = engine.SendUCICommand (RawCommand command)
+    member x.DumpStats command = engine.Raw command
 
     member x.Play (goCommand: string) =
-      engine.SendUCICommand Stop
-      if board.AnyLegalMove() |> not then
-        let fen = board.FEN()
-        logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
-      else
-        let graphCmds = board.PositionWithMovesFromGraph()
-        printfn "Search indexed command: %s" graphCmds
-        engine.SendUCICommand (PositionWithMoves graphCmds)
-        let isReady = engine.WaitForReadyOk()
-        if not isReady then
-          failwith $"Engine {engine.Name} did not respond to isready command before search"
-        engine.SendUCICommand (RawCommand goCommand)
+      boardPosition () |> Option.iter (fun pos -> engine.Analyse(pos, goCommand))
 
-    /// Search from a position command the caller already built from a board snapshot.
-    /// Touches no shared board state, so unlike Play/GoInfinite it is safe to call
-    /// from a thread that does not own the board.
+    /// Search from a position command the caller built from a board snapshot; touches no board.
     member x.PlayPrepared (positionCmd: string, goCommand: string) =
-      engine.SendUCICommand Stop
-      printfn "Search prepared command: %s" positionCmd
-      engine.SendUCICommand (PositionWithMoves positionCmd)
-      let isReady = engine.WaitForReadyOk()
-      if not isReady then
-        failwith $"Engine {engine.Name} did not respond to isready command before search"
-      engine.SendUCICommand (RawCommand goCommand)
+      engine.Analyse(positionCmd, goCommand)

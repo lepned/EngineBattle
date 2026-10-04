@@ -295,71 +295,55 @@ let computePlayerStats (allWinProbs: float array) (playerName: string) (moves: M
 type EngineUpdateDispatcher() =
     member val Handler : Action<EngineUpdate> = Action<EngineUpdate>(fun _ -> ()) with get, set
 
-/// Analyze a single position with MultiPV using ChessEngineWithUCIProcessing.
-/// The dispatcher's Handler is swapped per-search to accumulate results.
+/// Analyze a single position with MultiPV. The dispatcher's Handler collects the search's
+/// Status lines; the result arrives after them, through the engine's update queue.
 let analyzePosition
-    (engine: ChessEngineWithUCIProcessing)
+    (engine: AnalysisEngine)
     (dispatcher: EngineUpdateDispatcher)
     (positionCmd: string)
     (_isWhite: bool)
     (config: GameReviewConfig)
     : MultiPVResult array * string =
 
-    // Match EnginePanel pattern: Stop → Position → isready → Go
-    // UciNewGame only for Nodes mode (time mode skips it, matching Play() in AnalysisManager)
-    engine.SendUCICommand(UCICommand.Stop)
-    if config.SearchMode = Nodes then
-        engine.SendUCICommand(UCICommand.UciNewGame)
-    engine.SendUCICommand(UCICommand.PositionWithMoves positionCmd)
-    let ok = engine.WaitForReadyOk()
-    if not ok then
-        printfn "Engine did not respond to isready"
-        [||], ""
-    else
+    // ucinewgame only in Nodes mode, matching Play() in AnalysisManager
+    if config.SearchMode = Nodes then engine.NewGame()
 
     let pvResults = Collections.Generic.Dictionary<int, MultiPVResult>()
-    let mutable bestMoveStr = ""
-    let done' = new ManualResetEventSlim(false)
-
     dispatcher.Handler <- Action<EngineUpdate>(fun update ->
         match update with
         | EngineUpdate.Status status ->
             let pvIndex = if status.MultiPV = 0 then 1 else status.MultiPV
             let uciPV = status.PVLongSAN
-            let bestMove =
-                if String.IsNullOrEmpty uciPV then ""
-                else uciPV.Split(' ').[0]
+            let bestMove = if String.IsNullOrEmpty uciPV then "" else uciPV.Split(' ').[0]
             pvResults.[pvIndex] <-
-                { Eval = status.Eval
-                  BestMove = bestMove
-                  PV = uciPV
-                  Depth = status.Depth
-                  Nodes = status.Nodes }
-        | EngineUpdate.BestMove bm ->
-            bestMoveStr <- bm.Move
-            done'.Set()
-        // A terminal position has no move to report: Stockfish answers "bestmove (none)",
-        // which raises Done but never BestMove. Without this the wait ran to its full 30s
-        // safety net — and the analysis deliberately visits the final position of the game,
-        // so every mated game paid that once, right after the last move was reviewed.
-        | EngineUpdate.Done _ -> done'.Set()
+                { Eval = status.Eval; BestMove = bestMove; PV = uciPV; Depth = status.Depth; Nodes = status.Nodes }
         | _ -> ())
 
-    match config.SearchMode with
-    | Time -> engine.SendUCICommand(UCICommand.GoMoveTime config.TimePerMove)
-    | Nodes -> engine.SendUCICommand(UCICommand.GoNodes config.Nodes)
-    | Depth -> engine.SendUCICommand(UCICommand.RawCommand(sprintf "go depth %d" config.Depth))
+    let go =
+        match config.SearchMode with
+        | Time -> sprintf "go movetime %d" config.TimePerMove
+        | Nodes -> sprintf "go nodes %d" config.Nodes
+        | Depth -> sprintf "go depth %d" config.Depth
+    let search = engine.SearchAsync(positionCmd, go)
+    // a safety net: past it the search is stopped, and its answer still taken
+    if not (search.Wait 30000) then
+        printfn "Search timed out for position: %s" positionCmd
+        engine.Stop()
+        search.Wait 10000 |> ignore
+    dispatcher.Handler <- Action<EngineUpdate>(fun _ -> ())
 
-    let completed = done'.Wait(30000) // 30s timeout safety net
-    if not completed then printfn "Search timed out for position: %s" positionCmd
-    done'.Dispose()
-
+    // a terminal position has no move ("bestmove (none)"): Completed None
+    let bestMoveStr =
+        if search.IsCompleted then
+            match search.Result with
+            | Completed (Some info) -> info.Move
+            | _ -> ""
+        else ""
     let results =
         pvResults
         |> Seq.sortBy (fun kv -> kv.Key)
         |> Seq.map (fun kv -> kv.Value)
         |> Seq.toArray
-
     results, bestMoveStr
 
 // ──────────────────────────────────────────────────────────────
@@ -369,7 +353,7 @@ let analyzePosition
 /// Analyze a complete game with an engine. Returns per-move analysis results.
 /// progressCallback receives (currentMove, totalMoves).
 let analyzeGameWithEngine
-    (engine: ChessEngineWithUCIProcessing)
+    (engine: AnalysisEngine)
     (dispatcher: EngineUpdateDispatcher)
     (game: PgnGame)
     (config: GameReviewConfig)
@@ -386,11 +370,8 @@ let analyzeGameWithEngine
 
     let totalMoves = game.Mainline.Count
 
-    // Set MultiPV
     if config.MultiPV > 1 then
-        engine.SendUCICommand(UCICommand.RawCommand(sprintf "setoption name MultiPV value %d" config.MultiPV))
-
-    engine.WaitForReadyOk() |> ignore
+        engine.SetOption(EngineOption.Create "MultiPV" (string config.MultiPV))
 
     // Single-pass: analyze each position BEFORE the move is played, then play the move.
     // Collect: white-perspective eval, MultiPV data, bestmove, and UCI notation per move.
@@ -451,7 +432,7 @@ let analyzeGameWithEngine
 
     // Reset MultiPV to 1
     if config.MultiPV > 1 then
-        engine.SendUCICommand(UCICommand.RawCommand "setoption name MultiPV value 1")
+        engine.SetOption(EngineOption.Create "MultiPV" "1")
 
     // Build MoveAnalysisResult for each move
     let results = ResizeArray<MoveAnalysisResult>()

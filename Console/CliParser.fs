@@ -54,8 +54,18 @@ type PvBatchParams =
       Rounds: int option
       Out: string option }
 
+type AnaTestParams =
+    { Engine: string
+      Nodes: int
+      MoveTimeMs: int option
+      DelayMs: int
+      Rounds: int
+      Moves: string list option
+      UciOptions: (string * string) list }
+
 type VerbResult =
     | Perft of depth:int * sampleSize:int
+    | AnaTest of AnaTestParams
     | Analyze of AnalyzeParams
     | Compare of CompareParams
     | PieceValues of PieceValuesParams
@@ -460,6 +470,28 @@ module CustomParser =
                               UciOptions = List.rev uciOptions; ShowOptions = showOptions }
                     parseArgs args i (Verb (Analyze p) :: acc)
                 else failwith "Missing parameter for Analyze (requires: <engine>)"
+            | "anatest" | "at" -> // drives the analysis engine as the GUI does
+                if index + 1 < args.Length then
+                    let mutable i = index + 2
+                    let mutable nodes = 2000
+                    let mutable movetime = None
+                    let mutable delay = 30
+                    let mutable rounds = 3
+                    let mutable moves = None
+                    let mutable uci = []
+                    while i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--nodes" -> nodes <- parseInt (valueOf args i); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--delay" -> delay <- parseInt (valueOf args i); i <- i + 2
+                        | "--rounds" -> rounds <- parseInt (valueOf args i); i <- i + 2
+                        | "--moves" -> moves <- Some ((valueOf args i).Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries) |> List.ofArray); i <- i + 2
+                        | "--uci" -> uci <- (twoValuesOf args i) :: uci; i <- i + 3
+                        | unknown -> failwithf "Unknown anatest option: %s" unknown
+                    let p = { Engine = args.[index + 1]; Nodes = nodes; MoveTimeMs = movetime; DelayMs = delay; Rounds = rounds
+                              Moves = moves; UciOptions = List.rev uci }
+                    parseArgs args i (Verb (AnaTest p) :: acc)
+                else failwith "Missing parameter for anatest (requires: <engine>)"
             | "compare" | "cmp" -> // Handle the Compare verb
                 if index + 2 < args.Length then
                     let engine1 = args.[index + 1]

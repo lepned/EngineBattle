@@ -42,6 +42,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `eretjson` | `eret` | Run ERET evaluation from JSON config |
 | `analyze` | `a` | Analyze a position with an engine |
 | `compare` | `cmp` | Compare two engines side-by-side |
+| `anatest` | `at` | Check the analysis engine against a real engine, as the GUI uses it |
 | `benchmark` | `bench`, `b` | Run engine benchmark |
 | `tune` | | Run Bayesian parameter tuner |
 | `redash` | | Regenerate BO dashboard from saved state |
@@ -307,6 +308,27 @@ dotnet run -c Release -- a engine.json --options
 - `info string` lines (e.g. Lc0's LogLiveStats)
 - Raw `bestmove` line
 - Summary: depth, eval, nodes, NPS, time, TBHits, WDL, bestmove, PV (UCI + SAN notation)
+
+---
+
+### anatest
+
+Drives the analysis engine (the one behind the analysis pages, the kibitzer, Play vs computer and Game Review) the way the GUI does, against a real engine, and checks what comes back. Exit code 1 when a check fails.
+
+**Aliases:** `at`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- anatest <engine> [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
+```
+
+**Checks:**
+- `review` - every position of a game in turn, awaited (as Game Review): each search completes with a move for its own position
+- `navigate` - fast moves through the game with `go infinite` (as auto-search), `--rounds` times: one bestmove, for the last position; the rest reported stopped
+- `options` - MultiPV changed during an infinite search: the search is rerun with it (skipped for an engine without MultiPV)
+- `stop` - `go infinite`, then stop: the bestmove arrives (a Winboard engine's analyze ends without one)
+
+**Options:** `--nodes` (default 2000) or `--movetime` for the limited searches - use `--movetime` for a Winboard engine, which has no node limit; `--delay` between navigation requests (default 30 ms); `--moves` replaces the built-in 30-ply game.
 
 ---
 

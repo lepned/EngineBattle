@@ -1,7 +1,5 @@
-/// Characterisation tests for ChessLibrary/Engine/Engine.fs, written against the code as it stood
-/// before the rewrite (branch rewrite/engine-fs, 2026-09-28). They pin down what the two engine
-/// classes SEND to an engine and what they REPORT back, so the rewrite can be held to the same
-/// behaviour. Where a test pins a quirk rather than a design, the comment says so - those are the
+/// Characterisation tests for the two engine classes (ChessEngine in Engine.fs, AnalysisEngine in
+/// AnalysisEngine.fs). They pin down what each SENDS to an engine and what it REPORTS back. Where a test pins a quirk rather than a design, the comment says so - those are the
 /// places to decide deliberately, not to change by accident.
 ///
 /// Every test runs FakeUciEngine (a sibling project, copied beside this assembly) as a real child
@@ -88,17 +86,22 @@ let private config (logPath: string) (extraArgs: string) (options: (string * obj
 
 let private initCommands (cfg: EngineConfig) = EngineHelper.createInitialUCICommands cfg |> Seq.toList
 
-/// The analysis-page engine, with its updates collected.
+/// The analysis-page engine, started, with its updates collected.
 let private startAnalysis (cfg: EngineConfig) =
     let updates = ConcurrentQueue<EngineUpdate>()
-    let eng = new ChessEngineWithUCIProcessing(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
+    let eng = new AnalysisEngine(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
+    if not (eng.WaitUntilStarted 10000) then failwithf "the analysis engine did not start: %s" eng.StartFailure
     eng, updates
+
+/// A search awaited; its updates have all arrived when it returns.
+let private search (eng: AnalysisEngine) (position: string) (go: string) =
+    Async.RunSynchronously(eng.Search(position, go), 10000)
 
 let private startTournament (cfg: EngineConfig) =
     new ChessEngine(cfg, initCommands cfg, Some (NullLogger.Instance :> ILogger))
 
-let private quitAnalysis (eng: ChessEngineWithUCIProcessing) =
-    try eng.SendUCICommand UCICommand.Quit with _ -> ()
+let private quitAnalysis (eng: AnalysisEngine) =
+    try eng.Quit() with _ -> ()
 
 /// Clean-up only: quit first so StopProcess does not sit out its three-second grace.
 let private stopTournament (eng: ChessEngine) =
@@ -125,7 +128,7 @@ let private startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 let private fromStart (moves: string) =
     if moves = "" then "position fen " + startFen else sprintf "position fen %s moves %s" startFen moves
 
-// ── ChessEngineWithUCIProcessing: start-up ──────────────────────────────────────────────────────
+// ── AnalysisEngine: start-up ────────────────────────────────────────────────────────────────────
 
 [<Fact>]
 let ``Analysis engine start-up sends uci, the config options, MoveOverheadMs 0, ucinewgame and isready`` () =
@@ -140,7 +143,7 @@ let ``Analysis engine start-up sends uci, the config options, MoveOverheadMs 0, 
                "setoption name MoveOverheadMs value 0"
                "ucinewgame"
                "isready" |],
-            (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))))
+            (synced log eng.Raw))
         // Ready is reported once, at the end of start-up; the fake engine has no LogLiveStats.
         let ready = updates.ToArray() |> Array.choose (function Ready (p, live) -> Some (p, live) | _ -> None)
         Assert.Equal<(string * bool)[]>([| ("Fake", false) |], ready)
@@ -160,7 +163,7 @@ let ``Analysis engine writes an option the engine does not have, but keeps it ou
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [ "NoSuchOption", box 5; "Threads", box 3 ])
     try
-        Assert.Contains("setoption name NoSuchOption value 5", (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))))
+        Assert.Contains("setoption name NoSuchOption value 5", (synced log eng.Raw))
         Assert.False(eng.GetAllDefaultOptions().ContainsKey "NoSuchOption")
         Assert.Equal("3", string (eng.GetAllDefaultOptions().["Threads"]))
         Assert.True(eng.GetNoneDefaultSetOptions().ContainsKey "Threads")
@@ -191,68 +194,72 @@ let ``Analysis engine takes the network name from WeightsFile without its last e
         Assert.Equal("Fake with net: my-net.pb", eng.FullName)
     finally quitAnalysis eng
 
-// ── ChessEngineWithUCIProcessing: search output ─────────────────────────────────────────────────
+[<Fact>]
+let ``Analysis engine that cannot start reports why`` () =
+    let log = newLogPath ()
+    let updates = ConcurrentQueue<EngineUpdate>()
+    let cfg = config log "" [ "FakeExitOnReady", box true ]
+    let eng = new AnalysisEngine(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
+    try
+        Assert.False(eng.WaitUntilStarted 10000)
+        Assert.NotEqual<string>("", eng.StartFailure)
+        Assert.Contains(updates.ToArray(), fun u -> match u with EngineFailed _ -> true | _ -> false)
+    finally quitAnalysis eng
+
+// ── AnalysisEngine: search output ───────────────────────────────────────────────────────────────
 
 [<Fact>]
 let ``Analysis search reports each info line as Status and Info, then Done before BestMove`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart "e2e4"))
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
-        let st = statuses updates
-        Assert.Equal<int[]>([| 1; 2; 3 |], st |> Array.map (fun s -> s.Depth))
-        // Black to move: the engine's cp is turned to White's point of view.
-        Assert.Equal<MiscTypes.EvalType[]>(
-            [| MiscTypes.EvalType.CP -0.20; MiscTypes.EvalType.CP -0.21; MiscTypes.EvalType.CP -0.22 |],
-            st |> Array.map (fun s -> s.Eval))
-        Assert.All(st, fun s -> Assert.Equal("Fake", s.PlayerName))
-        Assert.Equal(3000L, st.[2].Nodes)
-        Assert.Equal(150000.0, st.[2].NPS)
-        Assert.Equal(1, st.[2].MultiPV)
-        Assert.Equal("e7e5 g1f3 b8c6", st.[2].PVLongSAN)
-        Assert.Equal("1.... e5 2.Nf3 Nc6", st.[2].PV)
-        Assert.Equal(WDLType.HasValue { Win = 400.0; Draw = 450.0; Loss = 150.0 }, st.[2].WDL)
-        // The raw line travels alongside each parsed status.
-        let infos = updates.ToArray() |> Array.choose (function Info (_, l) -> Some l | _ -> None)
-        Assert.Equal(3, infos.Length)
-        Assert.StartsWith("info depth 3 seldepth 5 score cp 22", infos.[2])
-        // Done comes before BestMove.
-        let order = updates.ToArray() |> Array.choose (function Done _ -> Some "done" | BestMove _ -> Some "best" | _ -> None)
-        Assert.Equal<string[]>([| "done"; "best" |], order)
-        let bm = (bestMoves updates).[0]
-        Assert.Equal("e7e5", bm.Move)
-        Assert.Equal("g1f3", bm.Ponder)
-        Assert.Equal("e5", bm.MoveAndFen.ShortSan)
-        // A quirk: FEN and MoveAndFen.FenAfterMove hold the position BEFORE the move - the board is
-        // read without playing it - despite the field's name.
-        Assert.Equal("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", bm.FEN)
-        Assert.Equal(bm.FEN, bm.MoveAndFen.FenAfterMove)
-        Assert.Equal(MiscTypes.EvalType.CP -0.22, bm.Eval)
-        Assert.Equal(3000L, bm.Nodes)
-        Assert.Equal("1.... e5 2.Nf3 Nc6", bm.PV)
-        Assert.Equal(32, bm.PiecesLeft)
-        Assert.Contains("go nodes 100", commands log)
+        match search eng (fromStart "e2e4") "go nodes 100" with
+        | Completed (Some bm) ->
+            let st = statuses updates
+            Assert.Equal<int[]>([| 1; 2; 3 |], st |> Array.map (fun s -> s.Depth))
+            // Black to move: the engine's cp is turned to White's point of view.
+            Assert.Equal<MiscTypes.EvalType[]>(
+                [| MiscTypes.EvalType.CP -0.20; MiscTypes.EvalType.CP -0.21; MiscTypes.EvalType.CP -0.22 |],
+                st |> Array.map (fun s -> s.Eval))
+            Assert.All(st, fun s -> Assert.Equal("Fake", s.PlayerName))
+            Assert.Equal(3000L, st.[2].Nodes)
+            Assert.Equal(150000.0, st.[2].NPS)
+            Assert.Equal(1, st.[2].MultiPV)
+            Assert.Equal("e7e5 g1f3 b8c6", st.[2].PVLongSAN)
+            Assert.Equal("1.... e5 2.Nf3 Nc6", st.[2].PV)
+            Assert.Equal(WDLType.HasValue { Win = 400.0; Draw = 450.0; Loss = 150.0 }, st.[2].WDL)
+            // The raw line travels alongside each parsed status.
+            let infos = updates.ToArray() |> Array.choose (function Info (_, l) -> Some l | _ -> None)
+            Assert.Equal(3, infos.Length)
+            Assert.StartsWith("info depth 3 seldepth 5 score cp 22", infos.[2])
+            let order = updates.ToArray() |> Array.choose (function Done _ -> Some "done" | BestMove _ -> Some "best" | _ -> None)
+            Assert.Equal<string[]>([| "done"; "best" |], order)
+            Assert.Equal("e7e5", bm.Move)
+            Assert.Equal("g1f3", bm.Ponder)
+            Assert.Equal("e5", bm.MoveAndFen.ShortSan)
+            // A quirk: FEN and MoveAndFen.FenAfterMove hold the position BEFORE the move.
+            Assert.Equal("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", bm.FEN)
+            Assert.Equal(bm.FEN, bm.MoveAndFen.FenAfterMove)
+            Assert.Equal(MiscTypes.EvalType.CP -0.22, bm.Eval)
+            Assert.Equal(3000L, bm.Nodes)
+            Assert.Equal("1.... e5 2.Nf3 Nc6", bm.PV)
+            Assert.Equal(32, bm.PiecesLeft)
+            Assert.Contains("go nodes 100", commands log)
+        | other -> failwithf "%A" other
     finally quitAnalysis eng
 
 [<Fact>]
-let ``Analysis PositionWithMoves ignores the moves of a startpos command internally`` () =
-    // A quirk: the wrapper's own board understands only "position fen ... moves ...". Given
-    // "position startpos moves e2e4" it stays at the start position, so the engine's reply to
-    // e2e4 is parsed from White's side and bestmove e7e5 is taken for an illegal move - no
-    // BestMove is reported. Every real caller sends the fen form, so this never shows today.
+let ``Analysis understands a startpos position command`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves "position startpos moves e2e4")
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
-        Thread.Sleep 200
-        Assert.Contains("position startpos moves e2e4", commands log)
-        Assert.Equal(MiscTypes.EvalType.CP 0.20, (statuses updates).[0].Eval)
-        Assert.Equal("1.Nf3 Nc6", (statuses updates).[0].PV)
-        Assert.Empty(bestMoves updates)
+        match search eng "position startpos moves e2e4" "go nodes 100" with
+        | Completed (Some bm) ->
+            Assert.Contains("position startpos moves e2e4", commands log)
+            Assert.Equal(MiscTypes.EvalType.CP -0.20, (statuses updates).[0].Eval)
+            Assert.Equal("1.... e5 2.Nf3 Nc6", (statuses updates).[2].PV)
+            Assert.Equal("e5", bm.MoveAndFen.ShortSan)
+        | other -> failwithf "%A" other
     finally quitAnalysis eng
 
 [<Fact>]
@@ -260,9 +267,7 @@ let ``Analysis search keeps the last full PV when a bound line arrives`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [ "FakeBoundLine", box true ])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        search eng (fromStart "") "go nodes 100" |> ignore
         let st = statuses updates
         Assert.Equal(4, st.Length)
         let bound = st.[3]
@@ -278,9 +283,7 @@ let ``Analysis search with MultiPV reports a status per line`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [ "MultiPV", box 2; "FakeInfoCount", box 1 ])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        search eng (fromStart "") "go nodes 100" |> ignore
         Assert.Equal<int[]>([| 1; 2 |], statuses updates |> Array.map (fun s -> s.MultiPV))
     finally quitAnalysis eng
 
@@ -289,21 +292,17 @@ let ``Analysis bestmove without any pv line falls back to the numbered move`` ()
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [ "FakeNoPv", box true ])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
+        search eng (fromStart "") "go nodes 100" |> ignore
         Assert.Equal("1.e4", (bestMoves updates).[0].PV)
     finally quitAnalysis eng
 
 [<Fact>]
-let ``Analysis bestmove (none) reports Done and no BestMove`` () =
+let ``Analysis bestmove (none) reports Done, no BestMove, and completes with no move`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [ "FakeBestMoveNone", box true ])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
-        Thread.Sleep 200
+        Assert.Equal(Completed None, search eng (fromStart "") "go nodes 100")
+        Assert.True(hasDone updates)
         Assert.Empty(bestMoves updates)
     finally quitAnalysis eng
 
@@ -312,9 +311,7 @@ let ``Analysis move stats become one NNSeq when the node line arrives`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [ "FakeMoveStats", box true; "FakeInfoCount", box 1 ])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand(UCICommand.GoNodes 100)
-        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        search eng (fromStart "") "go nodes 100" |> ignore
         let seqs = updates.ToArray() |> Array.choose (function NNSeq l -> Some (List.ofSeq l) | _ -> None)
         Assert.Equal(1, seqs.Length)
         let moves = seqs.[0]
@@ -325,71 +322,110 @@ let ``Analysis move stats become one NNSeq when the node line arrives`` () =
         Assert.Equal(61.0, moves.[0].P)
     finally quitAnalysis eng
 
-// ── ChessEngineWithUCIProcessing: commands ──────────────────────────────────────────────────────
+// ── AnalysisEngine: requests ────────────────────────────────────────────────────────────────────
 
 [<Fact>]
-let ``Analysis commands are written in UCI form`` () =
+let ``Analysis pings before go, and a new position stops the old search and waits for its bestmove`` () =
     let log = newLogPath ()
-    let eng, _ = startAnalysis (config log "" [ "FakeInfinite", box true ])
+    let eng, updates = startAnalysis (config log "" [ "FakeInfinite", box true ])
     try
-        let before = (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.length
-        eng.SendUCICommand(UCICommand.PositionWithMoves "position startpos moves e2e4")
-        eng.SetSearchMoves [ "e7e5"; "c7c5" ]
-        eng.SendUCICommand(UCICommand.GoNodes 5)
-        eng.SendUCICommand UCICommand.Stop
-        eng.ClearSearchMoves()
-        eng.SendUCICommand(UCICommand.GoMoveTime 250)
-        eng.SendUCICommand UCICommand.Stop
-        eng.SendUCICommand UCICommand.GoInfinite
-        eng.SendUCICommand UCICommand.Stop
-        eng.SendUCICommand(UCICommand.GoTimeControl (UnionType.WithIncrement (TimeSpan.FromSeconds 60.0, TimeSpan.FromSeconds 1.0), TimeSpan.FromSeconds 30.0, TimeSpan.FromSeconds 20.0))
-        eng.SendUCICommand UCICommand.Stop
-        eng.SendUCICommand(UCICommand.GoTimeControl (UnionType.FixedTime (TimeSpan.FromSeconds 60.0), TimeSpan.FromSeconds 30.0, TimeSpan.FromSeconds 20.0))
-        eng.SendUCICommand UCICommand.Stop
-        eng.SendUCICommand UCICommand.UciNewGame
-        eng.SendUCICommand(UCICommand.RawCommand "debug off")
-        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "Hash" "32"))
-        eng.SendUCICommand(UCICommand.SetOptions [ EngineOption.Create "Threads" "2"; EngineOption.Create "Style" "Risky" ])
-        waitForSent log "setoption name Style value Risky"
+        let before = (synced log eng.Raw) |> Array.length
+        eng.Analyse(fromStart "e2e4", "go infinite")
+        waitForSent log "go infinite"
+        let second = eng.Search(fromStart "", "go nodes 5")
+        waitForSent log "go nodes 5"
+        eng.Stop()
+        match Async.RunSynchronously(second, 10000) with
+        | Completed _ -> ()
+        | other -> failwithf "%A" other
         Assert.Equal<string[]>(
-            [| "position startpos moves e2e4"
-               "go nodes 5 searchmoves e7e5 c7c5"
-               "stop"
-               "go movetime 250"
-               "stop"
-               "go infinite"
-               "stop"
-               "go wtime 30000 btime 20000 winc 1000 binc 1000"
-               "stop"
-               "go wtime 30000 btime 20000"
-               "stop"
-               "ucinewgame"
-               "debug off"
-               "setoption name Hash value 32"
-               "setoption name Threads value 2"
-               "setoption name Style value Risky" |],
-            (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.skip before)
+            [| fromStart "e2e4"; "isready"; "go infinite"; "stop"
+               fromStart ""; "isready"; "go nodes 5"; "stop" |],
+            (synced log eng.Raw) |> Array.skip before)
+        // the first search ended without its bestmove reaching the caller
+        Assert.Contains(updates.ToArray(), fun u -> match u with SearchStopped _ -> true | _ -> false)
+        Assert.Equal(1, (bestMoves updates).Length)
     finally quitAnalysis eng
 
 [<Fact>]
-let ``Analysis position commands switch UCI_Chess960 on for an FRC position and off again`` () =
+let ``Analysis keeps only the newest of several requests, and no stale output reaches it`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "FakeGoDelayMs", box 300 ])
+    try
+        let first = eng.Search(fromStart "", "go nodes 100")
+        eng.Analyse(fromStart "e2e4", "go nodes 100")
+        let last = eng.Search(fromStart "e2e4 e7e5", "go nodes 100")
+        Assert.Equal(Superseded, Async.RunSynchronously(first, 10000))
+        match Async.RunSynchronously(last, 10000) with
+        | Completed (Some bm) ->
+            Assert.Equal("g1f3", bm.Move)
+            Assert.StartsWith("2.Nf3", bm.PV)
+        | other -> failwithf "%A" other
+        // one bestmove, for the last position: nothing of the replaced searches was read against it
+        Assert.Equal(1, (bestMoves updates).Length)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis Stop still delivers the stopped search's bestmove`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "FakeInfinite", box true ])
+    try
+        let running = eng.Search(fromStart "", "go infinite")
+        waitForSent log "go infinite"
+        eng.Stop()
+        match Async.RunSynchronously(running, 10000) with
+        | Completed (Some bm) -> Assert.Equal("e2e4", bm.Move)
+        | other -> failwithf "%A" other
+        Assert.Equal(1, (bestMoves updates).Length)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis options during a search stop it, are set, and run it again`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "FakeInfinite", box true ])
+    try
+        let before = (synced log eng.Raw) |> Array.length
+        eng.Analyse(fromStart "", "go infinite")
+        waitForSent log "go infinite"
+        eng.SetOption(EngineOption.Create "MultiPV" "3")
+        Assert.True(waitUntil 5000 (fun () -> commands log |> Array.filter ((=) "go infinite") |> Array.length = 2))
+        eng.Stop()
+        Assert.Equal<string[]>(
+            [| fromStart ""; "isready"; "go infinite"; "stop"
+               "setoption name MultiPV value 3"; fromStart ""; "isready"; "go infinite"; "stop" |],
+            (synced log eng.Raw) |> Array.skip before |> Array.truncate 9)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis commands for an idle engine are written in UCI form`` () =
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [])
     try
-        let before = (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.length
-        let frc = "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"
-        eng.SendUCICommand(UCICommand.Position frc)
-        eng.SendUCICommand(UCICommand.Position "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-        // A 4-field FEN gets its counters on the way to the engine.
-        eng.SendUCICommand(UCICommand.Position "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3")
-        waitForSent log "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+        let before = (synced log eng.Raw) |> Array.length
+        eng.NewGame()
+        eng.Raw "debug off"
+        eng.SetOption(EngineOption.Create "Hash" "32")
+        eng.SetOptions [ EngineOption.Create "Threads" "2"; EngineOption.Create "Style" "Risky" ]
+        waitForSent log "setoption name Style value Risky"
         Assert.Equal<string[]>(
-            [| "setoption name UCI_Chess960 value true"
-               "position fen " + frc
-               "setoption name UCI_Chess960 value false"
-               "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-               "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1" |],
-            (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.skip before)
+            [| "ucinewgame"; "debug off"; "setoption name Hash value 32"
+               "setoption name Threads value 2"; "setoption name Style value Risky" |],
+            (synced log eng.Raw) |> Array.skip before)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis switches UCI_Chess960 on for an FRC position and off again`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        let before = (synced log eng.Raw) |> Array.length
+        let frc = "position fen bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"
+        search eng frc "go nodes 1" |> ignore
+        search eng (fromStart "") "go nodes 1" |> ignore
+        Assert.Equal<string[]>(
+            [| "setoption name UCI_Chess960 value true"; frc; "isready"; "go nodes 1"
+               "setoption name UCI_Chess960 value false"; fromStart ""; "isready"; "go nodes 1" |],
+            (synced log eng.Raw) |> Array.skip before)
     finally quitAnalysis eng
 
 [<Fact>]
@@ -397,13 +433,13 @@ let ``Analysis SetMoveOverhead sends only a value inside the option's range`` ()
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [])
     try
-        let before = (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.length
-        eng.SendUCICommand(UCICommand.SetMoveOverhead ("MoveOverheadMs", 50))
-        eng.SendUCICommand(UCICommand.SetMoveOverhead ("MoveOverheadMs", 99999))
-        eng.SendUCICommand(UCICommand.SetMoveOverhead ("NoSuchOption", 10))
-        eng.SendUCICommand(UCICommand.RawCommand "marker")
+        let before = (synced log eng.Raw) |> Array.length
+        eng.SetMoveOverhead("MoveOverheadMs", 50)
+        eng.SetMoveOverhead("MoveOverheadMs", 99999)
+        eng.SetMoveOverhead("NoSuchOption", 10)
+        eng.Raw "marker"
         waitForSent log "marker"
-        Assert.Equal<string[]>([| "setoption name MoveOverheadMs value 50"; "marker" |], (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.skip before)
+        Assert.Equal<string[]>([| "setoption name MoveOverheadMs value 50"; "marker" |], (synced log eng.Raw) |> Array.skip before)
     finally quitAnalysis eng
 
 [<Fact>]
@@ -411,43 +447,40 @@ let ``Analysis SetAllOptions writes booleans in lower case`` () =
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [])
     try
-        let before = (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.length
+        let before = (synced log eng.Raw) |> Array.length
         let d = Dictionary<string, obj>()
         d.["Ponder"] <- box true
         d.["Hash"] <- box 32
         eng.SetAllOptions d
         waitForSent log "setoption name Hash value 32"
-        Assert.Equal<string[]>([| "setoption name Ponder value true"; "setoption name Hash value 32" |], (synced log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))) |> Array.skip before)
+        Assert.Equal<string[]>([| "setoption name Ponder value true"; "setoption name Hash value 32" |], (synced log eng.Raw) |> Array.skip before)
         Assert.Equal("32", string (eng.GetAllDefaultOptions().["Hash"]))
     finally quitAnalysis eng
 
 [<Fact>]
-let ``Analysis CurrentPositionCommand reflects the last position sent`` () =
+let ``Analysis CurrentPositionCommand reflects the last position searched`` () =
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart "e2e4 e7e5"))
+        search eng (fromStart "e2e4 e7e5") "go nodes 1" |> ignore
         Assert.Equal(fromStart "e2e4 e7e5", eng.CurrentPositionCommand())
     finally quitAnalysis eng
 
-// ── ChessEngineWithUCIProcessing: readiness, stderr, exit ───────────────────────────────────────
+// ── AnalysisEngine: failure, stderr, exit ───────────────────────────────────────────────────────
 
 [<Fact>]
-let ``Analysis WaitForReadyOk is true for a ready engine and false at once for a fatal line or an exit`` () =
+let ``Analysis search fails at once when the engine exits, and EngineFailed says so`` () =
     let log = newLogPath ()
-    let eng, _ = startAnalysis (config log "" [])
+    let eng, updates = startAnalysis (config log "" [])
     try
-        Assert.True(eng.WaitForReadyOk())
-        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "FakeFatalOnReady" "true"))
+        eng.SetOption(EngineOption.Create "FakeExitOnReady" "true")
         let sw = Stopwatch.StartNew()
-        Assert.False(eng.WaitForReadyOk())
-        Assert.True(sw.ElapsedMilliseconds < 5000L)
-        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "FakeFatalOnReady" "false"))
-        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "FakeExitOnReady" "true"))
-        sw.Restart()
-        Assert.False(eng.WaitForReadyOk())
+        match search eng (fromStart "") "go nodes 1" with
+        | Failed _ -> ()
+        | other -> failwithf "%A" other
         Assert.True(sw.ElapsedMilliseconds < 5000L)
         Assert.True(waitUntil 5000 (fun () -> eng.HasExited))
+        Assert.Contains(updates.ToArray(), fun u -> match u with EngineFailed _ -> true | _ -> false)
     finally quitAnalysis eng
 
 [<Fact>]
@@ -477,16 +510,15 @@ let ``Analysis Quit ends the engine, and kills one that ignores quit`` () =
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [])
     let quick = Stopwatch.StartNew()
-    eng.SendUCICommand UCICommand.Quit
+    eng.Quit()
     Assert.Contains("quit", commands log)
-    // An engine that honours quit is gone well inside the one-second grace. The process object is
-    // disposed right after, so LastExitCode is usually never set (the Exited event is lost).
+    // An engine that honours quit is gone well inside the one-second grace.
     Assert.True(quick.ElapsedMilliseconds < 900L)
 
     let log2 = newLogPath ()
     let stubborn, _ = startAnalysis (config log2 "" [ "FakeIgnoreQuit", box true ])
     let sw = Stopwatch.StartNew()
-    stubborn.SendUCICommand UCICommand.Quit
+    stubborn.Quit()
     // Waits one second for the exit, then kills.
     Assert.True(sw.ElapsedMilliseconds >= 900L)
     Assert.Contains("quit", commands log2)
@@ -496,8 +528,9 @@ let ``Analysis records the exit code of an engine that dies`` () =
     let log = newLogPath ()
     let eng, _ = startAnalysis (config log "" [ "FakeCrashOnGo", box true ])
     try
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand(UCICommand.GoNodes 1)
+        match search eng (fromStart "") "go nodes 1" with
+        | Failed _ -> ()
+        | other -> failwithf "%A" other
         Assert.True(waitUntil 5000 (fun () -> eng.LastExitCode = Some 3))
         Assert.True(eng.HasExited)
         Assert.Contains("fake crash in search", eng.ErrorOutput)
@@ -721,8 +754,8 @@ let ``Tournament PrepareNewGameAsync sends what PrepareNewGame sends`` () =
 
 [<Fact>]
 let ``The async factories return at once and hand over a started engine when it is ready`` () =
-    // 1.5 s to readyok: the analysis constructor waits for it, so a caller that made the engine
-    // itself would be held that long.
+    // 1.5 s to readyok: createAltEngine waits for it, so a caller that made the engine itself
+    // would be held that long.
     let log = newLogPath ()
     let cfg = config log "" [ "FakeReadyDelayMs", box 1500 ]
     let updates = ConcurrentQueue<EngineUpdate>()
@@ -734,7 +767,7 @@ let ``The async factories return at once and hand over a started engine when it 
     let eng = pending.GetAwaiter().GetResult()
     try
         Assert.True(sw.ElapsedMilliseconds >= 1400L)
-        Assert.True(eng.WaitForReadyOk(10000))
+        Assert.True(eng.Started.IsCompleted && eng.Started.Result)
     finally quitAnalysis eng
     let log2 = newLogPath ()
     let tournament = EngineHelper.createEngineAsync(config log2 "" [], Some (NullLogger.Instance :> ILogger)).GetAwaiter().GetResult()
@@ -891,7 +924,7 @@ let private lc0Copy () =
     Path.Combine(dir, fakeExeName)
 
 [<Fact>]
-let ``Lc0 by path gets --show-hidden: appended by the tournament engine, only without args by the analysis engine`` () =
+let ``Lc0 by path gets --show-hidden from both engines, appended to its own args`` () =
     let path = lc0Copy ()
     let log = newLogPath ()
     let tour = startTournament { config log "" [] with Path = path }
@@ -904,10 +937,10 @@ let ``Lc0 by path gets --show-hidden: appended by the tournament engine, only wi
     let ana, _ = startAnalysis { config log2 "" [] with Path = path }
     try
         Assert.True(ana.IsLc0)
-        Assert.DoesNotContain("--show-hidden", argsLine log2)
+        Assert.EndsWith("--show-hidden", argsLine log2)
     finally quitAnalysis ana
 
-    // With no args at all the analysis engine adds it too. The log path goes by environment.
+    // With no args at all it is the only one. The log path goes by environment.
     let log3 = newLogPath ()
     Environment.SetEnvironmentVariable("FAKEUCI_LOG", log3)
     try
@@ -1179,29 +1212,27 @@ let ``Winboard Use4FieldFen sends setboard without the counters`` () =
 // Winboard through the analysis engine.
 
 [<Fact>]
-let ``Winboard analysis start-up: features, post and easy, the options, then new`` () =
+let ``Winboard analysis start-up: features, post and easy, then new - no move overhead it does not list`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (wbConfig log "" [] None)
     try
         Assert.Equal<string[]>(
-            [| "xboard"; "protover 2"; "accepted ping"; "accepted setboard"; "accepted analyze"; "accepted myname"; "accepted done"; "post"; "easy"; "option MoveOverheadMs=0"; "new" |],
-            syncedWb log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m)))
+            [| "xboard"; "protover 2"; "accepted ping"; "accepted setboard"; "accepted analyze"; "accepted myname"; "accepted done"; "post"; "easy"; "new" |],
+            syncedWb log eng.Raw)
         let ready = updates.ToArray() |> Array.choose (function Ready (p, live) -> Some (p, live) | _ -> None)
         Assert.Equal<(string * bool)[]>([| ("Fake", false) |], ready)
-        Assert.True(eng.WaitForReadyOk())
     finally quitAnalysis eng
 
 [<Fact>]
 let ``Winboard analysis: infinite search is analyze, stop is exit, a timed search reports its move`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (wbConfig log "" [] None)
-    let sync () = syncedWb log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))
+    let sync () = syncedWb log eng.Raw
     try
         let before = sync () |> Array.length
-        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
-        eng.SendUCICommand UCICommand.GoInfinite
+        eng.Analyse(fromStart "", "go infinite")
         Assert.True(waitUntil 5000 (fun () -> statuses updates |> Array.length >= 3))
-        eng.SendUCICommand UCICommand.Stop
+        eng.Stop()
         Assert.Equal<string[]>(
             [| "force"; "setboard " + startFen; "easy"; "analyze"; "exit" |],
             sync () |> Array.skip before)
@@ -1209,10 +1240,12 @@ let ``Winboard analysis: infinite search is analyze, stop is exit, a timed searc
         Assert.Equal<int[]>([| 1; 2; 3 |], st |> Array.map (fun s -> s.Depth))
         Assert.Equal("1.e4 e5 2.Nf3", st.[2].PV)
         Assert.Empty(bestMoves updates)
+        // exit prints no move: the search is reported stopped
+        Assert.True(waitUntil 5000 (fun () -> updates.ToArray() |> Array.exists (function SearchStopped _ -> true | _ -> false)))
         // A timed search: easy + go, and the move comes back as BestMove.
-        eng.SendUCICommand(UCICommand.GoNodes 5)
-        Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
-        Assert.Equal("e2e4", (bestMoves updates).[0].Move)
+        match search eng (fromStart "") "go nodes 5" with
+        | Completed (Some bm) -> Assert.Equal("e2e4", bm.Move)
+        | other -> failwithf "%A" other
     finally quitAnalysis eng
 
 // ── Pondering ───────────────────────────────────────────────────────────────────────────────────

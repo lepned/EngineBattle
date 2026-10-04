@@ -63,7 +63,7 @@ let rec describeType (t: Type) : string list =
 /// The engine layer's public surface, one line per member, stable across runs.
 let engineApiSurface () =
     let asm = typeof<ChessLibrary.Engine.ChessEngine>.Assembly
-    [ "ChessLibrary.Engine"; "ChessLibrary.EngineHelper"; "ChessLibrary.HardwareInfo" ]
+    [ "ChessLibrary.Engine"; "ChessLibrary.AnalysisEngine"; "ChessLibrary.AnalysisOutcome"; "ChessLibrary.EngineHelper"; "ChessLibrary.HardwareInfo" ]
     |> List.collect (fun name -> describeType (asm.GetType(name, true)))
     |> String.concat "\n"
 

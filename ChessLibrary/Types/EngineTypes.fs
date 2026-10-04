@@ -126,6 +126,10 @@ module EngineTypes =
         | BestMoveSimple of Move: string * Ponder: string option
         | UCIInfo of Data: ResizeArray<string>
         | PolicyDistributionOutCome of ResizeArray<Int32 * (float * string * bool) * (float * string * bool)>
+        /// A search that ended without a bestmove: replaced by a newer one, or stopped before its go.
+        | SearchStopped of Player: string
+        /// The engine stopped answering or exited; a new engine is needed.
+        | EngineFailed of Player: string * Reason: string
 
     and MoveAndFen = { Move: MoveDetail; ShortSan: string; FenAfterMove: string }
       with

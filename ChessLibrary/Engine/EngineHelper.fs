@@ -56,7 +56,9 @@ module EngineHelper =
           let cmds = createInitialUCICommands config
           new ChessEngine(config, cmds, logger)
 
-  let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : ChessEngineWithUCIProcessing =
+  /// An analysis engine, started: blocks until it is ready (a network load can take minutes, so
+  /// call it off a UI thread - createAltEngineAsync), and throws when it cannot start.
+  let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : AnalysisEngine =
       let validation = Configuration.Validation.validateChessEngineCmds config
       match validation with
       |Configuration.Validation.Errors errors ->
@@ -65,7 +67,12 @@ module EngineHelper =
         failwith "Engine could not be created"
       |Configuration.Validation.Ok ->
           let cmds = createInitialUCICommands config
-          new ChessEngineWithUCIProcessing(callback, config, cmds, logger, writeToConsole, logToFile = true)
+          let engine = new AnalysisEngine(callback, config, cmds, logger, writeToConsole, logToFile = true)
+          if not (engine.WaitUntilStarted(int (TimeSpan.FromHours 2.0).TotalMilliseconds)) then
+            engine.Quit()
+            failwith (sprintf "Engine %s could not be started%s" config.Name
+                        (match engine.StartFailure with "" -> "" | r -> ": " + r))
+          engine
 
   /// createEngine on a pool thread. The constructor starts the process and waits for uciok, which
   /// blocks; a UI thread (a Blazor handler) must not be the one waiting.
@@ -75,7 +82,7 @@ module EngineHelper =
   /// createAltEngine on a pool thread. The analysis engine's constructor waits for uciok AND
   /// readyok - the network load, about 5 s for Lc0 and 10 s for Ceres, minutes for a first
   /// TensorRT build - so a UI thread that makes one itself freezes the page for that long.
-  let createAltEngineAsync (callback, config: EngineConfig, logger: ILogger, writeToConsole: bool) : Task<ChessEngineWithUCIProcessing> =
+  let createAltEngineAsync (callback, config: EngineConfig, logger: ILogger, writeToConsole: bool) : Task<AnalysisEngine> =
       Task.Run(fun () -> createAltEngine (callback, config, logger, writeToConsole))
 
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =

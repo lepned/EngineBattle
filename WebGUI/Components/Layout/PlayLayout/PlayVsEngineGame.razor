@@ -254,6 +254,9 @@
     private bool boardFlipped;
     private bool isWhiteTurn = true;
     private bool gameActive = false;
+    // a move request belongs to one game and one position: New game and Take back start a new one
+    private int moveEpoch;
+    private int requestedEpoch = -1;
     private string gameStatus = "";
     private Chess.Board board = new();
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -435,6 +438,8 @@
             return;
         }
 
+        moveEpoch++;
+        analyzer?.Stop();
         ApplyTimeControl();
         await OnTimeControlApplied.InvokeAsync(clockEnabled ? whiteBaseMinutes : null);
         ResetClocks();
@@ -526,6 +531,8 @@
         {
             return;
         }
+        moveEpoch++;
+        analyzer?.Stop();
         chessboardRef?.ClearPremove();
 
         var whiteToMove = board.Position.STM == 0;
@@ -955,8 +962,16 @@
         return t.ToString(@"mm\:ss");
     }
 
-    private async Task OnEngineMoveReady(MoveAndFen move)
+    /// Placement, side to move, castling and en passant; the move counters may be counted differently.
+    private static bool SamePosition(string a, string b) =>
+        string.Join(' ', (a ?? "").Split(' ').Take(4)) == string.Join(' ', (b ?? "").Split(' ').Take(4));
+
+    private async Task OnEngineMoveReady(MoveAndFen move, string searchedFen)
     {
+        // resign, abort, a new game and take back stop the engine; its answer is not a move any more,
+        // nor is one searched on another position (a stopped search answering after New game)
+        if (!gameActive || requestedEpoch != moveEpoch || !SamePosition(searchedFen, board.FEN()))
+            return;
         var whiteToMove = board.Position.STM == 0;
         board.PlayUciMove(move.Move.LongSan);
         var lastMove = board.MovesAndFenPlayed.LastOrDefault();
@@ -1025,6 +1040,7 @@
 
         if (!ReferenceEquals(EngineOptions, appliedEngineOptions))
             ApplyEngineOptions();
+        requestedEpoch = moveEpoch;
         var nodeLimitCommand = TimeControlTypes.TimeControlCommands.createNodes(numberOfNodes);
         if (IsCustomTimeControl && customLimitMode == "Nodes")
         {
@@ -1095,7 +1111,7 @@
                     break;
 
                 case EngineUpdate.BestMove b:
-                    await OnEngineMoveReady(b.Item.MoveAndFen);
+                    await OnEngineMoveReady(b.Item.MoveAndFen, b.Item.FEN);
                     StateHasChanged();
                     break;
 

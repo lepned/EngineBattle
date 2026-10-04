@@ -26,7 +26,7 @@
 @code {
 
   [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
-  [Parameter] public ChessLibrary.Engine.ChessEngineWithUCIProcessing Engine { get; set; }
+  [Parameter] public ChessLibrary.AnalysisEngine Engine { get; set; }
   [Parameter] public int Fontsize { get; set; }
 
   void Close() => MudDialog.Close(DialogResult.Ok(true));

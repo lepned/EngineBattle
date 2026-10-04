@@ -110,8 +110,11 @@
 		<!-- Engine (depends on protocol, configuration, LowLevelUtilities) -->
 		<Compile Include="Engine\EngineProcess.fs" />
 		<Compile Include="Engine\EngineWire.fs" />
+		<Compile Include="Engine\EngineStartup.fs" />
 		<Compile Include="Engine\AnalysisOutput.fs" />
+		<Compile Include="Engine\AnalysisMachine.fs" />
 		<Compile Include="Engine\Engine.fs" />
+		<Compile Include="Engine\AnalysisEngine.fs" />
 		<Compile Include="Engine\EngineHelper.fs" />
 		<Compile Include="Engine\HardwareInfo.fs" />
 		<Compile Include="Engine\EngineProbe.fs" />

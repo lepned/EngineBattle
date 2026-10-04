@@ -22,16 +22,12 @@ open ChessLibrary.BoardUtils
 open ChessLibrary.WinboardIntegration
 open ChessLibrary.EngineWire
 
-/// The two engine wrappers.
-///
-/// ChessEngineWithUCIProcessing runs an engine for the analysis pages, Game Review and the value
-/// head checks: every line the engine prints is parsed on the reader thread and pushed to the
-/// caller's callback as an EngineUpdate. ChessEngine runs an engine in tournaments, the tuner, the
+/// The tournament engine wrapper. ChessEngine runs an engine in tournaments, the tuner, the
 /// console tools and the puzzle runner: the caller writes commands and pulls the replies itself.
+/// The analysis pages and Game Review use AnalysisEngine (AnalysisEngine.fs).
 ///
-/// Both speak UCI-shaped commands; a Winboard engine gets them translated (EngineWire). The
-/// process itself, its stderr and the I/O log are EngineProcess's: both run their engine through
-/// an EngineProcess.Transport, one reading its output pushed line by line, the other pulling it.
+/// Commands are UCI-shaped; a Winboard engine gets them translated (EngineWire). The process, its
+/// stderr and the I/O log are EngineProcess's.
 ///
 /// The public surface is pinned by TestProject/EngineApiSurfaceTests.fs and the behaviour by
 /// TestProject/EngineCharacterizationTests.fs, which run a scripted fake engine as a real child
@@ -55,7 +51,7 @@ module Engine =
     printedEngines.Clear()
     loggedVersions.Clear()
 
-  let private printNonDefaultValues (name: string) (path: string) (nonDefaultValues: Dictionary<string, (string * string)>) =
+  let internal printNonDefaultValues (name: string) (path: string) (nonDefaultValues: Dictionary<string, (string * string)>) =
     printfn "\nCustomized SetOptions for %s:\n" name
     ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Engine path: %s" path)
     for opt in nonDefaultValues do
@@ -66,24 +62,17 @@ module Engine =
         ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s - default is: %s" opt.Key value def)
     printfn ""
 
-  let private printConfigCommands (name: string) (initCommands: string seq) =
+  let internal printConfigCommands (name: string) (initCommands: string seq) =
     printfn "%sConfigurations for %s:%s" Environment.NewLine name Environment.NewLine
     for cmd in initCommands do
       if cmd.Contains "setopt" then
         printfn "%s" cmd
 
   /// Engine's self-declared identity from the UCI handshake ("id name ..."), or "".
-  let private uciIdName (optionsMap: Dictionary<string, UciOption.UciOption>) =
+  let internal uciIdName (optionsMap: Dictionary<string, UciOption.UciOption>) =
     match UciOption.tryFindOption optionsMap "name" with
     | Some { OptionType = UciOption.UciOptionType.IdAndAuthor(_, _, value) } -> value
     | _ -> ""
-
-  /// Where an analysis engine is in its start-up conversation. The reader thread moves it on as
-  /// uciok and readyok arrive; a caller waiting for one of them watches it.
-  type private Handshake =
-    | AwaitingUciOk
-    | AwaitingReadyOk
-    | Running
 
   /// The process a ChessEngine is running now, and what has been done to it. A restart makes a new
   /// one, so a warm-up or a MoveOverheadMs sent to the old process never counts for the new one.
@@ -97,502 +86,6 @@ module Engine =
     member val WarmedUp = false with get, set
     /// The MoveOverheadMs value this process has been sent.
     member val MoveOverheadSent : int64 option = None with get, set
-
-  // ════════════════════════════════════════════════════════════════════════════════════════════
-  //  The analysis wrapper: parses on the reader thread and pushes EngineUpdates
-  // ════════════════════════════════════════════════════════════════════════════════════════════
-
-  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool, ?logToFile: bool)  =
-      let name = config.Name
-      let isEnabled level = logger.IsEnabled level
-      let logDebug (text: string) = logger.LogDebug text
-      let logInformation (text: string) = logger.LogInformation text
-      let logError (text: string) = logger.LogError text
-
-      let ioLog =
-          if defaultArg logToFile false then
-              let path, log = EngineProcess.IoLog.Open name
-              logInformation $"Engine I/O logging to: {path}"
-              Some log
-          else None
-      let logIO (direction: string) (text: string) =
-          match ioLog with
-          | Some log -> log.Write(direction, text)
-          | None -> ()
-
-      let isLc0 = EngineProcess.pathMentions "lc0" config
-      let isCeres = EngineProcess.pathMentions "ceres" config
-      let protocol = protocolFor config (Some logger)
-
-      // The position the engine is searching, for turning its moves into SAN. Written by whichever
-      // thread sends a position and read by the reader thread while it parses; every access goes
-      // through the lock, so a new position waits for the line being parsed instead of changing
-      // the board underneath it. The side to move is cached outside the lock: the reader needs it
-      // for every info line and it only changes with the position.
-      let moveBoard = Chess.Board()
-      let moveBoardLock = obj()
-      [<VolatileField>]
-      let mutable whiteToMove = true
-      let moveList = Array.init 256 (fun _ -> defaultof<TMove>)
-
-      // The last UCI_Chess960 value sent. The wrapper used to keep every command it ever sent and
-      // search that list backwards on each position; this is the same answer without the list.
-      let mutable chess960Sent = false
-      let recordCommand (cmd: string) =
-          if cmd.Contains "UCI_Chess960" then chess960Sent <- cmd.Contains "true"
-
-      // What the output so far amounts to (AnalysisOutput.State). The reader thread owns it; a
-      // thread that sends a new position only raises newPosition, and the reader drops the old
-      // variation and the SAN cache itself before its next line.
-      let mutable output = AnalysisOutput.State.Initial
-      [<VolatileField>]
-      let mutable newPosition = false
-      // Last (UCI PV, SAN PV) per MultiPV index. Reader thread only.
-      let sanPvCache = Dictionary<int, struct (string * string)>()
-
-      let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
-      let mutable backend = ""
-      let optionsMap = Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)
-      let dict = Dictionary<string, obj>()
-      let nonDefaultValues = Dictionary<string, (string * string)>()
-      let distribution = ResizeArray<NNValues>()
-      let mutable inPolicyDistributionMode = false
-      let mutable searchMoves: string list = []
-      let searchMoveSuffix () =
-        if searchMoves.IsEmpty then "" else " searchmoves " + (searchMoves |> String.concat " ")
-
-      // Handshake state, flipped by the reader thread and waited on by the caller. The reader sets
-      // the signal whenever one of them changes (or the engine exits), so a wait ends the moment
-      // the answer arrives rather than on the next poll.
-      [<VolatileField>]
-      let mutable handshake = AwaitingUciOk
-      // A fatal init line seen while waiting for uciok/readyok; ends the wait as a failure at once.
-      [<VolatileField>]
-      let mutable initFailure : string option = None
-      let readySignal = new ManualResetEventSlim(false)
-
-      let stderr = EngineProcess.StderrRing()
-      [<VolatileField>]
-      let mutable lastExitCode : int option = None
-      // Ceres and others exit non-zero on a clean quit; only warn when we didn't ask.
-      [<VolatileField>]
-      let mutable shutdownRequested = false
-      let transport =
-        let arguments =
-          if String.IsNullOrEmpty config.Args |> not then config.Args
-          elif isLc0 then "--show-hidden"
-          else ""
-        EngineProcess.Transport(config, arguments, stderr,
-          (fun msg -> logDebug $"[{name}] {msg}"),
-          (fun line -> if isEnabled LogLevel.Debug then logDebug $"[STDERR {name}]: {line}"),
-          (fun code ->
-              if code.IsSome then lastExitCode <- code
-              match code with
-              | Some c when c <> 0 ->
-                  if shutdownRequested then logDebug $"Engine {name} exited with code {c} after quit"
-                  else logInformation $"⚠️ Engine {name} exited unexpectedly with code {c}"
-              | _ -> ()
-              // A wait for uciok/readyok ends now rather than on its next check.
-              try readySignal.Set() with _ -> ()))
-      let engineProcess = transport.Process
-
-      let ceresNetworkName =
-        match config.Options |> Seq.tryFind (fun e -> e.Key = "Network") with
-        | Some net ->
-            let nn = net.Value.ToString()
-            if nn.Contains("/") then
-              let nArr = nn.Split('/')
-              nArr.[max 0 (nArr.Length - 1)]
-            else ""
-        | None ->
-            let argsExists = isNull config.Args |> not && String.IsNullOrEmpty config.Args |> not
-            if isCeres && argsExists then
-              let network = config.Args.Split(':')
-              if network.Length > 1 then network.[1] else ""
-            else ""
-
-      let mutable network = if isCeres then ceresNetworkName else ""
-
-      let getAllDefaultOptions () =
-        for opt in optionsMap do
-          match opt.Value.OptionType with
-          | UciOption.Check b -> if dict.ContainsKey opt.Key |> not then dict.Add(opt.Key, b)
-          | UciOption.Spin (_, _, def) -> if dict.ContainsKey opt.Key |> not then dict.Add(opt.Key, def)
-          | UciOption.Combo (_, def) -> if dict.ContainsKey opt.Key |> not then dict.Add(opt.Key, def)
-          | UciOption.String s -> if dict.ContainsKey opt.Key |> not then dict.Add(opt.Key, s)
-          | _ -> ()
-
-      /// Waits for uciok ("uci") or readyok ("readyok"): true when it came, false on timeout, exit or
-      /// a fatal init line.
-      let waitForInitialization (timeoutMs: int) (uciMode: string) =
-        let sw = Stopwatch.StartNew()
-        let mutable result = ValueNone
-        while result.IsNone do
-          let inMode = handshake = (if uciMode = "uci" then AwaitingUciOk else AwaitingReadyOk)
-          if sw.ElapsedMilliseconds >= int64 timeoutMs then
-            printfn "Timeout for %s" uciMode
-            result <- ValueSome false
-          elif inMode && engineProcess.HasExited then
-            // Dead engines never answer: fail now instead of at the (2 h) timeout.
-            let code = try string engineProcess.ExitCode with _ -> "?"
-            initFailure <- Some (sprintf "process exited with code %s" code)
-            ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Engine %s exited (code %s) while waiting for %s" name code uciMode)
-            result <- ValueSome false
-          elif inMode && initFailure.IsSome then
-            ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Engine %s failed to initialize while waiting for %s: %s" name uciMode initFailure.Value)
-            result <- ValueSome false
-          elif inMode then
-            // Woken by the reader; the bound only limits what a lost wake-up could cost.
-            readySignal.Wait 50 |> ignore
-            readySignal.Reset()
-          else
-            result <- ValueSome true
-        result.Value
-
-      /// SAN for one MultiPV line. SAN conversion is the hot cost on this thread (it regenerates the
-      /// legal moves for every ply), and consecutive info lines usually repeat the same variation -
-      /// once a mate is proven the engine repeats it for hundreds of iterations - so the last
-      /// conversion per MultiPV index is kept.
-      let convertPv (mpv: int) (lan: string) =
-        match sanPvCache.TryGetValue mpv with
-        | true, struct (cachedLan, cachedSan) when cachedLan = lan -> cachedSan
-        | _ ->
-          let san = lock moveBoardLock (fun () -> getShortSanPVFromLongSanPVFast moveList &moveBoard lan)
-          sanPvCache.[mpv] <- struct (lan, san)
-          san
-
-      /// The searched position, as AnalysisOutput asks about it.
-      let position = AnalysisOutput.boardPosition moveBoard moveBoardLock (fun () -> whiteToMove) convertPv
-
-      /// A new position was sent: its search must not inherit the previous one's variation.
-      let clearPvCache () = newPosition <- true
-
-      /// One line of search output, after the handshake.
-      let processLine (line: string) =
-        try
-          if writeToConsole then printfn "%s" line
-          if newPosition then
-            newPosition <- false
-            sanPvCache.Clear()
-            output <- AnalysisOutput.withoutPv output
-          let next, effects = AnalysisOutput.step name position output line
-          output <- next
-          for effect in effects do
-            match effect with
-            | AnalysisOutput.Update update -> callback update
-            | AnalysisOutput.Print text -> printfn "%s" text
-            | AnalysisOutput.Debug text -> if isEnabled LogLevel.Debug then logDebug text
-        with ex ->
-          output <- { output with Mode = AnalysisOutput.Idle }
-          printfn "Error processing line from engine %s: %s" name ex.Message
-
-      /// One line the engine printed, in protocol terms: during the handshake it is an option or
-      /// the end of the list, while waiting for readyok everything else is dropped, and after that
-      /// it is search output.
-      let onEngineLine (line: string) =
-        match handshake with
-        | AwaitingUciOk ->
-            if line = "uciok" then
-              handshake <- Running
-              readySignal.Set()
-            else
-              UciOption.addOptionToMap optionsMap line
-        | AwaitingReadyOk ->
-            if line = "readyok" then
-              handshake <- Running
-              readySignal.Set()
-            elif not (isWinboard protocol) && EngineProcess.isFatalInitLine line then
-              initFailure <- Some line
-              readySignal.Set()
-        | Running -> processLine line
-
-      let write (s: string) =
-        if engineProcess.HasExited then
-          logger.LogCritical(sprintf "Engine %s has exited - please reset engine." name)
-        else
-          match protocol with
-          | Winboard _ ->
-              // Winboard in analysis mode: the full position is set up for every search.
-              outbound protocol true s |> List.iteri (fun i cmd ->
-                if isEnabled LogLevel.Debug then logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" s cmd name)
-                logIO ">>>" cmd
-                let delay = lineDelayMs config protocol i cmd
-                if delay > 0 then Thread.Sleep delay
-                transport.WriteLine cmd)
-          | Uci ->
-              transport.WriteLine s
-              logIO ">>>" s
-              if isEnabled LogLevel.Trace then logger.LogTrace(sprintf "Writing to %s: %s" name s)
-
-      let assignBackend (option: string) =
-        if option.ToLower().Contains("backendoptions") then
-          let arr = option.Split(' ')
-          let startIdx = arr |> Array.findIndex (fun e -> e = "value")
-          backend <- arr.[startIdx + 1 ..] |> String.concat " "
-
-      let assignNetworkName (option: string) =
-        let lower = option.ToLower()
-        if lower.Contains("weights") || lower.Contains("evalfile") then
-          if String.IsNullOrEmpty ceresNetworkName |> not then
-            network <- ceresNetworkName
-          else
-            let arr = option.Split(' ')
-            // QUIRK (pinned): only the last extension goes, so x.pb.gz is called x.pb.
-            let n = Path.GetFileNameWithoutExtension arr.[arr.Length - 1]
-            if String.IsNullOrEmpty n |> not then network <- n
-
-      /// Written after the config's options: the analysis pages move nothing on a clock.
-      let analysisCommands = [ sprintf "setoption name %s value %d" "MoveOverheadMs" 0 ]
-
-      let setupProcess () =
-          let mutable pos = moveBoard.Position
-          moveBoard.IsFRC <- PositionOps.isFRC &pos
-          if String.IsNullOrEmpty config.Args |> not then logDebug $"Args passed: {config.Args}"
-          let onLine (line: string) =
-              try
-                logIO "<<<" line
-                match protocol with
-                | Winboard handler ->
-                    if isEnabled LogLevel.Debug then logDebug $"[{name}] Received output: {line}"
-                    match handler.ProcessOutput line with
-                    | Some uciLine ->
-                        if isEnabled LogLevel.Debug then logDebug $"[{name}] Translated to UCI: {uciLine}"
-                        onEngineLine uciLine
-                    | None ->
-                        // Not translated - normal for some Winboard output.
-                        if isEnabled LogLevel.Debug then logDebug $"[{name}] Output not translated (normal for some Winboard output)"
-                | Uci -> onEngineLine line
-              with ex ->
-                // An exception escaping this handler is unhandled on a threadpool thread and ends
-                // the whole host process.
-                logError (sprintf "Error processing output line from %s: %s" name ex.Message)
-          if not (transport.Start(EngineProcess.Push onLine)) then
-            failwith (sprintf "Engine %s could not be started" name)
-
-          match protocol with
-          | Winboard handler ->
-              logInformation $"[{name}] Starting Winboard initialization"
-              // These are Winboard commands already: straight to the pipe.
-              for cmd in handler.GetInitCommands() do
-                logDebug $"[{name}] Sending init command: {cmd}"
-                transport.WriteLine cmd
-              logDebug $"[{name}] Waiting for Winboard initialization to complete..."
-              let startWait = DateTime.UtcNow
-              let initSuccess = initializeWinboardEventBased handler (Some logger) name FeatureTimeoutMs (forceV1 config) transport.WriteLine |> Async.RunSynchronously
-              let waitTime = (DateTime.UtcNow - startWait).TotalMilliseconds
-              logInformation $"[{name}] Winboard init wait completed in {waitTime}ms, success={initSuccess}"
-              if not initSuccess then failwith "Winboard engine did not initialize properly."
-              // Winboard engines send no uciok.
-              handshake <- Running
-              // the replies to the last feature line (initializeWinboardEventBased wrote the
-              // earlier ones), on the thread that writes post and easy next
-              for reply in handler.TakeFeatureReplies() do
-                if handler.CommandDelayMs > 0 then Thread.Sleep handler.CommandDelayMs
-                transport.WriteLine reply
-              for cmd in handler.GetPostInitCommands() do
-                logDebug $"[{name}] Sending post-init command: {cmd}"
-                if handler.CommandDelayMs > 0 then Thread.Sleep handler.CommandDelayMs
-                transport.WriteLine cmd
-          | Uci ->
-              write "uci"
-              let ok = waitForInitialization (int (TimeSpan.FromHours(2).TotalMilliseconds)) "uci"
-              if not ok then
-                failwith (sprintf "Engine %s did not respond to the uci command%s" name
-                            (match initFailure with Some r -> " (" + r + ")" | None -> ""))
-
-          for cmd in initCommands do
-            match UciOption.parseSetOptionCommand cmd with
-            | Some (optName, value) ->
-                if UciOption.validateSetOption optionsMap (optName, value) then
-                  dict.[optName] <- value
-                  match UciOption.getNoneDefaultSetOption optionsMap (optName, value) with
-                  | Some (n, def, v) -> nonDefaultValues.[n] <- (def, v)
-                  | None -> ()
-                  ConsoleUtils.printInColor ConsoleColor.Green (sprintf "The option '%s' with value '%s' is valid." optName value)
-                else
-                  ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." optName value)
-            | None ->
-                ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
-            write cmd
-            assignBackend cmd
-            assignNetworkName cmd
-            recordCommand cmd
-          for cmd in analysisCommands do
-            write cmd
-            recordCommand cmd
-          if isCeres then network <- ceresNetworkName
-          printNonDefaultValues name config.Path nonDefaultValues
-          write "ucinewgame"
-
-          // Winboard engines need no handshake after initialization.
-          if not (isWinboard protocol) then
-            readySignal.Reset()
-            handshake <- AwaitingReadyOk
-            write "isready"
-            let ok = waitForInitialization (int (TimeSpan.FromHours(2).TotalMilliseconds)) "readyok"
-            if not ok then
-              failwith (sprintf "Engine %s did not respond to the isready command%s" name
-                          (match initFailure with Some r -> " (" + r + ")" | None -> ""))
-
-          for err in stderr.Snapshot() do
-            logDebug $"[STDERR {name}]: {err}"
-          let withLiveLog = optionsMap.ContainsKey("LogLiveStats")
-          getAllDefaultOptions ()
-          callback (EngineUpdate.Ready (name, withLiveLog))
-
-      do setupProcess ()
-
-      /// Snapshot rather than the live list - callers enumerate while the process may still write.
-      member _.ErrorOutput = stderr.Snapshot() :> seq<string>
-      member _.LastExitCode = lastExitCode
-      /// Only called when a game was adjudicated because the engine died: everything the stderr
-      /// buffer still holds, for the log.
-      member _.GetDiagnostics() = stderr.Diagnostics(name, lastExitCode)
-      member _.GetNoneDefaultSetOptions() = nonDefaultValues
-      member _.GetAllDefaultOptions() = dict
-      member this.IsLc0 = isLc0
-      // QUIRK: set once from the field's initial value; the PolicyDistribution command sets the
-      // private field, not this property.
-      member val InPolicyDistributionMode = inPolicyDistributionMode with get, set
-      member val IsFRC = moveBoard.IsFRC with get, set
-      member _.PrintUCI() = printConfigCommands name initCommands
-      member _.Network = network
-      member _.Name = name
-      member _.FullName = if network <> "" then $"{name} with net: {network}" else name
-      member _.GetBackEnd() = backend
-      member val IsReference = false with get, set
-      member this.BenchmarkLC0Cmd = benchMarkLC0Cmd
-      member this.ShowCommands = fun () -> printConfigCommands name initCommands
-      member this.Config = config
-      member this.Path = config.Path
-      member this.GetUCICommands() = optionsMap
-      /// Engine's self-declared identity from the UCI handshake ("id name ..."), or "" if not (yet)
-      /// received. More reliable than config display Name or Path.
-      member _.UciIdName = uciIdName optionsMap
-      member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit
-      member this.HasExited = engineProcess.HasExited
-
-      member this.CurrentPositionCommand() = lock moveBoardLock (fun () -> moveBoard.PositionWithMovesFromGraph())
-
-      member this.SetAllOptions (allOptions: Dictionary<string, obj>) =
-        for opt in allOptions do
-          let cmd =
-            match Boolean.TryParse (opt.Value.ToString()) with
-            | true, v -> sprintf "setoption name %s value %s" opt.Key (sprintf "%b" v)
-            | _ -> sprintf "setoption name %s value %s" opt.Key (opt.Value.ToString())
-          printfn "%s" cmd
-          write cmd
-          assignNetworkName cmd
-          recordCommand cmd
-          dict.[opt.Key] <- opt.Value
-
-      member this.WaitForReadyOk(?timeoutMs: int) =
-          if engineProcess.HasExited then false
-          else
-            match protocol with
-            | Winboard _ -> true
-            | Uci ->
-                readySignal.Reset()
-                handshake <- AwaitingReadyOk
-                write "isready"
-                waitForInitialization (defaultArg timeoutMs (int (TimeSpan.FromHours(2).TotalMilliseconds))) "readyok"
-
-      member this.SendUCICommand (command: UCICommand) =
-          match command with
-          | UCI -> write "uci"
-          | Stop ->
-              try
-                if not engineProcess.HasExited then write "stop"
-              with _ ->
-                // The engine has closed the pipe already - expected during shutdown.
-                printfn "%s" (sprintf "Engine %s pipe already closed it seems" name)
-                this.GetDiagnostics() |> printfn "%s"
-          | Quit ->
-              shutdownRequested <- true
-              try
-                if not engineProcess.HasExited then write "quit"
-                if not (engineProcess.WaitForExit 1000) then engineProcess.Kill()
-              with
-              | :? IOException as ex when ex.Message.Contains("pipe") ->
-                  printfn "%s" (sprintf "Engine %s pipe already closed during shutdown" name)
-              | :? ObjectDisposedException ->
-                  printfn "%s" (sprintf "Engine %s process already disposed during shutdown" name)
-              | _ ->
-                  printfn "%s" (sprintf "Error during engine %s shutdown" name)
-              try
-                engineProcess.Close()
-                engineProcess.Dispose()
-                ioLog |> Option.iter (fun log -> (log :> IDisposable).Dispose())
-                printfn "Engine %s has been shut down." name
-              with :? ObjectDisposedException ->
-                this.GetDiagnostics() |> printfn "%s"
-          | RawCommand cmd ->
-              write cmd
-              recordCommand cmd
-          | PositionWithMoves command ->
-              // QUIRK (pinned): the board below understands only "position fen ... moves ...";
-              // a startpos command leaves it at the start. Every caller sends the fen form.
-              let isFrc =
-                lock moveBoardLock (fun () ->
-                  moveBoard.ResetBoardState()
-                  clearPvCache ()
-                  moveBoard.PlayCommands command
-                  whiteToMove <- moveBoard.Position.STM = 0uy
-                  moveBoard.IsFRC)
-              if isFrc && not chess960Sent then
-                this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
-              elif chess960Sent && not isFrc then
-                this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
-              write command
-          | Position fen ->
-              let isFrc =
-                lock moveBoardLock (fun () ->
-                  moveBoard.LoadFen fen
-                  clearPvCache ()
-                  whiteToMove <- moveBoard.Position.STM = 0uy
-                  moveBoard.IsFRC)
-              if isFrc then
-                this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
-              elif chess960Sent && not isFrc then
-                this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
-              // An EPD with no counters is rejected by Lc0 when it has an en-passant square.
-              write (sprintf "position fen %s" (Chess.Board.UciFen fen))
-          | GoNodes nodes -> write (sprintf "go nodes %d%s" nodes (searchMoveSuffix ()))
-          | GoInfinite -> write (sprintf "go infinite%s" (searchMoveSuffix ()))
-          | GoMoveTime timeInMs -> write (sprintf "go movetime %d%s" timeInMs (searchMoveSuffix ()))
-          | GoValue -> write "go value"
-          | GoTimeControl (tc, wTime, bTime) -> write (TimeControlCommands.uciTimeCommand tc wTime bTime + searchMoveSuffix ())
-          | UciNewGame ->
-              clearPvCache ()
-              write "ucinewgame"
-          | SetOption option ->
-              let cmd = sprintf "setoption name %s value %s" option.Name option.Value
-              write cmd
-              assignNetworkName cmd
-              recordCommand cmd
-          | SetOptions options ->
-              for option in options do
-                let cmd = sprintf "setoption name %s value %s" option.Name option.Value
-                write cmd
-                assignNetworkName cmd
-                recordCommand cmd
-          | PolicyDistribution _ ->
-              distribution.Clear()
-              inPolicyDistributionMode <- true
-          | SetMoveOverhead (optionName, ms) ->
-              match UciOption.tryFindOption optionsMap optionName with
-              | Some option ->
-                  match option.OptionType with
-                  | UciOption.Spin (min, max, _) ->
-                      let intValue = int64 ms
-                      if intValue >= min && intValue <= max then
-                        write (sprintf "setoption name %s value %d" option.Name intValue)
-                  | _ -> ()
-              | None -> printfn "Option not found: %s value: %d" optionName ms
-
-      member this.SetSearchMoves (moves: string list) = searchMoves <- moves
-      member this.ClearSearchMoves () = searchMoves <- []
-      member this.SearchMoves with get() = searchMoves
 
   // ════════════════════════════════════════════════════════════════════════════════════════════
   //  The tournament wrapper: the caller writes commands and reads the replies itself
@@ -635,39 +128,22 @@ module Engine =
       let mutable startGeneration = 0
       let proc () = if isNull running then null else running.Process
       let assignNetworkName (option: string) =
-        if isCeres && not (String.IsNullOrEmpty config.Args) then
-          let ceresNet = config.Args.Split(':')
-          if ceresNet.Length > 1 then network <- ceresNet.[1]
-        let lower = option.ToLower()
-        if lower.Contains("weights") || lower.Contains("network") || lower.Contains("evalfile") then
-          let arr = option.Split(' ')
-          // QUIRK (pinned): only the last extension goes, so x.pb.gz is called x.pb.
-          let n = Path.GetFileNameWithoutExtension arr.[arr.Length - 1]
-          if String.IsNullOrEmpty n |> not then network <- n
+        if isCeres then
+          let ceresNet = EngineStartup.ceresNetwork config
+          if ceresNet <> "" then network <- ceresNet
+        EngineStartup.networkIn option |> Option.iter (fun n -> network <- n)
 
       let addCommand (list: ResizeArray<string>) (cmd: string) =
         if not (list.Contains cmd) then list.Add cmd
 
       let getAllDefaultOptions () =
         let d = Dictionary<string, obj>()
-        for opt in optionsMap do
-          match opt.Value.OptionType with
-          | UciOption.Check b -> d.Add(opt.Key, b)
-          | UciOption.Spin (_, _, def) -> d.Add(opt.Key, def)
-          | UciOption.Combo (_, def) -> d.Add(opt.Key, def)
-          | UciOption.String s -> d.Add(opt.Key, s)
-          | _ -> ()
+        for key, value in EngineStartup.defaults optionsMap do d.Add(key, value)
         d
 
       /// The config's setoption commands with each option name in the engine's own spelling.
       let createVerifiedOptions (options: string seq) =
-        [ for opt in options do
-            match UciOption.parseSetOptionCommand opt with
-            | Some (optName, value) ->
-                match optionsMap.TryGetValue optName with
-                | true, o -> sprintf "setoption name %s value %s" o.Name value
-                | false, _ -> opt
-            | None -> opt ]
+        [ for opt in options -> EngineStartup.inEngineSpelling optionsMap opt ]
 
       /// Waits up to `timeoutMs` for the engine to go, then kills it; always releases the handle.
       let terminateProcess (p: Process) (timeoutMs: int) =
@@ -684,12 +160,7 @@ module Engine =
       /// caller's thread; it used to be handed to a pool thread and waited for, which only cost a
       /// thread.
       let assignThread () =
-          let arguments =
-            if not (String.IsNullOrEmpty config.Args) then
-              if isLc0 && not (config.Args.Contains("--show-hidden")) then config.Args + " --show-hidden"
-              else config.Args
-            elif isLc0 then "--show-hidden"
-            else ""
+          let arguments = EngineStartup.arguments config isLc0
           // A restart is a new process: its exit is unexpected again, and it has no exit code yet
           // (the old one's code used to be reported for it). A process that has already exited is
           // let go here; one stopped through StopProcess was disposed there.
@@ -939,20 +410,17 @@ module Engine =
             match UciOption.parseSetOptionCommand cmd with
             | Some (optName, _) when optName.Equals("Ponder", StringComparison.OrdinalIgnoreCase) && not (optionsMap.ContainsKey optName) ->
                 logDebug (sprintf "Engine %s has no Ponder option: not sent, the engine does not ponder" name)
-            | parsed ->
-              match parsed with
-              | Some (optName, value) ->
-                  let valid = UciOption.validateSetOption optionsMap (optName, value)
-                  if valid then
-                    match UciOption.getNoneDefaultSetOption optionsMap (optName, value) with
-                    | Some (n, def, v) -> nonDefaultValues.[n] <- (def, v)
-                    | None -> ()
-                  // QUIRK (pinned): `validate` is still true here even for an engine made by
-                  // createEngineWithoutValidation, which turns it off after the constructor.
-                  if validate && not valid then
+            | _ ->
+              match EngineStartup.check optionsMap cmd with
+              | EngineStartup.Valid (optName, value, changedFrom) ->
+                  changedFrom |> Option.iter (fun def -> nonDefaultValues.[optName] <- (def, value))
+              // QUIRK (pinned): `validate` is still true here even for an engine made by
+              // createEngineWithoutValidation, which turns it off after the constructor.
+              | EngineStartup.Invalid (optName, value) ->
+                  if validate then
                     passed <- false
                     ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." optName value)
-              | None ->
+              | EngineStartup.Malformed ->
                   passed <- false
                   ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
               write cmd

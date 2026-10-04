@@ -52,6 +52,7 @@
 		<Compile Include="GameReplayTests.fs" />
 		<Compile Include="ReplayGateTests.fs" />
 		<Compile Include="LazyPoolTests.fs" />
+		<Compile Include="EngineStartupTests.fs" />
 		<Compile Include="Lc0ContemptTests.fs" />
 		<Compile Include="LayoutOptionParseTests.fs" />
 		<Compile Include="TimeConfigShortFormTests.fs" />
@@ -64,6 +65,7 @@
 		<Compile Include="GameClockTests.fs" />
 		<Compile Include="GamePlayerMachineTests.fs" />
 		<Compile Include="GamePlayerTests.fs" />
+		<Compile Include="AnalysisMachineTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
 		<Compile Include="BoardApiSurfaceTests.fs" />

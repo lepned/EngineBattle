@@ -90,7 +90,12 @@ let private startAnalysisWith (logToFile: bool) cfg =
     let out = Console.Out
     Console.SetOut TextWriter.Null
     let eng =
-        try new ChessEngineWithUCIProcessing(callback, cfg, initCommands cfg, NullLogger.Instance, false, logToFile = logToFile)
+        try
+            let eng = new AnalysisEngine(callback, cfg, initCommands cfg, NullLogger.Instance, false, logToFile = logToFile)
+            if not (eng.WaitUntilStarted 60000) then
+                eng.Quit()
+                failwith "the analysis engine did not start"
+            eng
         finally Console.SetOut out
     eng, doneSignal
 
@@ -108,7 +113,7 @@ let private quietly f =
     try f () finally Console.SetOut out
 
 let private stopTournament (eng: ChessEngine) = quietly (fun () -> (try eng.Quit(); eng.StopProcess() with _ -> ()))
-let private quitAnalysis (eng: ChessEngineWithUCIProcessing) = quietly (fun () -> (try eng.SendUCICommand UCICommand.Quit with _ -> ()))
+let private quitAnalysis (eng: AnalysisEngine) = quietly (fun () -> (try eng.Quit() with _ -> ()))
 
 let private readUntilBestmove (eng: ChessEngine) =
     use cts = new CancellationTokenSource(60000)
@@ -130,9 +135,8 @@ let private analysisFloodWith (logToFile: bool) name (lines: int) (multiPv: int)
     let eng, doneSignal = startAnalysisWith logToFile (config "" opts)
     try
         measure name lines "lines" 2 runs (fun () ->
-            eng.SendUCICommand(UCICommand.PositionWithMoves ("position fen " + startFen))
             let sw = Stopwatch.StartNew()
-            eng.SendUCICommand(UCICommand.GoNodes 1000)
+            eng.Analyse("position fen " + startFen, "go nodes 1000")
             if not (doneSignal.WaitOne 120000) then failwithf "%s: no Done" name
             sw.Elapsed)
     finally quitAnalysis eng
@@ -190,16 +194,6 @@ let private readyRoundTripTournament name trips runs =
             sw.Elapsed)
     finally stopTournament eng
 
-let private readyRoundTripAnalysis name trips runs =
-    let eng, _ = startAnalysis (config "" [])
-    try
-        measure name trips "round trips" 1 runs (fun () ->
-            let sw = Stopwatch.StartNew()
-            for _ in 1 .. trips do
-                if not (eng.WaitForReadyOk()) then failwith "readyok failed"
-            sw.Elapsed)
-    finally quitAnalysis eng
-
 let private bestmoveRoundTripTournament name trips runs =
     let eng = startTournament (config "" [ "FakeInfoCount", box 0 ])
     try
@@ -213,14 +207,15 @@ let private bestmoveRoundTripTournament name trips runs =
     finally stopTournament eng
 
 let private bestmoveRoundTripAnalysis name trips runs =
-    let eng, doneSignal = startAnalysis (config "" [ "FakeInfoCount", box 0 ])
+    let eng, _ = startAnalysis (config "" [ "FakeInfoCount", box 0 ])
     try
         measure name trips "round trips" 1 runs (fun () ->
             let sw = Stopwatch.StartNew()
+            // each search is isready + go + bestmove, as the analysis pages run it
             for _ in 1 .. trips do
-                eng.SendUCICommand(UCICommand.PositionWithMoves ("position fen " + startFen))
-                eng.SendUCICommand(UCICommand.GoNodes 1)
-                if not (doneSignal.WaitOne 10000) then failwith "no Done"
+                match eng.Search("position fen " + startFen, "go nodes 1") |> Async.RunSynchronously with
+                | Completed _ -> ()
+                | other -> failwithf "search ended %A" other
             sw.Elapsed)
     finally quitAnalysis eng
 
@@ -250,7 +245,6 @@ let run (args: string[]) =
           tournamentReadFlood "tournament read (20k lines)" 20000 10
           winboardReadFlood "winboard read (20k lines)" 20000 10
           readyRoundTripTournament "isready tournament (x200)" 200 5
-          readyRoundTripAnalysis "isready analysis (x200)" 200 5
           bestmoveRoundTripTournament "go->bestmove tournament (x200)" 200 5
           bestmoveRoundTripAnalysis "go->bestmove analysis (x200)" 200 5 ]
         |> List.map (fun r -> print r; r)

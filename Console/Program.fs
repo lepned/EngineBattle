@@ -2595,6 +2595,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  pvcombo <games.pgn>                     Material-imbalance report by material signature"
     printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
     printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
+    printfn "  anatest, at <engine> [options]           Check the analysis engine against a real engine"
     printfn "  piecevalues, pv, values <engine> [fen] [options]"
     printfn "                                          Contextual piece values via leave-one-out net eval"
     printfn "                                          (shares --fen/--moves/--nodes/--uci; defaults to nodes=1)"
@@ -2798,6 +2799,13 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
+                | Verb (AnaTest p) ->
+                    let config = resolveEngineConfig p.Engine p.UciOptions
+                    let code =
+                      AnalysisTest.run
+                        { Config = config; Nodes = p.Nodes; MoveTimeMs = p.MoveTimeMs; DelayMs = p.DelayMs; Rounds = p.Rounds
+                          Moves = defaultArg p.Moves AnalysisTest.defaultMoves }
+                    if code <> 0 then exit code
                 | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps, svgPath)) ->
                     runQuery fen square epd pv edits emitEpd epdOps svgPath
                 | Verb (PieceValues p) ->
