@@ -68,7 +68,7 @@ let ``a ponder hit and the end of the game come back through the agent`` () =
   match run (player.Think (request (Some "e2e4"))) with
   | Moved ("g1f3", _, _, _) -> ()
   | other -> failwithf "%A" other
-  run (player.EndGame ())
+  Assert.True(run (player.EndGame ()))   // the engine ended idle
   Assert.Contains("PonderHit", engine.Sent)
 
 [<Fact>]

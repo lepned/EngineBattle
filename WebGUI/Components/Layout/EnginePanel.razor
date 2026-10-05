@@ -375,7 +375,6 @@
     /// Keep the charts out of view - a display choice only; the data, the chart-lines slider
     /// and MultiPV are untouched, so showing them again later costs nothing but a resize.
     [Parameter] public bool HideCharts { get; set; }
-    private bool overlayDropdownOpen = false;
 
     private string text = "dump-info";
     private enum ChartView { N, Q, Convergence }
@@ -565,7 +564,6 @@
         selectedOverlaySetting = newSetting;
         OverlaySetting.SetOverlaySetting(Id, selectedOverlaySetting);
         await Notifier.UpdateDisplaySettings(newSetting, Id);
-        overlayDropdownOpen = false;
         StateHasChanged();
     }
 
