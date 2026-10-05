@@ -97,7 +97,7 @@
 .gr-center {
     display: flex;
     flex-direction: column;
-    gap: 30px;
+    gap: 12px;
 }
 
 .gr-right {
@@ -107,7 +107,8 @@
     overflow-y: auto;
 }
 
-/* Mirrors the board + move-list grid above it, so it must follow the same board size. */
+/* Mirrors the board + move-list grid above it, so it must follow the same board size;
+   the chart spans both. */
 .gr-below-board {
     display: grid;
     grid-template-columns: minmax(0, var(--mcb-board-size, 700px)) minmax(0, 280px);
@@ -116,8 +117,8 @@
     justify-content: start;
 }
 
-.gr-accuracy-card {
-    padding: 6px 10px !important;
+.gr-below-board .gr-chart {
+    grid-column: 1 / -1;
 }
 
 /* The card sizes to its content and does NOT scroll: the list inside it is the scroller.
@@ -138,36 +139,6 @@
 .gr-blunder { color: #F44336; }
 .gr-neutral { color: #999; }
 
-/* Game info (shown during analysis) */
-.gr-game-info {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 12px;
-    background: rgba(0,0,0,0.15);
-    border-radius: 6px;
-    margin-bottom: 6px;
-}
-
-.gr-game-info-players {
-    font-size: 1rem;
-    font-weight: 500;
-    color: #c1c1c4;
-}
-
-.gr-game-info-opening {
-    font-size: 0.82rem;
-    color: #999;
-    font-style: italic;
-}
-
-.gr-game-info-result {
-    font-size: 0.9rem;
-    color: #90CAF9;
-    font-weight: 500;
-}
-
 /* Detail chip (color-coded classification label) */
 .gr-detail-chip {
     font-size: 0.75rem;
@@ -181,9 +152,47 @@
 /* Chart */
 .gr-chart {
     width: 100%;
-    min-height: 210px;
-    max-height: 240px;
+    height: 200px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
 }
+
+/* The review summary: one row per player */
+.gr-players {
+    display: grid;
+    gap: 8px;
+}
+
+.gr-player {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.gr-player-name {
+    font-size: 0.88rem;
+    color: #c1c1c4;
+    overflow-wrap: anywhere;
+}
+
+.gr-player-score {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #90CAF9;
+    font-variant-numeric: tabular-nums;
+}
+
+.gr-side-dot {
+    justify-self: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.35);
+}
+
+.gr-side-dot.white { background: #e8e8e8; }
+.gr-side-dot.black { background: #2b2b2b; }
 
 /* Move Detail */
 /* Stats Cards */
@@ -199,39 +208,11 @@
     color: #c1c1c4;
 }
 
-.gr-engine-info {
-    text-align: center;
-    font-size: 0.85rem;
-    color: #90CAF9;
-    margin-bottom: 8px;
-    font-weight: 500;
-}
-
-.gr-engine-detail {
-    color: #888;
-    font-weight: normal;
-    margin-left: 6px;
-}
-
-.gr-accuracy-row {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    gap: 8px;
-}
-
-.gr-accuracy-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-}
-
 .gr-accuracy-circle {
     --pct: 0;
     --ring-color: #90caf9;
-    width: 52px;
-    height: 52px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     position: relative;
     display: flex;
@@ -251,17 +232,8 @@
 
 .gr-accuracy-value {
     position: relative;
-    font-size: 0.8rem;
+    font-size: 0.72rem;
     font-weight: bold;
-}
-
-.gr-accuracy-label {
-    font-size: 0.7rem;
-    color: #999;
-    max-width: 80px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* Tables */

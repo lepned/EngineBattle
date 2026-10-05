@@ -46,14 +46,15 @@ public class AccuracyPlot
             hoverTexts[i] = $"{m.MoveNumber}{(m.Color == "w" ? "." : "...")}{m.San} {m.Classification} ({m.MoveAccuracy:F0}%)";
         }
 
-        // Build x-axis tick labels
-        var tickVals = new int[moves.Length];
-        var tickTexts = new string[moves.Length];
-        for (int i = 0; i < moves.Length; i++)
-        {
-            tickVals[i] = i;
-            tickTexts[i] = $"{moves[i].MoveNumber}";
-        }
+        // x-axis ticks at move numbers, a step that keeps about a dozen of them whatever the length
+        var lastMove = moves.Length > 0 ? moves[^1].MoveNumber : 1;
+        var step = new[] { 1, 2, 5, 10, 20, 25, 50, 100 }.FirstOrDefault(s => lastMove / s <= 12, 200);
+        var ticks = moves
+            .Select((m, i) => (m, i))
+            .Where(t => t.m.MoveNumber % step == 0 && (t.i == 0 || moves[t.i - 1].MoveNumber != t.m.MoveNumber))
+            .ToArray();
+        var tickVals = ticks.Select(t => t.i).ToArray();
+        var tickTexts = ticks.Select(t => $"{t.m.MoveNumber}").ToArray();
 
         // Area trace (White's win probability)
         var areaTrace = new
@@ -111,21 +112,22 @@ public class AccuracyPlot
             title = new
             {
                 text = "Win Probability",
-                font = new { size = 20, color = _titleColor }
+                font = new { size = 14, color = _titleColor },
+                x = 0.01,
+                xanchor = "left"
             },
             paper_bgcolor = "rgba(0,0,0,0)",
             plot_bgcolor = "rgba(0,0,0,0)",
-            margin = new { l = 50, r = 15, b = 30, t = 50, pad = 2 },
+            margin = new { l = 50, r = 15, b = 30, t = 34, pad = 2 },
             xaxis = new
             {
                 tickfont = new { size = 12, color = _whiteColor },
                 showgrid = false,
                 zeroline = false,
                 color = _whiteColor,
-                // Show every 5th move number to avoid crowding
                 tickmode = "array",
-                tickvals = tickVals.Where((_, i) => i % 10 == 0 || i == moves.Length - 1).ToArray(),
-                ticktext = tickTexts.Where((_, i) => i % 10 == 0 || i == moves.Length - 1).ToArray()
+                tickvals = tickVals,
+                ticktext = tickTexts
             },
             yaxis = new
             {

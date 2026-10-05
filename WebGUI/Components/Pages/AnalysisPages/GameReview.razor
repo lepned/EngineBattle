@@ -127,67 +127,64 @@
                         DetectedOpeningName="@openingName"
                         DetectedOpeningECO="@openingECO" />
 
-            @if (analysisResult != null)
-            {
-                <div class="gr-below-board">
-                    <div>
-                        @if (GetCriticalMoves() is var criticalMoves && criticalMoves.Length > 0)
-                        {
-                            <div class="gr-stats-card gr-critical-card">
-                                <h4>Critical Moves (@criticalMoves.Length)</h4>
-                                <div class="gr-critical-list">
-                                    @foreach (var move in criticalMoves)
-                                    {
-                                        <div class="gr-critical-row"
-                                             @onclick="() => NavigateToPly(move.Ply)">
-                                            <span class="gr-detail-chip @GetMoveClass(move.Classification)">@GetBadge(move.Classification)</span>
-                                            <span class="gr-critical-move">@(move.Color == "w" ? $"{move.MoveNumber}." : $"{move.MoveNumber}...")@move.San</span>
-                                            @if (!string.IsNullOrEmpty(move.BestMoveSan) && move.BestMove != move.UciMove)
-                                            {
-                                                <span class="gr-critical-best">@move.BestMoveSan</span>
-                                            }
-                                            <span class="gr-critical-acc">@($"{move.MoveAccuracy:F0}%")</span>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
-                        }
-                    </div>
-                    <div class="gr-stats-card gr-accuracy-card">
-                        <div class="gr-accuracy-row">
-                            <div class="gr-accuracy-item">
-                                <div class="gr-accuracy-circle" style="--pct:@analysisResult.WhiteStats.Accuracy; --ring-color:#90caf9;">
-                                    <span class="gr-accuracy-value">@($"{analysisResult.WhiteStats.Accuracy:F1}")</span>
-                                </div>
-                                <div class="gr-accuracy-label">@DisplayPlayerName(analysisResult.WhitePlayer, "White")</div>
-                            </div>
-                            <div class="gr-accuracy-item">
-                                <div class="gr-accuracy-circle" style="--pct:@analysisResult.BlackStats.Accuracy; --ring-color:#616161;">
-                                    <span class="gr-accuracy-value">@($"{analysisResult.BlackStats.Accuracy:F1}")</span>
-                                </div>
-                                <div class="gr-accuracy-label">@DisplayPlayerName(analysisResult.BlackPlayer, "Black")</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            }
+            @* the chart spans board and move list; always rendered, Plotly draws into its ref *@
+            <div class="gr-below-board">
+                <div @ref="chartElement" class="gr-chart" style="@(analysisResult == null ? "display:none" : "")"></div>
+            </div>
         </div>
 
-        @* ── Right: Stats + Chart + Game List ── *@
+        @* ── Right: the review summary, stats and the game list ── *@
         <div class="gr-right">
             @if (currentGame != null)
             {
-                <div class="gr-game-info">
-                    <span class="gr-game-info-players">@DisplayPlayerName(currentGame.GameMetaData.White) vs @DisplayPlayerName(currentGame.GameMetaData.Black)</span>
-                    @if (!string.IsNullOrEmpty(openingName))
+                @* one row per player: accuracy ring (once reviewed), full name, score *@
+                <div class="gr-stats-card gr-players">
+                    @foreach (var white in new[] { true, false })
                     {
-                        <span class="gr-game-info-opening">@openingName</span>
+                        var name = analysisResult != null
+                            ? (white ? analysisResult.WhitePlayer : analysisResult.BlackPlayer)
+                            : (white ? currentGame.GameMetaData.White : currentGame.GameMetaData.Black);
+                        <div class="gr-player">
+                            @if (analysisResult != null)
+                            {
+                                var stats = white ? analysisResult.WhiteStats : analysisResult.BlackStats;
+                                <div class="gr-accuracy-circle" style="--pct:@stats.Accuracy; --ring-color:@(white ? "#90caf9" : "#9e9e9e");"
+                                     title="Accuracy">
+                                    <span class="gr-accuracy-value">@($"{stats.Accuracy:F1}")</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="gr-side-dot @(white ? "white" : "black")"></span>
+                            }
+                            <span class="gr-player-name">@Breakable(DisplayPlayerName(name, white ? "White" : "Black"))</span>
+                            <span class="gr-player-score">@ScoreOf(currentGame.GameMetaData.Result, white)</span>
+                        </div>
                     }
-                    <span class="gr-game-info-result">@currentGame.GameMetaData.Result</span>
                 </div>
             }
 
-            <div @ref="chartElement" class="gr-chart" style="@(analysisResult == null ? "display:none" : "")"></div>
+            @if (analysisResult != null && GetCriticalMoves() is var criticalMoves && criticalMoves.Length > 0)
+            {
+                <div class="gr-stats-card gr-critical-card">
+                    <h4>Critical Moves (@criticalMoves.Length)</h4>
+                    <div class="gr-critical-list">
+                        @foreach (var move in criticalMoves)
+                        {
+                            <div class="gr-critical-row"
+                                 @onclick="() => NavigateToPly(move.Ply)">
+                                <span class="gr-detail-chip @GetMoveClass(move.Classification)">@GetBadge(move.Classification)</span>
+                                <span class="gr-critical-move">@(move.Color == "w" ? $"{move.MoveNumber}." : $"{move.MoveNumber}...")@move.San</span>
+                                @if (!string.IsNullOrEmpty(move.BestMoveSan) && move.BestMove != move.UciMove)
+                                {
+                                    <span class="gr-critical-best">@move.BestMoveSan</span>
+                                }
+                                <span class="gr-critical-acc">@($"{move.MoveAccuracy:F0}%")</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
 
             @if (analysisResult != null)
             {
@@ -554,6 +551,15 @@
                 ? board.MovesAndFenPlayed[board.MovesAndFenPlayed.Count - 1]
                 : MoveAndFen.FirstEntry);
         }
+
+        // a game reviewed before brings its chart back; the previous game's must not stay
+        if (analysisResult != null && analysisResult.Moves.Length > 0 && chessModule != null)
+        {
+            accuracyPlot = new AccuracyPlot(chessModule, chartElement);
+            await accuracyPlot.RenderAsync(analysisResult);
+            await chessModule.InvokeVoidAsync("triggerResizeEvent");
+        }
+        else accuracyPlot = null;
 
         StateHasChanged();
     }
@@ -1238,6 +1244,18 @@
         if (cls.IsForced) return "Forced";
         return "";
     }
+
+    /// A name that may wrap after its underscores (engine and net names) rather than mid-word.
+    private static string Breakable(string name) => name.Replace("_", "_\u200B");
+
+    /// A side's score from the result tag: 1, 0, ½, or a dash while the game is unfinished.
+    private static string ScoreOf(string result, bool white) => result switch
+    {
+        "1-0" => white ? "1" : "0",
+        "0-1" => white ? "0" : "1",
+        "1/2-1/2" => "½",
+        _ => "–"
+    };
 
     private static string DisplayPlayerName(string name, string fallback = "")
     {
