@@ -22,6 +22,8 @@ type Params =
     MoveTimeMs: int option
     /// Pause between navigation requests (ms).
     DelayMs: int
+    /// Pause between go and stop in "stop right after go" (ms); 0 tests the race itself.
+    StopDelayMs: int
     Rounds: int
     Moves: string list
     /// Groups to run; empty = all.
@@ -191,6 +193,7 @@ type private Ctx =
     Configured: Dictionary<string, string>
     Searched: ResizeArray<Searched>
     Limited: string
+    StopDelayMs: int
     /// Why the engine can no longer be checked; the rest is skipped.
     mutable Stuck: string option
     mutable LastFailed: string }
@@ -440,7 +443,9 @@ let private stopGroup (c: Ctx) =
         let legal = boardAfter startFen [ "d2d4"; "g8f6"; "c2c4" ] |> Option.map (fun b -> isLegal b (bestMoveOf line)) |> Option.defaultValue true
         if not legal then failed c "stop" (sprintf "bestmove %s is not legal" (bestMoveOf line))
         else c.Report.Add (byTime ms 1000L 5000L) "stop" (sprintf "bestmove %d ms after stop" ms)
-  // stop sent right behind go: the engine must still answer
+  // stop sent right behind go: the engine must still answer; --stop-delay puts a pause between
+  // them, and the check's name says so
+  let name = if c.StopDelayMs > 0 then sprintf "stop %d ms after go" c.StopDelayMs else "stop right after go"
   let rounds = 20
   let mutable answered = 0
   let mutable worst = 0L
@@ -449,6 +454,7 @@ let private stopGroup (c: Ctx) =
     c.S.Drain()
     c.S.Send pos
     c.S.Send "go infinite"
+    if c.StopDelayMs > 0 then Thread.Sleep c.StopDelayMs
     c.S.Send "stop"
     let _, best, ms = c.S.Until(isBestMove, 5000)
     match best with
@@ -457,9 +463,9 @@ let private stopGroup (c: Ctx) =
         worst <- max worst ms
         i <- i + 1
     | None -> i <- rounds
-  if answered = rounds then c.Report.Add Pass "stop right after go" (sprintf "%d of %d answered, slowest %d ms" answered rounds worst)
+  if answered = rounds then c.Report.Add Pass name (sprintf "%d of %d answered, slowest %d ms" answered rounds worst)
   else
-    failed c "stop right after go" (sprintf "round %d: no bestmove within 5 s%s" (answered + 1) (if c.S.Exited then sprintf " - the engine exited (code %s)" c.S.ExitCode else ""))
+    failed c name (sprintf "round %d: no bestmove within 5 s%s" (answered + 1) (if c.S.Exited then sprintf " - the engine exited (code %s)" c.S.ExitCode else ""))
     recover c
 
 /// go ponder, then ponderhit or stop.
@@ -681,6 +687,7 @@ let run (p: Params) : int =
         Configured = Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         Searched = ResizeArray()
         Limited = match p.MoveTimeMs with Some ms -> sprintf "go movetime %d" ms | None -> sprintf "go nodes %d" p.Nodes
+        StopDelayMs = p.StopDelayMs
         Stuck = None; LastFailed = "" }
     if not (s.Start()) then report.Add Fail "start" (sprintf "%s could not be started" p.Config.Path)
     else

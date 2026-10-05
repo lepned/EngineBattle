@@ -2568,7 +2568,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  enginecheck, ec <engine> [options]      Check that an engine follows the UCI protocol and behaves in"
     printfn "                                          the analysis pages; --only <groups> (startup,options,positions,"
     printfn "                                          limits,info,stop,ponder,edge,quit,analysis), --nodes N |"
-    printfn "                                          --movetime MS, --rounds R, --delay MS, --moves, --uci K V"
+    printfn "                                          --movetime MS, --rounds R, --delay MS, --stop-delay MS,"
+    printfn "                                          --moves, --uci K V"
     printfn ""
     printfn "Analyze options:"
     printfn "  --fen S        Set position (quoted FEN string)"
@@ -2754,7 +2755,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         exit 1
                     let code =
                       EngineCheck.run
-                        { Config = config; Nodes = p.Nodes; MoveTimeMs = p.MoveTimeMs; DelayMs = p.DelayMs; Rounds = p.Rounds
+                        { Config = config; Nodes = p.Nodes; MoveTimeMs = p.MoveTimeMs; DelayMs = p.DelayMs; StopDelayMs = p.StopDelayMs; Rounds = p.Rounds
                           Moves = defaultArg p.Moves EngineCheck.defaultMoves; Only = p.Only }
                     if code <> 0 then exit code
                 | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps, svgPath)) ->

@@ -603,7 +603,7 @@ Checks that a UCI engine follows the protocol, and that it behaves in EngineBatt
 
 **Syntax:**
 ```bash
-dotnet run -c Release -- enginecheck <engine> [--only <groups>] [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
+dotnet run -c Release -- enginecheck <engine> [--only <groups>] [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--stop-delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
 ```
 
 **Groups** (all by default; `--only startup,stop,ponder` picks some - `startup` runs with any UCI group, since the others need it; an unknown name is refused):
@@ -620,7 +620,7 @@ dotnet run -c Release -- enginecheck <engine> [--only <groups>] [--nodes N] [--m
 
 Once the engine stops answering, the rest is skipped with the reason, and its last stderr lines are printed (a crash usually says why there).
 
-**Options:** `--nodes` (default 2000) or `--movetime` for the searches; `--delay` between navigation requests (default 30 ms); `--moves` replaces the built-in 30-ply game of the analysis group. A Winboard engine gets only the `analysis` group (use `--movetime`: CECP has no node limit).
+**Options:** `--nodes` (default 2000) or `--movetime` for the searches; `--delay` between navigation requests (default 30 ms); `--stop-delay` between `go` and `stop` in the "stop right after go" check (default 0, the race itself; with a pause the check reports as "stop N ms after go"); `--moves` replaces the built-in 30-ply game of the analysis group. A Winboard engine gets only the `analysis` group (use `--movetime`: CECP has no node limit).
 
 ---
 
