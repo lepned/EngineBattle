@@ -70,12 +70,12 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
   let isCeres = EngineProcess.pathMentions "ceres" config
   let debugOn () = logger.IsEnabled LogLevel.Debug
 
-  let ioLog =
+  let ioLogPath, ioLog =
     if defaultArg logToFile false then
       let path, log = EngineProcess.IoLog.Open name
       logger.LogInformation $"Engine I/O logging to: {path}"
-      Some log
-    else None
+      path, Some log
+    else "", None
   let logIO (direction: string) (text: string) = ioLog |> Option.iter (fun log -> log.Write(direction, text))
 
   // the searched position, for SAN; written and read on the agent thread, read by
@@ -528,6 +528,8 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     printfn "Engine %s has been shut down." name
 
   member _.EchoEngineText with get () = echoEngineText and set v = echoEngineText <- v
+  /// The file the engine's commands and answers are written to; "" when none is.
+  member _.IoLogPath = ioLogPath
   member _.SetSearchMoves(moves: string list) = searchMoves <- moves
   member _.ClearSearchMoves() = searchMoves <- []
   member _.SearchMoves = searchMoves

@@ -45,8 +45,15 @@ type private Verdict = Pass | Warn | Fail | Skip
 
 type private Report() =
   let results = ResizeArray<Verdict>()
-  member _.Add (verdict: Verdict) (name: string) (detail: string) =
+  // every verdict with its group, for the summary at the end
+  let entries = ResizeArray<Verdict * string * string * string>()
+  /// The group the checks belong to.
+  member val Group = "startup" with get, set
+  /// After a FAIL line: what led to it (the session's last commands, or where the I/O log is).
+  member val OnFail : unit -> unit = ignore with get, set
+  member this.Add (verdict: Verdict) (name: string) (detail: string) =
     results.Add verdict
+    entries.Add((verdict, this.Group, name, detail))
     let text, color =
       match verdict with
       | Pass -> "PASS", ConsoleColor.Green
@@ -59,9 +66,14 @@ type private Report() =
     Console.Write text
     Console.ForegroundColor <- old
     printfn "  %-26s %s" name detail
+    if verdict = Fail then (try this.OnFail () with _ -> ())
   member _.Count v = results |> Seq.filter ((=) v) |> Seq.length
+  member _.Entries = entries.ToArray()
 
 let private header (name: string) = printfn "\n%s" name
+
+/// One transcript line on one console line.
+let private cut (line: string) = if line.Length > 150 then line.Substring(0, 147) + "..." else line
 
 /// Pass within `good` ms, Warn within `bad`, else Fail.
 let private byTime (ms: int64) (good: int64) (bad: int64) =
@@ -114,6 +126,49 @@ let private isBestMove (line: string) = line.StartsWith("bestmove", StringCompar
 let private isReadyOk (line: string) = line.Trim() = "readyok"
 let private bestMoveOf (line: string) = field "bestmove" line |> Option.defaultValue ""
 
+/// Entries (ms, ">> command" / "<< answer") from the last `commands` sent on, each with its time
+/// from the first; a run of info lines is one line.
+let private transcriptLines (commands: int) (entries: struct (int64 * string)[]) =
+  let sends = entries |> Array.mapi (fun i (struct (_, t)) -> i, t) |> Array.filter (fun (_, t) -> t.StartsWith ">>") |> Array.map fst
+  let from = if sends.Length = 0 then max 0 (entries.Length - 20) else sends.[max 0 (sends.Length - commands)]
+  let tail = entries.[from ..]
+  if tail.Length = 0 then [] else
+  let struct (t0, _) = tail.[0]
+  let isInfo (t: string) = t.StartsWith "<< info"
+  let infoRun n (last: string) =
+    if n = 1 then last else sprintf "           << (%d info lines, the last:) %s" n (last.Substring(last.IndexOf("<< ") + 3))
+  [ let mutable infos = 0
+    let mutable lastInfo = ""
+    for struct (ms, text) in tail do
+      if isInfo text then
+        infos <- infos + 1
+        lastInfo <- sprintf "%6d ms  %s" (ms - t0) text
+      else
+        if infos > 0 then yield infoRun infos lastInfo
+        infos <- 0
+        yield sprintf "%6d ms  %s" (ms - t0) text
+    if infos > 0 then yield infoRun infos lastInfo ]
+
+/// The analysis engine's I/O log ("[HH:mm:ss.fff] >>> command" / "<<< answer") as transcript entries.
+let private ioLogEntries (path: string) =
+  try
+    use stream = new IO.FileStream(path, IO.FileMode.Open, IO.FileAccess.Read, IO.FileShare.ReadWrite)
+    use reader = new IO.StreamReader(stream)
+    let lines = reader.ReadToEnd().Split('\n')
+    [| for line in lines do
+         let line = line.TrimEnd('\r')
+         if line.Length > 19 && line.[0] = '[' && line.[13] = ']' then
+           match TimeSpan.TryParse(line.Substring(1, 12)) with
+           | true, at ->
+               let rest = line.Substring 15
+               let text =
+                 if rest.StartsWith ">>> " then ">> " + rest.Substring 4
+                 elif rest.StartsWith "<<< " then "<< " + rest.Substring 4
+                 else ""
+               if text <> "" then yield struct (int64 at.TotalMilliseconds, text)
+           | _ -> () |]
+  with _ -> [||]
+
 // ── A raw UCI session ──────────────────────────────────────────────────────────────────────────
 
 type private Session(config: EngineConfig) =
@@ -121,6 +176,12 @@ type private Session(config: EngineConfig) =
   let stderr = ConcurrentQueue<string>()
   let isLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
   let proc = new Process()
+  // the last commands and answers, with their time, for a failed check
+  let clock = Stopwatch.StartNew()
+  let transcript = ConcurrentQueue<struct (int64 * string)>()
+  let note (text: string) =
+    transcript.Enqueue(struct (clock.ElapsedMilliseconds, text))
+    while transcript.Count > 400 do transcript.TryDequeue() |> ignore
 
   /// Started in the engine's own folder with its arguments, as EngineBattle starts it.
   member _.Start() =
@@ -133,7 +194,13 @@ type private Session(config: EngineConfig) =
       proc.StartInfo.RedirectStandardOutput <- true
       proc.StartInfo.RedirectStandardError <- true
       proc.StartInfo.CreateNoWindow <- true
-      proc.OutputDataReceived.Add(fun a -> if isNull a.Data then lines.Writer.TryComplete() |> ignore else lines.Writer.TryWrite a.Data |> ignore)
+      proc.OutputDataReceived.Add(fun a ->
+        if isNull a.Data then
+          note "<< (output closed)"
+          lines.Writer.TryComplete() |> ignore
+        else
+          note ("<< " + a.Data)
+          lines.Writer.TryWrite a.Data |> ignore)
       proc.ErrorDataReceived.Add(fun a ->
         if not (String.IsNullOrEmpty a.Data) then
           stderr.Enqueue a.Data
@@ -147,7 +214,13 @@ type private Session(config: EngineConfig) =
       else false
     with _ -> false
 
-  member _.Send(command: string) = try proc.StandardInput.WriteLine command with _ -> ()
+  member _.Send(command: string) =
+    note (">> " + command)
+    try proc.StandardInput.WriteLine command with _ -> ()
+
+  /// From the last `commands` sent on: each line with its time, a run of info lines as one.
+  member _.Transcript(commands: int) = transcriptLines commands (transcript.ToArray())
+
   member _.Exited = try proc.HasExited with _ -> true
   member _.ExitCode = try (if proc.HasExited then string proc.ExitCode else "?") with _ -> "?"
   member _.Stderr = stderr.ToArray()
@@ -186,7 +259,8 @@ type private Session(config: EngineConfig) =
 type private Searched = { Name: string; Fen: string; Infos: string list }
 
 type private Ctx =
-  { S: Session
+  { mutable S: Session
+    Config: EngineConfig
     Report: Report
     Options: Dictionary<string, UciOption.UciOption>
     /// Options the config sets (network, device...), with their values: left alone.
@@ -580,6 +654,17 @@ let private analysisGroup (p: Params) (report: Report) =
   match (try Ok (EngineHelper.createAnalysisEngine ((fun u -> callback u.Update), p.Config, NullLogger.Instance, false)) with ex -> Error ex.Message) with
   | Error message -> report.Add Fail "start" message
   | Ok engine ->
+      // what led to a failure: the tail of the I/O log the analysis engine writes, the path once
+      let logShown = ref false
+      report.OnFail <- fun () ->
+        if engine.IoLogPath <> "" then
+          let lines = transcriptLines 6 (ioLogEntries engine.IoLogPath)
+          if not lines.IsEmpty then
+            printfn "        what was sent and answered before it:"
+            for line in lines do printfn "        %s" (cut line)
+          if not logShown.Value then
+            printfn "        full log: %s" engine.IoLogPath
+            logShown.Value <- true
       let positions = prefixes p.Moves
       let limited = match p.MoveTimeMs with Some ms -> sprintf "go movetime %d" ms | None -> sprintf "go nodes %d" p.Nodes
       let await (a: Async<AnalysisOutcome>) = Async.RunSynchronously(a, 120000)
@@ -589,7 +674,15 @@ let private analysisGroup (p: Params) (report: Report) =
         items
       let bestMovesOf items = items |> Array.choose (function BestMove b -> Some b | _ -> None)
       let stoppedOf items = items |> Array.filter (function SearchStopped _ -> true | _ -> false) |> Array.length
-      let check name ok detail = report.Add (if ok then Pass else Fail) name detail
+      // once the engine has failed, the checks after it are skipped, not run against a dead engine
+      let stuckAt : string option ref = ref None
+      let skipped name = report.Add Skip name (sprintf "the engine stopped answering at '%s'" stuckAt.Value.Value)
+      let check name ok detail =
+        match stuckAt.Value with
+        | Some _ -> skipped name
+        | None ->
+            report.Add (if ok then Pass else Fail) name detail
+            if failed.Value <> "" then stuckAt.Value <- Some name
       try
         try
           take () |> ignore
@@ -630,7 +723,8 @@ let private analysisGroup (p: Params) (report: Report) =
           // MultiPV changed during an infinite search reruns it
           let isWinboard = WinboardIntegration.isWinboardEngine p.Config
           let cmd, fen = positions.[positions.Length / 2]
-          if not (engine.GetUCICommands().ContainsKey "MultiPV") then
+          if stuckAt.Value.IsSome then skipped "options"
+          elif not (engine.GetUCICommands().ContainsKey "MultiPV") then
             report.Add Skip "options" "the engine has no MultiPV option"
           else
             engine.Analyse(cmd, "go infinite") |> ignore
@@ -646,24 +740,46 @@ let private analysisGroup (p: Params) (report: Report) =
             take () |> ignore
 
           // an infinite search stopped still answers with its bestmove
-          let running = engine.Search(fst positions.[0], "go infinite")
-          Thread.Sleep 500
-          engine.Stop()
-          // Winboard's stop in analysis is exit, which prints no move
-          let ok =
-            match await running with
-            | Completed (Some _) -> true
-            | Superseded -> isWinboard
-            | _ -> false
-          check "stop" ok (if isWinboard then "analyze, then exit: the search ends without a move" else "go infinite, then stop: the bestmove arrives")
+          if stuckAt.Value.IsSome then skipped "stop"
+          else
+            let running = engine.Search(fst positions.[0], "go infinite")
+            Thread.Sleep 500
+            engine.Stop()
+            // Winboard's stop in analysis is exit, which prints no move
+            let ok =
+              match await running with
+              | Completed (Some _) -> true
+              | Superseded -> isWinboard
+              | _ -> false
+            check "stop" ok (if isWinboard then "analyze, then exit: the search ends without a move" else "go infinite, then stop: the bestmove arrives")
 
           if failed.Value <> "" then
-            check "engine" false ("EngineFailed: " + failed.Value)
-            printfn "  exit code %s" (match engine.LastExitCode with Some c -> string c | None -> "unknown")
+            // a failure no check caught is one of its own; either way, why the engine went
+            if stuckAt.Value.IsNone then check "engine" false ("EngineFailed: " + failed.Value)
+            printfn "\n  the engine failed: %s; exit code %s" failed.Value (match engine.LastExitCode with Some c -> string c | None -> "unknown")
             for line in engine.ErrorOutput |> Seq.truncate 40 do printfn "  stderr: %s" line
-        with ex -> check "error" false ex.Message
+        with ex -> report.Add Fail "error" ex.Message
       finally
         engine.Quit()
+
+/// A new process for an engine that stopped answering, through the start-up handshake (not checked
+/// again): the groups after a failure still run.
+let private restart (c: Ctx) =
+  c.S.Kill()
+  let s = Session(c.Config)
+  c.S <- s
+  c.Stuck <- None
+  c.LastFailed <- ""
+  s.Start()
+  && (s.Send "uci"
+      let _, uciok, _ = s.Until((fun l -> l.Trim() = "uciok"), 10000)
+      uciok.IsSome)
+  && (for cmd in EngineHelper.createInitialUCICommands c.Config do s.Send cmd
+      s.Send "ucinewgame"
+      s.Send "isready"
+      // a network load (a TensorRT build) can take minutes
+      let _, ready, _ = s.Until(isReadyOk, 600000)
+      ready.IsSome)
 
 // ── Run ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -675,52 +791,98 @@ let run (p: Params) : int =
   else
   let report = Report()
   let want g = p.Only.IsEmpty || List.contains g p.Only
+  // restarts of an engine that stopped answering, each with why; a few, then the rest is skipped
+  let restarts = ResizeArray<string>()
+  let maxRestarts = 3
   let isWinboard = WinboardIntegration.isWinboardEngine p.Config
   printfn "Checking %s (%s)" p.Config.Name p.Config.Path
   if isWinboard then
     printfn "A Winboard engine: the UCI groups do not apply%s." (if want "analysis" then "; only the analysis group runs" else "")
   else if groups |> List.exists (fun g -> g <> "analysis" && want g) then
-    let s = Session(p.Config)
     let c =
-      { S = s; Report = report
+      { S = Session(p.Config); Config = p.Config; Report = report
         Options = Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)
         Configured = Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         Searched = ResizeArray()
         Limited = match p.MoveTimeMs with Some ms -> sprintf "go movetime %d" ms | None -> sprintf "go nodes %d" p.Nodes
         StopDelayMs = p.StopDelayMs
         Stuck = None; LastFailed = "" }
-    if not (s.Start()) then report.Add Fail "start" (sprintf "%s could not be started" p.Config.Path)
+    // the session in use: a restart replaces it
+    report.OnFail <- fun () ->
+      printfn "        what was sent and answered before it:"
+      for line in c.S.Transcript 6 do printfn "        %s" (cut line)
+    if not (c.S.Start()) then report.Add Fail "start" (sprintf "%s could not be started" p.Config.Path)
     else
       try
         try
           if startup c p.Config then
-            // a group runs only on an engine that still answers
-            let mutable usable = true
+            // a group runs on an engine that answers: one that stopped is restarted (a few times),
+            // so a failure early on does not hide the groups after it
+            let usable = ref true
             let step name (group: Ctx -> unit) =
-              if usable && want name then
-                if c.Stuck.IsNone && (s.Exited || not (s.Resync 10000)) then
-                  c.Stuck <- Some (sprintf "the engine stopped answering before '%s'%s" name (if s.Exited then sprintf " (exited, code %s)" s.ExitCode else ""))
-                  failed c "engine" c.Stuck.Value
+              report.Group <- name
+              if want name then
+                if usable.Value && c.Stuck.IsNone && (c.S.Exited || not (c.S.Resync 10000)) then
+                  let reason = sprintf "the engine stopped answering before '%s'%s" name (if c.S.Exited then sprintf " (exited, code %s)" c.S.ExitCode else "")
+                  // a FAIL first: once Stuck is set, failed records a SKIP
+                  failed c "engine" reason
+                  c.Stuck <- Some reason
                 match c.Stuck with
+                | Some reason when usable.Value && restarts.Count < maxRestarts ->
+                    printfn "\n  %s - the engine is restarted for '%s'" reason name
+                    for line in c.S.Stderr |> Seq.truncate 20 do printfn "  stderr: %s" line
+                    restarts.Add(sprintf "before '%s': %s" name reason)
+                    if restart c then group c
+                    else
+                      usable.Value <- false
+                      c.Stuck <- Some "the engine did not start again"
+                      report.Add Skip "(the whole group)" c.Stuck.Value
                 | Some reason ->
-                    usable <- false
-                    printfn "\n  %s - the remaining groups are skipped" reason
+                    if usable.Value then printfn "\n  %s - the remaining groups are skipped" reason
+                    usable.Value <- false
+                    // recorded, so the summary says which groups never ran
+                    report.Add Skip "(the whole group)" reason
                 | None -> group c
             step "options" optionsGroup
             step "positions" positionsGroup
             step "limits" limitsGroup
-            if want "info" then infoGroup c
+            if want "info" then
+              report.Group <- "info"
+              infoGroup c
             step "stop" stopGroup
             step "ponder" ponderGroup
             step "edge" edgeGroup
-            if want "quit" then quitGroup c
+            step "quit" quitGroup
             if c.Stuck.IsSome then
-              for line in s.Stderr |> Seq.truncate 20 do printfn "  stderr: %s" line
+              for line in c.S.Stderr |> Seq.truncate 20 do printfn "  stderr: %s" line
         with ex -> report.Add Fail "error" ex.Message
       finally
-        if not s.Exited then s.Kill()
-  if want "analysis" then analysisGroup p report
+        if not c.S.Exited then c.S.Kill()
+  if want "analysis" then
+    report.Group <- "analysis"
+    analysisGroup p report
   let fails, warns, passes, skips = report.Count Fail, report.Count Warn, report.Count Pass, report.Count Skip
+  // what went wrong, together: a failure in an early group has scrolled away by now
+  let entries = report.Entries
+  let notable = entries |> Array.filter (fun (v, _, _, _) -> v = Fail || v = Warn)
+  // per reason, what it skipped: a group for a group not run, group/check for a check
+  let skipReasons =
+    entries
+    |> Array.choose (fun (v, g, n, d) -> if v = Skip then Some (d, (if n = "(the whole group)" then g else g + "/" + n)) else None)
+    |> Array.groupBy fst
+    |> Array.map (fun (reason, items) -> reason, items |> Array.map snd)
+  if notable.Length > 0 || skipReasons.Length > 0 || restarts.Count > 0 then
+    printfn "\nSummary"
+    for verdict, group, name, detail in notable do
+      let old = Console.ForegroundColor
+      Console.Write "  "
+      Console.ForegroundColor <- (if verdict = Fail then ConsoleColor.Red else ConsoleColor.Yellow)
+      Console.Write(if verdict = Fail then "FAIL" else "WARN")
+      Console.ForegroundColor <- old
+      printfn "  %-10s %-26s %s" group name (cut detail)
+    for why in restarts do printfn "  RESTARTED %s" (cut why)
+    for reason, what in skipReasons do
+      printfn "  SKIP  %s: %s" (String.Join(", ", what)) (cut reason)
   printfn "\n%s: %d passed, %d warnings, %d failed, %d skipped" p.Config.Name passes warns fails skips
   if passes + warns + fails = 0 then
     printfn "No check ran."

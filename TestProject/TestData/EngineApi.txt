@@ -96,6 +96,7 @@ type ChessLibrary.AnalysisEngine
   prop ErrorOutput : System.Collections.Generic.IEnumerable<System.String> { get }
   prop FullName : System.String { get }
   prop HasExited : System.Boolean { get }
+  prop IoLogPath : System.String { get }
   prop IsLc0 : System.Boolean { get }
   prop LastExitCode : Microsoft.FSharp.Core.FSharpOption<System.Int32> { get }
   prop Name : System.String { get }
