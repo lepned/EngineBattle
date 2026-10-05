@@ -8,6 +8,7 @@
 @using System.Globalization
 @using static ChessLibrary.EngineTypes
 @using static ChessLibrary.TypesDef.CoreTypes
+@using Microsoft.FSharp.Core
 
 @inject IJSRuntime JS
 @inject JavaScriptInteropService JsInteropService
@@ -437,7 +438,7 @@
     // MultiPV actually sent to the engine (the charts and the cp chart have separate inputs).
     public int ActiveMultiPv => ActiveChartLines;
     private bool waitingForEngine => model.Engine.IsStarting;
-    private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
+    private ChessLibrary.AnalysisEngine analyzer;
     private List<NNValues> NNInfoList = new();
     public List<string> InfoLineList = new();
     HotKeysContext keyContext;
@@ -593,7 +594,7 @@
 
         var parameters = new DialogParameters{
             {"FontSize",  fontSize },
-            {"Engine", analyzer.Engine }};
+            {"Engine", analyzer }};
 
         var header = $"Current settings for {Engine.Name}";
         dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>(header, parameters, options);
@@ -604,7 +605,7 @@
     private void DumpEngineStats()
     {
         var command = text;
-        analyzer?.DumpStats(command);
+        analyzer?.Raw(command);
     }
 
     private async Task CopyPVToClipboard()
@@ -807,7 +808,7 @@
     {
         get
         {
-            var id = analyzer?.Engine?.UciIdName;
+            var id = analyzer?.UciIdName;
             return string.IsNullOrWhiteSpace(id) ? (Engine?.Name ?? "") : id;
         }
     }
@@ -914,7 +915,7 @@
         }
         logger.LogInformation("New Network loaded {Network}", neuralNet);
 
-        var engineToCheck = analyzer?.Engine;
+        var engineToCheck = analyzer;
         if (engineToCheck == null)
         {
             logger.LogWarning("No engine loaded, cannot set weights file");
@@ -922,7 +923,7 @@
         }
         logger.LogInformation("Engine loaded, setting weights file");
         var option = EngineOption.Create("WeightsFile", filePath);
-        analyzer?.AddSetoption(option);
+        analyzer?.SetOption(option);
     }
 
     private async Task BrowseEngineFile()
@@ -1018,7 +1019,7 @@
         foreach (var option in ExtraSetOptions)
         {
             ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, $"  setoption name {option.Name} value {option.Value}");
-            analyzer.AddSetoption(option);
+            analyzer.SetOption(option);
         }
         if (!engineJustStarted)
         {
@@ -1050,8 +1051,8 @@
         engineNameInUse = config?.Name;
         try
         {
-            Action<SearchUpdate> onUpdate = u => Dispatch(u.Update, u.Fen, u.SearchId, generation);
-            var newAnalyzer = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, onUpdate, false));
+            var onUpdate = FuncConvert.FromAction<SearchUpdate>(u => Dispatch(u.Update, u.Fen, u.SearchId, generation));
+            var newAnalyzer = await Task.Run(() => EngineHelper.createAnalysisEngine(onUpdate, config, logger, false));
             if (disposeCts.IsCancellationRequested || generation != engineGeneration)
             {
                 EngineQuit.OffThread(newAnalyzer, logger);
@@ -1066,7 +1067,7 @@
             ApplyExtraSetOptions(engineJustStarted: true);
             if (OnEngineStarted.HasDelegate)
             {
-                IReadOnlyCollection<string> names = newAnalyzer.Engine.GetUCICommands().Keys.ToList();
+                IReadOnlyCollection<string> names = newAnalyzer.GetUCICommands().Keys.ToList();
                 await OnEngineStarted.InvokeAsync(names);
             }
         }
@@ -1110,7 +1111,7 @@
     {
         if (Engine == null || chessModule == null)
             return;
-        if (analyzer != null && analyzer.Engine.HasExited)
+        if (analyzer != null && analyzer.HasExited)
             await ReplaceAnalyzer();
         if (searchInfoPlot == null)
         {
@@ -1221,7 +1222,7 @@
                 else StopSearchTimer();
                 break;
             case PanelModel.Effect.SetMultiPv multiPv:
-                analyzer?.AddSetoption(EngineOption.Create("MultiPV", multiPv.Item.ToString()));
+                analyzer?.SetOption(EngineOption.Create("MultiPV", multiPv.Item.ToString()));
                 break;
             case PanelModel.Effect.PublishEval eval:
                 await PublishEval(eval.cp, eval.mate);
@@ -1238,7 +1239,7 @@
             default:
                 if (effect.IsStartEngine) await StartEngineNow();
                 else if (effect.IsStopEngine) analyzer?.Stop();
-                else if (effect.IsResetEngine) { analyzer?.Reset(); analyzer?.ClearSearchMoves(); }
+                else if (effect.IsResetEngine) { analyzer?.Stop(); analyzer?.NewGame(); analyzer?.ClearSearchMoves(); }
                 else if (effect.IsQuitEngine) DropAnalyzer();
                 else if (effect.IsClearLists) ClearLists();
                 else if (effect.IsClearCharts) await ClearCharts();
@@ -1266,11 +1267,11 @@
             await Send(PanelModel.Event.EngineGone);
             return;
         }
-        backend = analyzer.BackendInfo();
-        neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
+        backend = analyzer.GetBackEnd();
+        neuralNet = showCharts ? $"{analyzer.Network}" : "none";
         if (searchInfoPlot != null)
         {
-            searchInfoPlot.EngineName = analyzer.GetEngineName();
+            searchInfoPlot.EngineName = analyzer.Name;
             searchInfoPlot.NN = neuralNet;
         }
         await Send(PanelModel.Event.EngineReady);
@@ -1285,9 +1286,9 @@
         analyzer.SetSearchMoves(moves);
         int id = limit switch
         {
-            PanelModel.Limit.Nodes n => analyzer.SearchNodes(n.Item),
-            PanelModel.Limit.MoveTime t => analyzer.SearchTime(t.ms),
-            _ => analyzer.GoInfinite()
+            PanelModel.Limit.Nodes n => analyzer.AnalyseBoard(ChessBoard, $"go nodes {n.Item}"),
+            PanelModel.Limit.MoveTime t => analyzer.AnalyseBoard(ChessBoard, $"go movetime {t.ms}"),
+            _ => analyzer.AnalyseBoard(ChessBoard, "go infinite")
         };
         await Send(PanelModel.Event.NewStarted(id));
     }
@@ -1504,19 +1505,18 @@
     {
         var rankType = q ? "Q" : "Policy";
         if (!showCharts) { logger.LogWarning("{RankType} rank analysis requires a neural network engine with LogLiveStats", rankType); return; }
+        AnalysisHelper.RankEngine rankEngine = null;
         try
         {
             StateHasChanged();
-            if (analyzer == null)
-            {
-                logger.LogInformation("No engine loaded");
-                await StartAnalyzer();
-            }
-            if (analyzer == null) return;
+            if (Engine == null) { logger.LogInformation("No engine loaded"); return; }
+            await Task.Yield();
             var (min, max) = PolicyFilter();
+            // its own engine, which plays each position out; the panel's engine is not needed
+            rankEngine = new AnalysisHelper.RankEngine(Engine, logger);
             Tuple<string, List<PolicyRankInfo>, int> Ranks(string player) =>
-                q ? analyzer.TryGetMoveQAndTopForPosSequence(player, min, max)
-                  : analyzer.TryGetMovePolicyAndTopForPosSequence(player, min, max);
+                q ? rankEngine.QRanks(ChessBoard, player, min, max)
+                  : rankEngine.PolicyRanks(ChessBoard, player, min, max);
 
             var results = new List<PolicyRankInfo>();
             var outsideFilter = 0;
@@ -1550,7 +1550,6 @@
                         item.IsWhite ? "White" : "Black", item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
                 _ = searchInfoPlot?.SetRankSequence(res, net, rankType: rankType, isVisible: !showNPlot);
             }
-            analyzer.StopDistributionEngine();
             logger.LogInformation("{RankType} rank: {Analysed} moves analysed, {Ranked} ranked, {Outside} outside the |Q| filter {Min:F2}-{Max:F2} (Settings)",
                 rankType, results.Count + outsideFilter, results.Count, outsideFilter, min, max);
             ShowRankDistribution(results, net, rankType);
@@ -1558,6 +1557,10 @@
         catch (Exception ex)
         {
             logger.LogError(ex, "{RankType} rank analysis failed", rankType);
+        }
+        finally
+        {
+            rankEngine?.Stop();
         }
     }
 
@@ -1623,7 +1626,7 @@
             logger.LogInformation("No engine loaded");
             return;
         }
-        if (analyzer.Engine.HasExited)
+        if (analyzer.HasExited)
             await ReplaceAnalyzer();
         await Send(PanelModel.Event.Reset);
         ResetSearchTimer();
@@ -1645,7 +1648,7 @@
             return;
         }
         uciButtonPressed = true;
-        analyzer?.UCI();
+        analyzer?.Raw("uci");
         StateHasChanged();
     }
 
@@ -1764,7 +1767,7 @@
         }
         if (Engine != null)
         {
-            runLogLiveStats = analyzer?.Engine.GetUCICommands().ContainsKey("LogLiveStats") ?? Engine.Options.Keys.Contains("LogLiveStats");
+            runLogLiveStats = analyzer?.GetUCICommands().ContainsKey("LogLiveStats") ?? Engine.Options.Keys.Contains("LogLiveStats");
             showCharts = runLogLiveStats;
             showCpChart = !runLogLiveStats;
             if (runLogLiveStats && overlaySettings == OverlaySettings.None)
@@ -1792,7 +1795,7 @@
             }
             if (Engine != null)
             {
-                runLogLiveStats = analyzer?.Engine.GetUCICommands().ContainsKey("LogLiveStats") ?? Engine.Options.Keys.Contains("LogLiveStats");
+                runLogLiveStats = analyzer?.GetUCICommands().ContainsKey("LogLiveStats") ?? Engine.Options.Keys.Contains("LogLiveStats");
                 showCharts = runLogLiveStats;
                 showCpChart = !runLogLiveStats;
                 currentName = Engine.Name;

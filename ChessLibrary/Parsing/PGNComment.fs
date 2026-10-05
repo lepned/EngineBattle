@@ -178,9 +178,6 @@ let tooltipText (comment: string) : string =
   | text, [] -> text
   | text, cs -> text + " — " + String.Join(", ", cs)
 
-/// True when the comment carries at least one command.
-let hasCommands (comment: string) : bool = not (parse comment).Commands.IsEmpty
-
 /// The mate distance written in an engine annotation ("wv=M5", "+M3/32 12.5s"), if any.
 ///
 /// The annotation parser collapses every mate to a ±200.0 sentinel and loses the distance,

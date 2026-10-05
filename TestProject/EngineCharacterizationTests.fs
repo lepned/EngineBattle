@@ -809,7 +809,7 @@ let ``Off the caller's thread the factories hand over a started engine when it i
         Assert.True(eng.Started.IsCompleted && eng.Started.Result)
     finally quitAnalysis eng
     let log2 = newLogPath ()
-    let tournament = EngineHelper.createEngineAsync(config log2 "" [], Some (NullLogger.Instance :> ILogger)).GetAwaiter().GetResult()
+    let tournament = Tasks.Task.Run(fun () -> EngineHelper.createEngine(config log2 "" [], Some (NullLogger.Instance :> ILogger))).GetAwaiter().GetResult()
     try Assert.True(tournament.WaitForReadyOk())
     finally stopTournament tournament
 

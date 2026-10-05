@@ -449,6 +449,13 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     agent.Post (Ev (AnalysisMachine.Analyse search))
     search.Id
 
+  /// Searches the board's position (with the searchmoves set); a board with no legal move is a Skip.
+  member this.AnalyseBoard(board: Chess.Board, goCommand: string) : int =
+    if board.AnyLegalMove() then this.Analyse(board.PositionWithMovesFromGraph(), goCommand + this.SearchMoveSuffix)
+    else
+      logger.LogInformation("No legal moves with FEN: {Fen}", board.FEN())
+      this.Skip()
+
   /// Stops the running search; its bestmove still arrives (before its go: a move at once).
   member _.Stop() = agent.Post (Ev AnalysisMachine.Stop)
 

@@ -292,3 +292,24 @@ let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player
 
 let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float) =
       rankSequence tryGetMovePolicyAndTop engine board player qMin qMax
+
+/// The engine the policy/Q rank analysis plays positions out with (a tournament engine), started on
+/// first use; Stop ends its process.
+type RankEngine(config: EngineConfig, logger: ILogger) =
+    let mutable engine : ChessEngine option = None
+    let get () =
+        match engine with
+        | Some e -> e
+        | None ->
+            let e = EngineHelper.createEngine (config, Some logger)
+            if not (waitForEngineIsReady e |> Async.RunSynchronously) then
+                failwith $"Engine {e.Name} did not respond to isready command"
+            engine <- Some e
+            e
+    member _.PolicyRanks(board: Board, player: string, qMin: float, qMax: float) =
+        tryGetMovePolicyAndTopForPosSequence (get ()) board player qMin qMax
+    member _.QRanks(board: Board, player: string, qMin: float, qMax: float) =
+        tryGetMoveQAndTopForPosSequence (get ()) board player qMin qMax
+    member _.Stop() =
+        engine |> Option.iter (fun e -> e.StopProcess())
+        engine <- None

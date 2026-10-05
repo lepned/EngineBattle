@@ -247,26 +247,6 @@ let buildResultWithPaired
       Paired = paired.Comparisons |> List.map toPairedEntry |> List.toArray
       PairedFailed = paired.Failed }
 
-/// Convenience wrapper: computes the paired stats itself, orienting pairs by the order
-/// the scores arrive in. Every production caller passes an outcome it already has, so this
-/// exists for callers that only want a document - which today means the tests.
-let buildResult
-    (puzzleFile: string)
-    (totalPuzzlesLoaded: int)
-    (sampleSize: int)
-    (minRating: int)
-    (maxRating: int)
-    (filter: string)
-    (ratingGroups: string)
-    (startedUtc: DateTime)
-    (elapsedSeconds: float)
-    (scores: seq<Score>) : PuzzleJsonResult =
-    let materialized = scores |> Seq.toList
-    buildResultWithPaired
-        (PuzzlePaired.outcomeOf (PuzzlePaired.compute materialized))
-        puzzleFile totalPuzzlesLoaded sampleSize minRating maxRating
-        filter ratingGroups startedUtc elapsedSeconds materialized
-
 let private serializerOptions () =
     let opts = JsonSerializerOptions()
     opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase

@@ -8,6 +8,10 @@ open Xunit
 open ChessLibrary.Match
 open ChessLibrary.Match.MatchStats
 
+// The reference's Stats(ll, ld, wl, dd, wd, ww)
+let private ofPenta (ll, ld, wl, dd, wd, ww) =
+    { Stats.Empty with PentaLL = ll; PentaLD = ld; PentaWL = wl; PentaDD = dd; PentaWD = wd; PentaWW = ww }
+
 let private close (expected: float) (actual: float) (eps: float) =
     Assert.True(abs (actual - expected) <= eps, sprintf "expected %g, got %g" expected actual)
 
@@ -36,7 +40,7 @@ let ``WDL Elo line matches the reference`` () =
 [<InlineData(7895, 8757, 5485, 200, 568, 9999, -19.01, 2.65, "-21.04 +/- 2.95", "0.00 %", 0.470)>]
 let ``pentanomial Elo, nElo, LOS and score match the reference``
         (ll: int, ld: int, wl: int, dd: int, wd: int, ww: int, nelo: float, nerr: float, eloLine: string, los: string, score: float) =
-    let e = eloPenta (Stats.OfPenta(ll, ld, wl, dd, wd, ww))
+    let e = eloPenta (ofPenta(ll, ld, wl, dd, wd, ww))
     close nelo e.NEloDiff 0.01
     close nerr e.NEloError 0.01
     close score e.Score 0.001
@@ -45,7 +49,7 @@ let ``pentanomial Elo, nElo, LOS and score match the reference``
 
 [<Fact>]
 let ``Inverted swaps sides`` () =
-    let s = { Stats.OfPenta(1, 2, 3, 4, 5, 6) with Wins = 7; Losses = 8; Draws = 9 }
+    let s = { ofPenta(1, 2, 3, 4, 5, 6) with Wins = 7; Losses = 8; Draws = 9 }
     let i = s.Inverted
     Assert.Equal((8, 7, 9), (i.Wins, i.Losses, i.Draws))
     Assert.Equal((6, 5, 3, 4, 2, 1), (i.PentaLL, i.PentaLD, i.PentaWL, i.PentaDD, i.PentaWD, i.PentaWW))
@@ -77,7 +81,7 @@ let ``trinomial LLR matches the reference`` (model: string, w: int, l: int, d: i
 [<InlineData("logistic", 871, 26175, 55003, 980, 26678, 821, 0.0, 2.0, -4.98)>]
 let ``pentanomial LLR matches the reference``
         (model: string, ll: int, ld: int, wl: int, dd: int, wd: int, ww: int, elo0: float, elo1: float, expected: float) =
-    closeRel expected (MatchSprt.llr (sprt model elo0 elo1) (Stats.OfPenta(ll, ld, wl, dd, wd, ww)) true)
+    closeRel expected (MatchSprt.llr (sprt model elo0 elo1) (ofPenta(ll, ld, wl, dd, wd, ww)) true)
 
 [<Fact>]
 let ``bounds, result and texts`` () =
@@ -238,7 +242,7 @@ let ``pentanomial Elo equals the reference's to the last digit`` () =
     Assert.Equal(7, rows.Length)
     for row in rows do
         let c = ints row.[0]
-        checkElo row.[0] row (eloPenta (Stats.OfPenta(c.[0], c.[1], c.[2], c.[3], c.[4], c.[5])))
+        checkElo row.[0] row (eloPenta (ofPenta(c.[0], c.[1], c.[2], c.[3], c.[4], c.[5])))
 
 [<Fact>]
 let ``LLR equals the reference's in every model`` () =
@@ -253,5 +257,5 @@ let ``LLR equals the reference's in every model`` () =
     for row in pen do
         let p = row.[0].Split(' ')
         let c = p |> Array.skip 2 |> Array.map int
-        let stats = Stats.OfPenta(c.[0], c.[1], c.[2], c.[3], c.[4], c.[5])
+        let stats = ofPenta(c.[0], c.[1], c.[2], c.[3], c.[4], c.[5])
         same row.[0] (parseC row.[1]) (MatchSprt.llr (sprt p.[1] -1.75 0.25) stats true)

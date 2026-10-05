@@ -39,54 +39,6 @@ let private mkPairing roundNr openingGameNr =
       RoundNr = roundNr }
 
 // ============================================================================
-// formatOpeningMoves tests
-// ============================================================================
-
-[<Fact>]
-let ``formatOpeningMoves with empty sequence returns empty string`` () =
-    let result = formatOpeningMoves Seq.empty
-    Assert.Equal("", result)
-
-[<Fact>]
-let ``formatOpeningMoves with single white move formats correctly`` () =
-    let moves = [ mkPlyMove 1 "w" "e4" ]
-    let result = formatOpeningMoves moves
-    Assert.Equal("1. e4", result)
-
-[<Fact>]
-let ``formatOpeningMoves with single black move formats without move number`` () =
-    let moves = [ mkPlyMove 1 "b" "e5" ]
-    let result = formatOpeningMoves moves
-    Assert.Equal("e5", result)
-
-[<Fact>]
-let ``formatOpeningMoves with full move pair formats correctly`` () =
-    let moves = [ mkPlyMove 1 "w" "e4"; mkPlyMove 1 "b" "e5" ]
-    let result = formatOpeningMoves moves
-    Assert.Equal("1. e4 e5", result)
-
-[<Fact>]
-let ``formatOpeningMoves with multiple moves formats correctly`` () =
-    let moves = [
-        mkPlyMove 1 "w" "e4"
-        mkPlyMove 1 "b" "e5"
-        mkPlyMove 2 "w" "Nf3"
-        mkPlyMove 2 "b" "Nc6"
-    ]
-    let result = formatOpeningMoves moves
-    Assert.Equal("1. e4 e5 2. Nf3 Nc6", result)
-
-[<Fact>]
-let ``formatOpeningMoves with three moves formats correctly`` () =
-    let moves = [
-        mkPlyMove 1 "w" "d4"
-        mkPlyMove 1 "b" "d5"
-        mkPlyMove 2 "w" "c4"
-    ]
-    let result = formatOpeningMoves moves
-    Assert.Equal("1. d4 d5 2. c4", result)
-
-// ============================================================================
 // computeRoundText tests
 // ============================================================================
 
@@ -372,56 +324,6 @@ let ``setupBoardForGame with FEN and PGN book plays moves from FEN`` () =
     Assert.Contains("e7e5", board.UciMovesPlayed)
 
 // ============================================================================
-// getPositionWithMoves tests (Medium Priority)
-// ============================================================================
-
-[<Fact>]
-let ``getPositionWithMoves with start position and no moves`` () =
-    let board = Board()
-    board.LoadFen startPosFen
-    board.StartPosition <- startPosFen
-
-    let result = getPositionWithMoves board
-
-    Assert.Equal($"position fen {startPosFen} moves", result)
-
-[<Fact>]
-let ``getPositionWithMoves with one move played`` () =
-    let board = Board()
-    board.LoadFen startPosFen
-    board.StartPosition <- startPosFen
-    board.PlayUciMove "e2e4"
-
-    let result = getPositionWithMoves board
-
-    Assert.Equal($"position fen {startPosFen} moves e2e4", result)
-
-[<Fact>]
-let ``getPositionWithMoves with multiple moves played`` () =
-    let board = Board()
-    board.LoadFen startPosFen
-    board.StartPosition <- startPosFen
-    board.PlayUciMove "e2e4"
-    board.PlayUciMove "e7e5"
-    board.PlayUciMove "g1f3"
-
-    let result = getPositionWithMoves board
-
-    Assert.Equal($"position fen {startPosFen} moves e2e4 e7e5 g1f3", result)
-
-[<Fact>]
-let ``getPositionWithMoves with custom FEN start position`` () =
-    let board = Board()
-    let customFen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
-    board.LoadFen customFen
-    board.StartPosition <- customFen
-    board.PlayUciMove "f1b5"
-
-    let result = getPositionWithMoves board
-
-    Assert.Equal($"position fen {customFen} moves f1b5", result)
-
-// ============================================================================
 // Moves-to-go (repeating time control) tests
 // ============================================================================
 
@@ -505,13 +407,3 @@ let ``a time control past 24 hours survives into the UCI go command`` () =
     // 30h = 108_000_000 ms, and UCI carries plain milliseconds.
     Assert.Contains("wtime 108000000", cmd)
     Assert.Contains("winc 30000", cmd)
-
-[<Fact>]
-let ``GetFullTimeInMS adds fixed and increment past a day`` () =
-    let cfg = { Id = 1
-                Fixed = TimeSpan.FromHours 30.0
-                Increment = TimeSpan.FromSeconds 30.0
-                NodeLimit = false
-                Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
-    let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
-    Assert.Equal(108_030_000, tc.GetFullTimeInMS 1)

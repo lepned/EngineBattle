@@ -354,7 +354,6 @@ let ``Handler ProcessFeatureLine marks initialized on done`` () =
     let done2 = handler.ProcessFeatureLine("feature done=1")
     Assert.True(done2)
     Assert.True(handler.IsInitialized)
-    Assert.True(handler.IsProtover2)
     Assert.True(handler.Features.Ping)
     Assert.True(handler.Features.SetBoard)
 
@@ -428,7 +427,6 @@ let ``V1 handler ForceV1Init produces correct defaults`` () =
     handler.ForceV1Init()
     Assert.True(handler.IsInitialized)
     Assert.True(handler.IsV1Fallback)
-    Assert.False(handler.IsProtover2)
     Assert.False(handler.Features.Ping)
     Assert.False(handler.Features.SetBoard)
     Assert.False(handler.Features.Analyze)
@@ -679,7 +677,7 @@ let ``Crafty 25.2 is recognized as protover 2 engine after feature negotiation``
         let outLines = readFeaturesWithTimeout outQueue 3000
         for line in outLines do
             handler.ProcessOutput(line) |> ignore
-        Assert.True(handler.IsProtover2, "Handler should be marked as protover 2 after feature negotiation with Crafty 25.2.")
+        Assert.True(handler.IsInitialized && not handler.IsV1Fallback, "Handler should be initialized by protover 2 feature negotiation with Crafty 25.2.")
         proc.StandardInput.WriteLine("quit")
         proc.WaitForExit(1000) |> ignore
 

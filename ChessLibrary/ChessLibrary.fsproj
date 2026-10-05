@@ -127,7 +127,6 @@
 		<Compile Include="Analysis\PageEngine.fs" />
 		<Compile Include="Analysis\PanelModel.fs" />
 		<Compile Include="Analysis\PlayModel.fs" />
-		<Compile Include="Analysis\AnalysisManager.fs" />
 		<Compile Include="Analysis\GameAccuracyAnalysis.fs" />
 		<Compile Include="Analysis\ReviewModel.fs" />
 		<Compile Include="Analysis\PuzzleDataUtils.fs" />

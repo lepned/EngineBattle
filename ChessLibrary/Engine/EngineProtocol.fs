@@ -157,41 +157,6 @@ module Engine =
     sb.ToString()
 
 
-module UCI =
-
-  // Regular expression pattern to capture the option name and its default value
-  let optionRegex = new Regex(@"option name (.*?) type.*?default (\S+)?", RegexOptions.Compiled)
-
-  let extractOptionDefaults (uciOutputs: ResizeArray<string>) =
-    let dict = new Dictionary<string, string>()
-
-    uciOutputs //|> Seq.toList
-    |> Seq.filter (fun s -> s.StartsWith("option"))
-    |> Seq.iter (fun s ->
-        let ismatch = optionRegex.Match(s)
-        if ismatch.Success then
-            let optionName = ismatch.Groups.[1].Value
-            if ismatch.Groups.[2].Success then
-                let value = ismatch.Groups.[2].Value  // This should be the second group.
-                if not (String.IsNullOrWhiteSpace(value)) then
-                    dict.Add(optionName, value)
-        else ()
-    )
-    dict
-
-
-  let createDefaultSetOptionCommandForName (dict: Dictionary<string, string>) (name: string) =
-    let matchedKey =
-        dict.Keys
-        |> Seq.tryFind (fun key -> key.ToLower().Contains(name.ToLower()))
-
-    match matchedKey with
-    | Some key ->
-        match dict.TryGetValue(key) with
-        | (true, value) when not (String.IsNullOrWhiteSpace(value)) -> Some (sprintf "setoption name %s value %s" key value)
-        | _ -> None
-    | None -> None
-
 /// UCI info string parsing with compiled regex patterns
 module Regex =
   //"info string c1h6  (69  ) N:       6 (+ 0) (P:  0.41%) (WL: -0.99587) (D: 0.003) (M: 60.0) (Q: -0.99587) (U: 1.12920) (S:  0.09888) (V: -0.9982) "

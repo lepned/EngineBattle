@@ -44,9 +44,7 @@ module PairingHelper =
     let buildRemainingCupPairings = Scheduler.Cup.buildRemainingCupPairings
 
     // ---- Swiss (Scheduler.Swiss) ------------------------------------------
-    let swissPairKey = Scheduler.Swiss.pairKey
     let swissRoundPairings = Scheduler.Swiss.pairNextRound
-    let swissRoundPairingsGroupedOnly = Scheduler.Swiss.pairNextRoundGroupedOnly
 
     /// Swiss match-game planner in mutating form (appends to `planned` and
     /// returns the next opening index). Used by the Swiss runner as it walks
@@ -103,21 +101,6 @@ module PairingHelper =
                 add opening blackFirst whiteFirst (pair * 2 + 1)
                 index <- index + 1
             index
-
-    /// Legacy RR helper used by one offline PGN-replay regression test.
-    /// Forwards to `Scheduler.RoundRobin.generate` and adapts the output
-    /// to `Pairing list`. No other callers.
-    let generateAllRoundRobinDoubleRounds (players: EngineConfig list) (openings: PgnGame list) : Pairing list =
-        let cfg : Scheduler.ScheduleConfig =
-            { Mode = Scheduler.RoundRobin
-              Challengers = players
-              Opponents = []
-              Openings = openings
-              Rounds = openings.Length
-              OpeningsTwice = true
-              PreventDeviation = false
-              Distribution = Scheduler.Shared }
-        Scheduler.RoundRobin.generate cfg |> Scheduler.Diff.toPairings
 
     // ---- Schedule dumps for the console and log ----------------------------
 

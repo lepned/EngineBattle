@@ -335,7 +335,6 @@ module WinboardProtocol =
         let mutable features = defaultFeatures
         let mutable isInitialized = false
         let mutable isV1Fallback = false
-        let mutable isProtover2 = false
         let mutable pendingPing = None
         let mutable board = new Board()
         let mutable inAnalyzeMode = false
@@ -377,7 +376,6 @@ module WinboardProtocol =
         member _.Features = lock stateLock (fun () -> features)
         member _.IsInitialized = lock stateLock (fun () -> isInitialized)
         member _.IsV1Fallback = lock stateLock (fun () -> isV1Fallback)
-        member _.IsProtover2 = lock stateLock (fun () -> isProtover2)
         /// Per CECP spec, reuse defaults to true when not explicitly set to 0
         member _.CanReuse = lock stateLock (fun () -> features.Reuse |> Option.defaultValue true)
         /// Get the configured time control strategy
@@ -398,7 +396,6 @@ module WinboardProtocol =
                 features <- parseFeatureLine line features
                 if features.Done then
                     isInitialized <- true
-                    isProtover2 <- true
                     if initSemaphore.CurrentCount = 0 then
                         initSemaphore.Release() |> ignore
                 features.Done

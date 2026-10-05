@@ -40,11 +40,6 @@ module BayesianOptimizer =
       Y: float
       Games: int }
 
-  type BOResult =
-    { BestX: float[]
-      BestY: float
-      Observations: BOObservation[] }
-
   // ──────────────────────────────────────────────────────────────────
   // Transforms & Helpers
   // ──────────────────────────────────────────────────────────────────
@@ -343,77 +338,6 @@ module BayesianOptimizer =
         if active.[dim] then
           sample.[dim] <- clamp -1.0 1.0 (center.[dim] + radius * sample.[dim])
     samples
-
-  // ──────────────────────────────────────────────────────────────────
-  // Testable BO Loop (engine-free)
-  // ──────────────────────────────────────────────────────────────────
-
-  /// Run Bayesian optimization loop using an arbitrary evaluate function.
-  /// `evaluate x` returns the objective value (higher = better).
-  /// Works in normalized [-1,1]^d space.
-  let runBayesianLoop
-      (startX: float[])
-      (active: bool[])
-      (iterations: int)
-      (initialDesignSize: int)
-      (seed: int)
-      (evaluate: float[] -> float)
-      : BOResult =
-    let d = startX.Length
-    let rng = Random(seed)
-    let hypUpdateInterval = 5
-
-    let observations = ResizeArray<BOObservation>()
-
-    // Phase 1: initial design via LHS
-    let designSize = if initialDesignSize > 0 then initialDesignSize else max 3 (2 * (active |> Array.filter id |> Array.length))
-    let lhsSamples = latinHypercubeSample designSize d active rng
-    for sample in lhsSamples do
-      // Copy inactive dims from startX
-      for i in 0 .. d - 1 do
-        if not active.[i] then sample.[i] <- startX.[i]
-      let y = evaluate sample
-      observations.Add({ X = Array.copy sample; Y = y; Games = 0 })
-
-    // Also evaluate start point
-    let y0 = evaluate startX
-    observations.Add({ X = Array.copy startX; Y = y0; Games = 0 })
-
-    let mutable bestObs = observations |> Seq.maxBy (fun o -> o.Y)
-    let mutable currentHyp =
-      { SignalVariance = 1.0
-        LengthScales = Array.create d 0.5
-        NoiseVariance = 0.05 }
-
-    // Phase 2: BO iterations
-    for iter in 0 .. iterations - 1 do
-      let xs = observations |> Seq.map (fun o -> o.X) |> Seq.toArray
-      let ysRaw = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
-
-      // Standardize Y before GP fitting (no logit — arbitrary objective)
-      let ysStd, yMean, yStd = standardize ysRaw
-
-      // Re-optimize hyperparameters periodically
-      if iter % hypUpdateInterval = 0 then
-        currentHyp <- optimizeHyperparameters xs ysStd d None
-
-      let gp = fitGP currentHyp xs ysStd yMean yStd None
-      let fBest = (bestObs.Y - yMean) / yStd
-
-      let xNew = optimizeAcquisition gp fBest d active startX rng
-      // Copy inactive dims from startX
-      for i in 0 .. d - 1 do
-        if not active.[i] then xNew.[i] <- startX.[i]
-
-      let yNew = evaluate xNew
-      observations.Add({ X = Array.copy xNew; Y = yNew; Games = 0 })
-
-      if yNew > bestObs.Y then
-        bestObs <- { X = Array.copy xNew; Y = yNew; Games = 0 }
-
-    { BestX = bestObs.X
-      BestY = bestObs.Y
-      Observations = observations.ToArray() }
 
   // ──────────────────────────────────────────────────────────────────
   // Dashboard

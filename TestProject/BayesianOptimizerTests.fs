@@ -3,9 +3,6 @@ module BayesianOptimizerTests
 open Xunit
 open ConsoleApp.BayesianOptimizer
 
-let private euclideanDist (a: float[]) (b: float[]) =
-    Array.map2 (fun x y -> (x - y) ** 2.0) a b |> Array.sum |> sqrt
-
 // ── GP Kernel Tests ──
 
 [<Fact>]
@@ -166,47 +163,6 @@ let ``optimizeHyperparameters returns valid hyperparameters`` () =
     Assert.Equal(2, hyp.LengthScales.Length)
     for l in hyp.LengthScales do
         Assert.True(l > 0.0)
-
-// ── Bayesian Loop Convergence Tests ──
-
-[<Fact>]
-let ``BO loop converges on deterministic quadratic`` () =
-    // Objective: -||x - target||² (maximized at target)
-    let target = [| 0.3; -0.4 |]
-    let evaluate (x: float[]) =
-        let d = euclideanDist x target
-        -d * d  // negative squared distance (higher is better)
-    let startX = [| 0.0; 0.0 |]
-    let active = [| true; true |]
-    let result = runBayesianLoop startX active 25 6 42 evaluate
-    let dist = euclideanDist result.BestX target
-    Assert.True(dist < 0.4, sprintf "BO should find optimum within 0.4, got dist=%.4f (best=[%.3f, %.3f])" dist result.BestX.[0] result.BestX.[1])
-
-[<Fact>]
-let ``BO loop converges on noisy quadratic`` () =
-    let target = [| 0.3; -0.4 |]
-    let noiseRng = System.Random(99)
-    let evaluate (x: float[]) =
-        let d = euclideanDist x target
-        let noise = noiseRng.NextDouble() * 0.02 - 0.01
-        -d * d + noise
-    let startX = [| 0.0; 0.0 |]
-    let active = [| true; true |]
-    let result = runBayesianLoop startX active 30 8 42 evaluate
-    let dist = euclideanDist result.BestX target
-    Assert.True(dist < 0.6, sprintf "BO with noise should find optimum within 0.6, got dist=%.4f" dist)
-
-[<Fact>]
-let ``BO loop respects active mask`` () =
-    let target = [| 0.5; -0.5; 0.5 |]
-    let evaluate (x: float[]) =
-        let d = euclideanDist x target
-        -d * d
-    let startX = [| 0.0; 0.2; 0.0 |]
-    let active = [| true; false; true |]
-    let result = runBayesianLoop startX active 20 4 42 evaluate
-    // Inactive dim should remain at startX value
-    Assert.Equal(0.2, result.BestX.[1])
 
 // ── Centered Latin Hypercube Sampling Tests ──
 

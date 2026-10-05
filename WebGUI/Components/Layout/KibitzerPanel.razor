@@ -2,6 +2,7 @@
 @using System.Globalization
 @using System.IO
 @using ChessLibrary
+@using Microsoft.FSharp.Core
 @using WebGUI.Components.Layout.ChessboardLayout
 @implements IAsyncDisposable
 @inject NotifierService Notifier
@@ -117,7 +118,7 @@
     private string selectedPath = "";
     private EngineConfig engineConfig;
 
-    private AnalysisManager.SimpleEngineAnalyzer analyzer;
+    private AnalysisEngine analyzer;
     private bool hasLiveStats;
 
     // ── The search control (ChessLibrary/Analysis/PanelModel.fs, as the engine panel): auto-search
@@ -237,7 +238,7 @@
                 _ = SettleAfter(settle.navigation, settle.delayMs);
                 break;
             case PanelModel.Effect.SetMultiPv multiPv:
-                analyzer?.AddSetoption(EngineOption.Create("MultiPV", multiPv.Item.ToString()));
+                analyzer?.SetOption(EngineOption.Create("MultiPV", multiPv.Item.ToString()));
                 break;
             case PanelModel.Effect.PublishEval eval:
                 if (OnEvalUpdated.HasDelegate)
@@ -265,7 +266,7 @@
         if (analyzer == null) return;
         try
         {
-            int id = limit is PanelModel.Limit.MoveTime t ? analyzer.SearchTime(t.ms) : analyzer.GoInfinite();
+            int id = analyzer.AnalyseBoard(ChessBoard, limit is PanelModel.Limit.MoveTime t ? $"go movetime {t.ms}" : "go infinite");
             model = PanelModel.step(model, PanelModel.Event.NewStarted(id)).Item1;
         }
         catch (Exception ex)
@@ -302,11 +303,11 @@
             return;
         }
         StateHasChanged();
-        AnalysisManager.SimpleEngineAnalyzer created;
+        AnalysisEngine created;
         try
         {
-            Action<SearchUpdate> onUpdate = u => Dispatch(u, generation);
-            created = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, onUpdate, false));
+            var onUpdate = FuncConvert.FromAction<SearchUpdate>(u => Dispatch(u, generation));
+            created = await Task.Run(() => EngineHelper.createAnalysisEngine(onUpdate, config, logger, false));
         }
         catch (Exception ex)
         {
@@ -325,7 +326,7 @@
         }
         try
         {
-            created.AddSetoption(EngineOption.Create("MultiPV", model.Lines.ToString()));
+            created.SetOption(EngineOption.Create("MultiPV", model.Lines.ToString()));
             analyzer = created;
             await Send(PanelModel.Event.EngineReady);
             StateHasChanged();

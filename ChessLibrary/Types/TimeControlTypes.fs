@@ -126,11 +126,6 @@ module TimeControlTypes =
         | _ -> UnionType.Nodes(config.Nodes)
       member x.GetIncrementTime(idx: int) =
         (x.GetTimeConfig idx).Increment
-      member x.GetFullTimeInMS(idx: int) =
-        let config = x.GetTimeConfig idx
-        let fixedMs = int config.Fixed.TotalMilliseconds
-        let incrMs = int config.Increment.TotalMilliseconds
-        (fixedMs + incrMs)
       /// The tournament's moves per (repeating) period, for a setting without its own; 0 = none.
       /// Symmetric: both sides use max(W,B).
       member x.MovesToGoPeriod = max x.WmovesToGo x.BmovesToGo

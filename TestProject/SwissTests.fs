@@ -7,6 +7,7 @@ open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.SwissTypes
 open ChessLibrary.TournamentPairing.PairingHelper
+module SwissScheduler = ChessLibrary.Scheduler.Swiss
 
 // Set to true to enable verbose test output for debugging
 let private verboseOutput = false
@@ -79,7 +80,7 @@ let ``swissRoundPairings avoids repeat when alternative exists`` () =
           "C", 0.0
           "D", 0.0 ]
         |> Map.ofList
-    let priorPairs = Set.ofList [ swissPairKey "A" "B" ]
+    let priorPairs = Set.ofList [ SwissScheduler.pairKey "A" "B" ]
     let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
     let pairNames =
         pairs
@@ -107,7 +108,7 @@ let ``swissRoundPairings backtracks to avoid dead-end repeats`` () =
           "D", 0.0 ]
         |> Map.ofList
     // Greedy A-B leaves C-D which is forbidden; A-D is the valid alternative.
-    let priorPairs = Set.ofList [ swissPairKey "A" "C"; swissPairKey "C" "D" ]
+    let priorPairs = Set.ofList [ SwissScheduler.pairKey "A" "C"; SwissScheduler.pairKey "C" "D" ]
     let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
     let pairNames =
         pairs
@@ -140,13 +141,13 @@ let ``swissRoundPairings avoids prior pairs when alternatives exist in larger gr
         |> Map.ofList
     let priorPairs =
         Set.ofList [
-            swissPairKey "A" "E"
-            swissPairKey "D" "E"
+            SwissScheduler.pairKey "A" "E"
+            SwissScheduler.pairKey "D" "E"
         ]
     let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
     Assert.Equal(3, pairs.Length)
     for (a, b) in pairs do
-        let key = swissPairKey a.Name b.Name
+        let key = SwissScheduler.pairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
 
 [<Fact>]
@@ -170,7 +171,7 @@ let ``swissRoundPairings second round after equal scores for group count 1`` () 
     Assert.Equal<string list>([ "D-H"; "C-G"; "B-F"; "A-E" ], round1Names)
     let priorPairs =
         round1Pairs
-        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
         |> Set.ofList
     let round2Scores =
         players
@@ -230,7 +231,7 @@ let ``swissRoundPairings 5 rounds 6 players no repeats and complete round robin`
         let roundPairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
         Assert.Equal(3, roundPairs.Length)
         for (a, b) in roundPairs do
-            let key = swissPairKey a.Name b.Name
+            let key = SwissScheduler.pairKey a.Name b.Name
             Assert.False(priorPairs.Contains key)
             priorPairs <- priorPairs.Add key
             allPairs.Add key
@@ -242,7 +243,7 @@ let ``swissRoundPairings 5 rounds 6 players no repeats and complete round robin`
           "D", 2.0; "E", 1.0; "F", 0.0 ]
         |> Map.ofList
     Assert.Throws<System.Exception>(fun () ->
-        swissRoundPairingsGroupedOnly players seedOrder round5Scores priorPairs Set.empty |> ignore)
+        SwissScheduler.pairNextRoundGroupedOnly players seedOrder round5Scores priorPairs Set.empty |> ignore)
     |> ignore
     let round5Pairs = swissRoundPairings players seedOrder round5Scores priorPairs Set.empty
     Assert.Equal(3, round5Pairs.Length)
@@ -250,7 +251,7 @@ let ``swissRoundPairings 5 rounds 6 players no repeats and complete round robin`
     // Correct order: weakest score groups first (D-E, then B-C, then A-F)
     Assert.Equal<string list>([ "D-E"; "B-C"; "A-F" ], round5Names)
     for (a, b) in round5Pairs do
-        let key = swissPairKey a.Name b.Name
+        let key = SwissScheduler.pairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
         priorPairs <- priorPairs.Add key
         allPairs.Add key
@@ -277,7 +278,7 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds`` (
     for scores in roundScores do
         let roundPairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
         for (a, b) in roundPairs do
-            let key = swissPairKey a.Name b.Name
+            let key = SwissScheduler.pairKey a.Name b.Name
             Assert.False(priorPairs.Contains key)
             priorPairs <- priorPairs.Add key
     let round5Scores =
@@ -290,7 +291,7 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds`` (
     // Correct order: weakest score groups first (D-E, then B-C, then A-F)
     Assert.Equal<string list>([ "D-E"; "B-C"; "A-F" ], round5Names)
     for (a, b) in round5Pairs do
-        let key = swissPairKey a.Name b.Name
+        let key = SwissScheduler.pairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
 
 [<Fact>]
@@ -312,7 +313,7 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds gro
     for scores in roundScores do
         let roundPairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
         for (a, b) in roundPairs do
-            let key = swissPairKey a.Name b.Name
+            let key = SwissScheduler.pairKey a.Name b.Name
             Assert.False(priorPairs.Contains key)
             priorPairs <- priorPairs.Add key
     let round5Scores =
@@ -325,7 +326,7 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds gro
     // Correct order: weakest score groups first (C-E, then B-D, then A-F)
     Assert.Equal<string list>([ "C-E"; "B-D"; "A-F" ], round5Names)
     for (a, b) in round5Pairs do
-        let key = swissPairKey a.Name b.Name
+        let key = SwissScheduler.pairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
 
 [<Fact>]
@@ -347,7 +348,7 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds gro
     for scores in roundScores do
         let roundPairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
         for (a, b) in roundPairs do
-            let key = swissPairKey a.Name b.Name
+            let key = SwissScheduler.pairKey a.Name b.Name
             Assert.False(priorPairs.Contains key)
             priorPairs <- priorPairs.Add key
     let round5Scores =
@@ -360,7 +361,7 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds gro
     // Correct order: weakest score groups first (C-E, then B-F, then A-D)
     Assert.Equal<string list>([ "C-E"; "B-F"; "A-D" ], round5Names)
     for (a, b) in round5Pairs do
-        let key = swissPairKey a.Name b.Name
+        let key = SwissScheduler.pairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
 
 [<Fact>]
@@ -383,7 +384,7 @@ let ``swissRoundPairings 3 players 2 rounds no repeated byes`` () =
     let priorPairs =
         round1Pairs
         |> List.filter (fun (_, b) -> b.Name <> "BYE")
-        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
         |> Set.ofList
     let byeSet = round1Bye |> Option.map Set.singleton |> Option.defaultValue Set.empty
     let round2Scores =
@@ -419,7 +420,7 @@ let ``swissRoundPairings fallback pairing order is deterministic`` () =
     for scores in roundScores do
         let roundPairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
         for (a, b) in roundPairs do
-            priorPairs <- priorPairs.Add (swissPairKey a.Name b.Name)
+            priorPairs <- priorPairs.Add (SwissScheduler.pairKey a.Name b.Name)
     let round5Scores =
         [ "A", 3.0; "B", 3.0; "C", 2.0
           "D", 2.0; "E", 1.0; "F", 0.0 ]
@@ -461,7 +462,7 @@ let ``swissRoundPairings 5 players 5 rounds each player gets at most one bye`` (
         let playedPairs =
             roundPairs
             |> List.filter (fun (_, b) -> b.Name <> "BYE")
-            |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+            |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
             |> Set.ofList
         for key in playedPairs do
             Assert.False(priorPairs.Contains key)
@@ -880,10 +881,10 @@ let ``swiss tournament with 8 players round 2 pairings with seed group 1`` () =
 
     let priorPairs =
         Set.ofList [
-            swissPairKey "Player1" "Player5"
-            swissPairKey "Player2" "Player6"
-            swissPairKey "Player3" "Player7"
-            swissPairKey "Player4" "Player8"
+            SwissScheduler.pairKey "Player1" "Player5"
+            SwissScheduler.pairKey "Player2" "Player6"
+            SwissScheduler.pairKey "Player3" "Player7"
+            SwissScheduler.pairKey "Player4" "Player8"
         ]
 
     let seedOrder = tcecSeedOrder players 1
@@ -915,14 +916,14 @@ let ``swiss tournament with 8 players round 3 pairings with seed group 1`` () =
 
     let priorPairs =
         Set.ofList [
-            swissPairKey "Player1" "Player5"
-            swissPairKey "Player2" "Player6"
-            swissPairKey "Player3" "Player7"
-            swissPairKey "Player4" "Player8"
-            swissPairKey "Player1" "Player3"
-            swissPairKey "Player2" "Player4"
-            swissPairKey "Player5" "Player7"
-            swissPairKey "Player6" "Player8"
+            SwissScheduler.pairKey "Player1" "Player5"
+            SwissScheduler.pairKey "Player2" "Player6"
+            SwissScheduler.pairKey "Player3" "Player7"
+            SwissScheduler.pairKey "Player4" "Player8"
+            SwissScheduler.pairKey "Player1" "Player3"
+            SwissScheduler.pairKey "Player2" "Player4"
+            SwissScheduler.pairKey "Player5" "Player7"
+            SwissScheduler.pairKey "Player6" "Player8"
         ]
 
     let seedOrder = tcecSeedOrder players 1
@@ -954,7 +955,7 @@ let ``swiss tournament 8 players round 1-3 no repeated pairings with seed group 
 
     let round1PriorPairs =
         round1Pairs
-        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
         |> Set.ofList
 
     let round2Scores =
@@ -965,7 +966,7 @@ let ``swiss tournament 8 players round 1-3 no repeated pairings with seed group 
 
     let round2PriorPairs =
         round1PriorPairs
-        |> Set.union (round2Pairs |> List.map (fun (a, b) -> swissPairKey a.Name b.Name) |> Set.ofList)
+        |> Set.union (round2Pairs |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name) |> Set.ofList)
 
     let round3Scores =
         [ "Player1", 2.0; "Player2", 2.0
@@ -976,7 +977,7 @@ let ``swiss tournament 8 players round 1-3 no repeated pairings with seed group 
 
     let allPairs =
         round1Pairs @ round2Pairs @ round3Pairs
-        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
 
     let uniquePairs = allPairs |> Set.ofList
 
@@ -1074,14 +1075,14 @@ let ``swiss tournament with 16 players round 2 pairings with seed group 1`` () =
 
     let priorPairs =
         Set.ofList [
-            swissPairKey "Player1" "Player9"
-            swissPairKey "Player2" "Player10"
-            swissPairKey "Player3" "Player11"
-            swissPairKey "Player4" "Player12"
-            swissPairKey "Player5" "Player13"
-            swissPairKey "Player6" "Player14"
-            swissPairKey "Player7" "Player15"
-            swissPairKey "Player8" "Player16"
+            SwissScheduler.pairKey "Player1" "Player9"
+            SwissScheduler.pairKey "Player2" "Player10"
+            SwissScheduler.pairKey "Player3" "Player11"
+            SwissScheduler.pairKey "Player4" "Player12"
+            SwissScheduler.pairKey "Player5" "Player13"
+            SwissScheduler.pairKey "Player6" "Player14"
+            SwissScheduler.pairKey "Player7" "Player15"
+            SwissScheduler.pairKey "Player8" "Player16"
         ]
 
     let seedOrder = tcecSeedOrder players 1
@@ -1125,22 +1126,22 @@ let ``swiss tournament with 16 players round 3 pairings with seed group 1`` () =
 
     let priorPairs =
         Set.ofList [
-            swissPairKey "Player1" "Player9"
-            swissPairKey "Player2" "Player10"
-            swissPairKey "Player3" "Player11"
-            swissPairKey "Player4" "Player12"
-            swissPairKey "Player5" "Player13"
-            swissPairKey "Player6" "Player14"
-            swissPairKey "Player7" "Player15"
-            swissPairKey "Player8" "Player16"
-            swissPairKey "Player1" "Player5"
-            swissPairKey "Player2" "Player6"
-            swissPairKey "Player3" "Player7"
-            swissPairKey "Player4" "Player8"
-            swissPairKey "Player9" "Player13"
-            swissPairKey "Player10" "Player14"
-            swissPairKey "Player11" "Player15"
-            swissPairKey "Player12" "Player16"
+            SwissScheduler.pairKey "Player1" "Player9"
+            SwissScheduler.pairKey "Player2" "Player10"
+            SwissScheduler.pairKey "Player3" "Player11"
+            SwissScheduler.pairKey "Player4" "Player12"
+            SwissScheduler.pairKey "Player5" "Player13"
+            SwissScheduler.pairKey "Player6" "Player14"
+            SwissScheduler.pairKey "Player7" "Player15"
+            SwissScheduler.pairKey "Player8" "Player16"
+            SwissScheduler.pairKey "Player1" "Player5"
+            SwissScheduler.pairKey "Player2" "Player6"
+            SwissScheduler.pairKey "Player3" "Player7"
+            SwissScheduler.pairKey "Player4" "Player8"
+            SwissScheduler.pairKey "Player9" "Player13"
+            SwissScheduler.pairKey "Player10" "Player14"
+            SwissScheduler.pairKey "Player11" "Player15"
+            SwissScheduler.pairKey "Player12" "Player16"
         ]
 
     let seedOrder = tcecSeedOrder players 1
@@ -1183,7 +1184,7 @@ let ``swiss tournament 16 players round 1-3 no repeated pairings with seed group
 
     let round1PriorPairs =
         round1Pairs
-        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
         |> Set.ofList
 
     let round2Scores =
@@ -1196,7 +1197,7 @@ let ``swiss tournament 16 players round 1-3 no repeated pairings with seed group
 
     let round2PriorPairs =
         round1PriorPairs
-        |> Set.union (round2Pairs |> List.map (fun (a, b) -> swissPairKey a.Name b.Name) |> Set.ofList)
+        |> Set.union (round2Pairs |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name) |> Set.ofList)
 
     let round3Scores =
         [ "Player1", 2.0; "Player2", 2.0; "Player3", 2.0; "Player4", 2.0
@@ -1208,7 +1209,7 @@ let ``swiss tournament 16 players round 1-3 no repeated pairings with seed group
 
     let allPairs =
         round1Pairs @ round2Pairs @ round3Pairs
-        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> List.map (fun (a, b) -> SwissScheduler.pairKey a.Name b.Name)
 
     let uniquePairs = allPairs |> Set.ofList
 
@@ -1637,10 +1638,10 @@ let ``swiss realistic tournament scenario from screenshot`` () =
     // Prior pairings (simulate some games already played)
     let priorPairs =
         Set.ofList [
-            swissPairKey "Stockfish" "Seer"
-            swissPairKey "LeelaChessZero" "Clover"
-            swissPairKey "KomodoMCTS" "Stormphrax"
-            swissPairKey "Berserk" "Viridithas"
+            SwissScheduler.pairKey "Stockfish" "Seer"
+            SwissScheduler.pairKey "LeelaChessZero" "Clover"
+            SwissScheduler.pairKey "KomodoMCTS" "Stormphrax"
+            SwissScheduler.pairKey "Berserk" "Viridithas"
         ]
 
     let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
@@ -1926,7 +1927,7 @@ let ``round 7 with full 6-round history shows correct pairing order`` () =
             debugPrint "  %s vs %s -> %s" w.Name b.Name resultStr
 
             // Update prior pairs
-            priorPairs <- priorPairs.Add(swissPairKey w.Name b.Name)
+            priorPairs <- priorPairs.Add(SwissScheduler.pairKey w.Name b.Name)
 
             // Update scores based on results
             match result with

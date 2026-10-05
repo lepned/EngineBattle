@@ -1102,10 +1102,6 @@ let tryParseSan (fen: string) (san: string) : string option =
           | _ -> None
     | _ -> None
 
-/// Applies one short-SAN move to a FEN (tryParseSan >> tryMakeMove).
-let tryMakeSanMove (fen: string) (san: string) : string option =
-  tryParseSan fen san |> Option.bind (fun uci -> tryMakeMove fen uci)
-
 /// Normalizes a move line to a space-joined UCI sequence by walking the position move by
 /// move. Tokens may be UCI or short SAN, freely mixed; move numbers ("1.", "12...", also
 /// glued as "1.e4") and result markers are skipped. None when any move fails to resolve

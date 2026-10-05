@@ -67,6 +67,7 @@ type ChessLibrary.Engine.ChessEngine
   prop UciIdName : System.String { get }
 type ChessLibrary.AnalysisEngine
   Analyse(positionCommand: System.String, goCommand: System.String) : System.Int32
+  AnalyseBoard(board: ChessLibrary.Chess.Board, goCommand: System.String) : System.Int32
   ClearSearchMoves() : System.Void
   CurrentPositionCommand() : System.String
   GetAllDefaultOptions() : System.Collections.Generic.Dictionary<System.String, System.Object>
@@ -138,7 +139,6 @@ type ChessLibrary.AnalysisOutcome.Tags
 type ChessLibrary.EngineHelper
   static createAnalysisEngine(onUpdate: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.SearchUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : ChessLibrary.AnalysisEngine
   static createEngine(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
-  static createEngineAsync(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : System.Threading.Tasks.Task<ChessLibrary.Engine.ChessEngine>
   static createEngineWithoutValidation(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
   static createInitialUCICommands(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.Collections.Generic.IEnumerable<System.String>
   static initEngine(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : System.Void

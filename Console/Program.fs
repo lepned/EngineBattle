@@ -396,9 +396,30 @@ module Program =
           options.[key] <- box value
       { config with Options = options }
 
-  /// Runs engine analysis on a single position using an already-created engine.
-  /// Sends ucinewgame + isready before the search. Caller is responsible for engine lifecycle.
-  let private analyzePosition (engine: Engine.ChessEngine) (fen: string) (moves: string list) (searchDepth: int option) (searchMovetime: int option) (searchNodes: int option) (verbose: bool) =
+  /// The engine the console verbs search with: the analysis engine the GUI uses, and the newest
+  /// main-line status of its search. With Verbose the engine's info lines are printed as they come.
+  type private Analyzer =
+    { Engine: ChessLibrary.AnalysisEngine
+      Last: ChessLibrary.EngineTypes.EngineStatus option ref
+      Verbose: bool ref }
+
+  /// Starts the engine (blocks until it is ready; throws when it cannot start).
+  let private startAnalyzer (config: TypesDef.CoreTypes.EngineConfig) =
+      let last = ref None
+      let verbose = ref false
+      let onUpdate (u: ChessLibrary.SearchUpdate) =
+          match u.Update with
+          | ChessLibrary.EngineTypes.Status s when s.MultiPV <= 1 -> lock last (fun () -> last.Value <- Some s)
+          | ChessLibrary.EngineTypes.Info (_, line) when verbose.Value && not (line.Contains "currmove") -> printfn "%s" line
+          | ChessLibrary.EngineTypes.NNSeq moves when verbose.Value ->
+              for m in moves do if not (String.IsNullOrEmpty m.Raw) then printfn "%s" m.Raw
+          | _ -> ()
+      let engine = ChessLibrary.EngineHelper.createAnalysisEngine (onUpdate, config, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, false)
+      { Engine = engine; Last = last; Verbose = verbose }
+
+  /// Runs engine analysis on a single position: ucinewgame, then one search. An engine that fails
+  /// or exits during it ends the search with an error instead of leaving the verb waiting.
+  let private analyzePosition (analyzer: Analyzer) (fen: string) (moves: string list) (searchDepth: int option) (searchMovetime: int option) (searchNodes: int option) (verbose: bool) =
       let isStartpos = fen.Equals("startpos", StringComparison.OrdinalIgnoreCase)
       let actualFen =
           if isStartpos then "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -407,84 +428,48 @@ module Program =
       board.LoadFen actualFen
       for m in moves do
           board.PlayUciMove m
-      let isWhite = board.Position.STM = 0uy
-
-      engine.UciNewGame()
-      let ok = engine.WaitForReadyOk(900000)
-      if not ok then
-          // Startup-class failure: the caller should stop, not retry it per position.
-          raise (CustomException.EngineStartupException
-                    (sprintf "engine %s is not ready: %s" engine.Name engine.ReadyFailure))
 
       let movesStr = if moves.Length > 0 then " moves " + String.concat " " moves else ""
-      if isStartpos then
-          engine.Position("position startpos" + movesStr)
-      else
-          engine.Position(sprintf "position fen %s%s" actualFen movesStr)
+      let position =
+          if isStartpos then "position startpos" + movesStr
+          else sprintf "position fen %s%s" actualFen movesStr
+      let go =
+          match searchDepth, searchMovetime, searchNodes with
+          | Some d, _, _ -> sprintf "go depth %d" d
+          | _, Some ms, _ -> sprintf "go movetime %d" ms
+          | _, _, Some n -> sprintf "go nodes %d" n
+          | _ -> "go nodes 1000000"
 
-      match searchDepth, searchMovetime, searchNodes with
-      | Some d, _, _ -> engine.Write(sprintf "go depth %d" d)
-      | _, Some ms, _ -> engine.Go ms
-      | _, _, Some n -> engine.GoNodes n
-      | _ -> engine.GoNodes 1_000_000
-
+      analyzer.Verbose.Value <- verbose
+      lock analyzer.Last (fun () -> analyzer.Last.Value <- None)
+      analyzer.Engine.NewGame()
       let sw = Diagnostics.Stopwatch.StartNew()
-      let mutable lastDepth = 0
-      let mutable lastEval = ChessLibrary.MiscTypes.EvalType.NA
-      let mutable lastNodes = 0L
-      let mutable lastNps = 0L
-      let mutable lastEps = 0.0
-      let mutable lastPV = ""
-      let mutable lastTBHits = 0L
-      let mutable lastWDL: ChessLibrary.EngineTypes.WDL option = None
-      let mutable lastSDepth = 0
-      let mutable bestmove = ""
-      let mutable running = true
-
-      while running do
-          let line = engine.ReadLine()
-          if isNull line then
-              running <- false
-          else
-              let trimmed = line.TrimStart()
-              if trimmed.StartsWith("info", StringComparison.OrdinalIgnoreCase) then
-                  if verbose then
-                      if trimmed.StartsWith("info string", StringComparison.OrdinalIgnoreCase) then
-                          printfn "%s" trimmed
-                      elif trimmed.Contains("depth") && not (trimmed.Contains("currmove")) then
-                          printfn "%s" trimmed
-                  match ChessLibrary.EngineProtocol.Regex.getEssentialDataWithEPS trimmed isWhite with
-                  | Some (depth, eval, nodes, nps, eps, pv, tbhits, wdl, sDepth, _mpv) ->
-                      lastDepth <- depth
-                      lastEval <- eval
-                      lastNodes <- nodes
-                      lastNps <- nps
-                      if eps > 0L then lastEps <- float eps
-                      lastPV <- pv
-                      lastTBHits <- tbhits
-                      lastWDL <- wdl
-                      lastSDepth <- sDepth
-                  | None -> ()
-              elif trimmed.StartsWith("bestmove", StringComparison.OrdinalIgnoreCase) then
-                  if verbose then printfn "%s" trimmed
-                  let parts = trimmed.Split(' ')
-                  if parts.Length >= 2 then bestmove <- parts.[1]
-                  running <- false
-
+      let outcome = analyzer.Engine.Search(position, go) |> Async.RunSynchronously
       sw.Stop()
-      if bestmove = "" && engine.HasExited() then
-          raise (CustomException.EngineStartupException
-                    (sprintf "engine %s exited during the search (code %s)" engine.Name
-                        (match engine.LastExitCode with Some c -> string c | None -> "?")))
+      let bestmove =
+          match outcome with
+          | ChessLibrary.Completed (Some info) ->
+              if verbose then
+                  printfn "bestmove %s%s" info.Move (if String.IsNullOrEmpty info.Ponder then "" else " ponder " + info.Ponder)
+              info.Move
+          | ChessLibrary.Completed None -> ""
+          | ChessLibrary.Superseded -> ""
+          | ChessLibrary.Failed reason ->
+              // Startup-class failure: the caller should stop, not retry it per position.
+              raise (CustomException.EngineStartupException (sprintf "engine %s: %s" analyzer.Engine.Name reason))
+      let last = lock analyzer.Last (fun () -> analyzer.Last.Value)
+      let s = defaultArg last ChessLibrary.EngineTypes.EngineStatus.Empty
+      let pv = s.PVLongSAN
       let sanPV =
-          if not (String.IsNullOrWhiteSpace lastPV) then
+          if not (String.IsNullOrWhiteSpace pv) then
               let moveList = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
-              ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast moveList &board lastPV
+              ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast moveList &board pv
           else ""
-      { Depth = lastDepth; SDepth = lastSDepth; Eval = lastEval
-        Nodes = lastNodes; Nps = lastNps; Eps = lastEps; Time = sw.Elapsed
-        TBHits = lastTBHits; WDL = lastWDL; Bestmove = bestmove
-        PV = lastPV; SanPV = sanPV }
+      { Depth = s.Depth; SDepth = s.SD; Eval = (if last.IsSome then s.Eval else ChessLibrary.MiscTypes.EvalType.NA)
+        Nodes = s.Nodes; Nps = int64 s.NPS; Eps = s.EPS; Time = sw.Elapsed
+        TBHits = s.TBhits
+        WDL = (match s.WDL with ChessLibrary.EngineTypes.WDLType.HasValue w -> Some w | _ -> None)
+        Bestmove = bestmove; PV = pv; SanPV = sanPV }
 
   let runAnalyze (p: CliParser.AnalyzeParams) =
     let normalizedEngine = normalizePath p.Engine
@@ -492,37 +477,18 @@ module Program =
         printfn "Engine file not found: %s" normalizedEngine
     else
     try
-        // Resolve engine config: JSON file or bare exe
-        let config =
-            if normalizedEngine.EndsWith(".json", StringComparison.OrdinalIgnoreCase) then
-                Configuration.JSON.readSingleEngineConfig normalizedEngine
-            else
-                TypesDef.CoreTypes.EngineConfig.EmptyWithPath normalizedEngine
-
-        // Apply UCI option overrides
-        let options = System.Collections.Generic.Dictionary<string, obj>(config.Options)
-        for (key, value) in p.UciOptions do
-            options.[key] <- box value
-        let config = { config with Options = options }
+        // Resolve engine config: JSON file or bare exe, with the UCI option overrides
+        let config = resolveEngineConfig p.Engine p.UciOptions
         let config =
             match p.Args with
             | Some a -> { config with Args = a }
             | None -> config
 
-        // Validate FEN
         let isStartpos = p.Fen.Equals("startpos", StringComparison.OrdinalIgnoreCase)
         let fen =
             if isStartpos then
                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
             else p.Fen
-        let board = ChessLibrary.Chess.Board()
-        board.LoadFen fen
-
-        // Play moves on the board so STM/ply are correct for SAN PV
-        for m in p.Moves do
-            board.PlayUciMove m
-
-        let isWhite = board.Position.STM = 0uy
 
         printfn ""
         printfn "Engine: %s" config.Name
@@ -530,123 +496,56 @@ module Program =
         if p.Moves.Length > 0 then
             printfn "Moves:  %s" (String.concat " " p.Moves)
 
-        // Create synchronous engine
-        let engine = ChessLibrary.EngineHelper.createEngine(config, None)
+        let analyzer = startAnalyzer config
         try
             if p.ShowOptions then
                 printfn "\nUCI options for %s:\n" config.Name
-                let defaults = engine.GetDefaultOptions()
-                for opt in defaults do
-                    printfn "  %-30s  %s" opt.Key (opt.Value.ToString())
+                for opt in analyzer.Engine.GetAllDefaultOptions() do
+                    printfn "  %-30s  %s" opt.Key (string opt.Value)
             else
 
-            engine.UciNewGame()
-            let ok = engine.WaitForReadyOk(900000)
-            if not ok then failwith "Engine did not respond to isready"
-
-            // Send position
-            let movesStr = if p.Moves.Length > 0 then " moves " + String.concat " " p.Moves else ""
-            if isStartpos then
-                engine.Position("position startpos" + movesStr)
-            else
-                engine.Position(sprintf "position fen %s%s" fen movesStr)
-
-            // Send go command
             let searchDesc =
                 match p.Depth, p.MoveTime, p.Nodes with
-                | Some d, _, _ ->
-                    engine.Write(sprintf "go depth %d" d)
-                    sprintf "depth %d" d
-                | _, Some ms, _ ->
-                    engine.Go ms
-                    sprintf "movetime %dms" ms
-                | _, _, Some n ->
-                    engine.GoNodes n
-                    sprintf "nodes %s" (n.ToString("N0"))
-                | _ ->
-                    engine.GoNodes 1_000_000
-                    "nodes 1,000,000"
+                | Some d, _, _ -> sprintf "depth %d" d
+                | _, Some ms, _ -> sprintf "movetime %dms" ms
+                | _, _, Some n -> sprintf "nodes %s" (n.ToString("N0"))
+                | _ -> "nodes 1,000,000"
             printfn "Search: %s" searchDesc
             printfn ""
 
-            let sw = Diagnostics.Stopwatch.StartNew()
-            // Read loop — print raw info lines and track last parsed stats
-            let mutable lastDepth = 0
-            let mutable lastEval = ChessLibrary.MiscTypes.EvalType.NA
-            let mutable lastNodes = 0L
-            let mutable lastNps = 0L
-            let mutable lastEps = 0L
-            let mutable lastPV = ""
-            let mutable lastTBHits = 0L
-            let mutable lastWDL: ChessLibrary.EngineTypes.WDL option = None
-            let mutable lastSDepth = 0
-            let mutable bestmove = ""
-            let mutable running = true
+            // the engine's info lines and its bestmove are printed as they come
+            let r = analyzePosition analyzer p.Fen p.Moves p.Depth p.MoveTime p.Nodes true
 
-            while running do
-                let line = engine.ReadLine()
-                if isNull line then
-                    running <- false
-                else
-                    let trimmed = line.TrimStart()
-                    if trimmed.StartsWith("info", StringComparison.OrdinalIgnoreCase) then
-                        // Print info lines with depth (skip currmove etc.) and info string (LogLiveStats)
-                        if trimmed.StartsWith("info string", StringComparison.OrdinalIgnoreCase) then
-                            printfn "%s" trimmed
-                        elif trimmed.Contains("depth") && not (trimmed.Contains("currmove")) then
-                            printfn "%s" trimmed
-                        match ChessLibrary.EngineProtocol.Regex.getEssentialDataWithEPS trimmed isWhite with
-                        | Some (depth, eval, nodes, nps, eps, pv, tbhits, wdl, sDepth, _mpv) ->
-                            lastDepth <- depth
-                            lastEval <- eval
-                            lastNodes <- nodes
-                            lastNps <- nps
-                            if eps > 0L then lastEps <- eps
-                            lastPV <- pv
-                            lastTBHits <- tbhits
-                            lastWDL <- wdl
-                            lastSDepth <- sDepth
-                        | None -> ()
-                    elif trimmed.StartsWith("bestmove", StringComparison.OrdinalIgnoreCase) then
-                        printfn "%s" trimmed
-                        let parts = trimmed.Split(' ')
-                        if parts.Length >= 2 then bestmove <- parts.[1]
-                        running <- false
-
-            // Print summary
-            sw.Stop()
             printfn ""
             printfn "--- Summary ---"
-            if lastDepth > 0 then
-                let formattedNps = GameAnalysis.Formatting.formatNPS (float lastNps)
-                let formattedEps = if lastEps > 0L then sprintf " (%s)" (GameAnalysis.Formatting.formatEPS (float lastEps)) else ""
+            if r.Depth > 0 then
+                let formattedNps = GameAnalysis.Formatting.formatNPS (float r.Nps)
+                let formattedEps = if r.Eps > 0.0 then sprintf " (%s)" (GameAnalysis.Formatting.formatEPS r.Eps) else ""
                 let wdlStr =
-                    match lastWDL with
+                    match r.WDL with
                     | Some wdl -> sprintf "WDL: %d-%d-%d" (int wdl.Win) (int wdl.Draw) (int wdl.Loss)
                     | None -> "WDL: N/A"
-                let elapsed = sw.Elapsed
+                let elapsed = r.Time
                 let timeStr =
                     if elapsed.TotalSeconds < 1.0 then sprintf "%dms" elapsed.Milliseconds
                     elif elapsed.TotalMinutes < 1.0 then sprintf "%.1fs" elapsed.TotalSeconds
                     else sprintf "%dm %02ds" (int elapsed.TotalMinutes) elapsed.Seconds
-                printfn "Depth:    %d (SD: %d)" lastDepth lastSDepth
-                printfn "Eval:     %s" (lastEval.ToString())
-                printfn "Nodes:    %s" (lastNodes.ToString("N0"))
+                printfn "Depth:    %d (SD: %d)" r.Depth r.SDepth
+                printfn "Eval:     %s" (r.Eval.ToString())
+                printfn "Nodes:    %s" (r.Nodes.ToString("N0"))
                 printfn "NPS:      %s%s" formattedNps formattedEps
                 printfn "Time:     %s" timeStr
-                printfn "TBHits:   %d" lastTBHits
+                printfn "TBHits:   %d" r.TBHits
                 printfn "%s" wdlStr
-                printfn "Bestmove: %s" bestmove
-                if not (String.IsNullOrWhiteSpace lastPV) then
-                    let pv = if lastPV.Length > 80 then lastPV.Substring(0, 77) + "..." else lastPV
+                printfn "Bestmove: %s" r.Bestmove
+                if not (String.IsNullOrWhiteSpace r.PV) then
+                    let pv = if r.PV.Length > 80 then r.PV.Substring(0, 77) + "..." else r.PV
                     printfn "PV:       %s" pv
-                    let moveList = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
-                    let sanPV = ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast moveList &board lastPV
-                    printfn "PV (SAN): %s" sanPV
+                    printfn "PV (SAN): %s" r.SanPV
             else
                 printfn "No search info received from engine."
         finally
-            engine.StopProcess()
+            analyzer.Engine.Quit()
     with
     | :? CustomException.EngineStartupException as ex ->
         // Refused or dead engine: the same exit code cmp and the puzzle command give.
@@ -862,11 +761,11 @@ module Program =
 
         // Create engines once, reuse across all positions. Engine1's process must be
         // stopped even when engine2's creation throws (bad path, failed start).
-        let engine1 = ChessLibrary.EngineHelper.createEngine(config1, None)
+        let engine1 = startAnalyzer config1
         let engine2 =
-            try ChessLibrary.EngineHelper.createEngine(config2, None)
+            try startAnalyzer config2
             with ex ->
-                try engine1.StopProcess() with _ -> ()
+                try engine1.Engine.Quit() with _ -> ()
                 raise ex
         try
 
@@ -993,8 +892,8 @@ module Program =
                     (avgEps1 / avgEps2)
 
         finally
-            engine1.StopProcess()
-            engine2.StopProcess()
+            engine1.Engine.Quit()
+            engine2.Engine.Quit()
     with ex ->
         ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Comparison aborted: %s" ex.Message)
         exit 1
@@ -1154,7 +1053,7 @@ module Program =
         printfn "framed from the piece owner's perspective. Higher = more valuable in THIS position."
         printfn ""
 
-        let engine = ChessLibrary.EngineHelper.createEngine(config, None)
+        let engine = startAnalyzer config
         try
             // Baseline eval
             let baseR = analyzePosition engine fen [] depth movetime nodes false
@@ -1265,7 +1164,7 @@ module Program =
                     printfn "%-8s  %10.2f  %5d" label avg vals.Length
             printfn ""
         finally
-            engine.StopProcess()
+            engine.Engine.Quit()
     with
     | :? CustomException.EngineStartupException as ex ->
         // Refused or dead engine: the same exit code cmp and the puzzle command give.
@@ -1645,7 +1544,7 @@ module Program =
         printfn "Sampled:   %d   Search: nodes %d   Target: logit(White score)" fens.Length nodes
         printfn ""
 
-        let engine = ChessLibrary.EngineHelper.createEngine(config, None)
+        let engine = startAnalyzer config
         try
             printf "Evaluating %d positions " fens.Length
             let mutable nCheck = 0
@@ -1722,7 +1621,7 @@ module Program =
                 fitAndReport "Middlegame (>16 pieces)" (data |> Array.filter (fun (_, _, tp) -> tp > 16))
                 fitAndReport "Endgame (<=16 pieces)"   (data |> Array.filter (fun (_, _, tp) -> tp <= 16))
         finally
-            engine.StopProcess()
+            engine.Engine.Quit()
     with ex ->
         printfn "Error during piece-value fit: %s" ex.Message
 

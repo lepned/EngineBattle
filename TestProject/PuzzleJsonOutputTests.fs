@@ -7,6 +7,17 @@ open Xunit
 open ChessLibrary.PuzzleTypes
 open PuzzleJsonOutput
 
+// Paired stats computed from the scores in arrival order, as the runner does
+let buildResult
+    (puzzleFile: string) (totalPuzzlesLoaded: int) (sampleSize: int) (minRating: int) (maxRating: int)
+    (filter: string) (ratingGroups: string) (startedUtc: DateTime) (elapsedSeconds: float)
+    (scores: seq<Score>) : PuzzleJsonResult =
+    let materialized = scores |> Seq.toList
+    buildResultWithPaired
+        (ChessLibrary.PuzzlePaired.outcomeOf (ChessLibrary.PuzzlePaired.compute materialized))
+        puzzleFile totalPuzzlesLoaded sampleSize minRating maxRating
+        filter ratingGroups startedUtc elapsedSeconds materialized
+
 // ---------------------------------------------------------------------------
 // Helpers for building hand-rolled Score values without spinning up an engine.
 // ---------------------------------------------------------------------------

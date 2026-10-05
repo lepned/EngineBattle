@@ -145,9 +145,6 @@ let private resetState (st: ParserState) =
 let private hasGame (st: ParserState) =
    st.WhiteSan <> "" || st.BlackSan <> "" || st.MainlinePly.Count > 0
 
-let private hasHeaders (st: ParserState) =
-  st.White <> "" || st.Black <> "" || st.Event <> "" || st.Result <> ""
-
 // ============================================================================
 // PlyMove tree management
 // ============================================================================
@@ -652,9 +649,6 @@ let parsePgnFileWithRaw (pgnFilePath: string) : seq<PgnGame> = parsePgnFileHelpe
 
 let parsePgnFile (pgnFilePath: string) : seq<PgnGame> = parsePgnFileHelper pgnFilePath false
 
-/// Convert a FullSpanParser game to moves as string list (for compatibility)
-let getMovesAsStrings (game: PgnGame) : string list = game.Mainline |> Seq.map (fun mv -> mv.San) |> Seq.toList
-
 /// Generate PGN string representation of a game on demand
 let toPgnString (game: PgnGame) : string =
   let sb = System.Text.StringBuilder()
@@ -700,46 +694,6 @@ let parseFullPgnGame (pgn:string) =
   match parsePgnString pgn |> Seq.tryHead with
   | Some game -> game
   | None -> PgnGame.Empty(0)
-
-/// Parse only headers from a PGN string (span-based, skips movetext for performance)
-let parsePgnStringHeadersOnly (content: string): seq<PgnGame> =
-  seq {
-      let st = ParserState.Create()
-      let mutable inMoveText = false
-      use reader = new StringReader(content)
-      let mutable currentLine = reader.ReadLine()
-
-      while currentLine <> null do
-        let trimmed = currentLine.TrimStart()
-        if String.IsNullOrEmpty trimmed then
-          if inMoveText && hasHeaders st then
-            yield buildGame st
-            resetState st
-            inMoveText <- false
-          elif hasHeaders st && not inMoveText then
-            inMoveText <- true
-        elif trimmed.Length > 0 && trimmed[0] = '[' then
-          if inMoveText && hasHeaders st then
-            yield buildGame st
-            resetState st
-            inMoveText <- false
-          parseHeaderTexLine st trimmed
-        else
-          inMoveText <- true
-          let trimmedStr = trimmed.ToString()
-          if trimmedStr = "1-0" || trimmedStr = "0-1" || trimmedStr = "1/2-1/2" || trimmedStr = "*" ||
-             trimmedStr.EndsWith(" 1-0") || trimmedStr.EndsWith(" 0-1") || trimmedStr.EndsWith(" 1/2-1/2") || trimmedStr.EndsWith(" *") then
-            if st.Result = "" then
-              if trimmedStr.Contains("1-0") then st.Result <- "1-0"
-              elif trimmedStr.Contains("0-1") then st.Result <- "0-1"
-              elif trimmedStr.Contains("1/2-1/2") then st.Result <- "1/2-1/2"
-              elif trimmedStr.Contains("*") then st.Result <- "*"
-
-        currentLine <- reader.ReadLine()
-
-      if hasHeaders st then
-        yield buildGame st
-}
 
 type PgnGameMessage =
     | WriteGame of filePath:string * header:GameMetadata * moveSection:string * result:Result

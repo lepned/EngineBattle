@@ -77,15 +77,16 @@ let ``play for the win keeps Lc0's strength and puts the opponent a cap below it
     Assert.Equal(2000, r.Settings.CalibrationElo)
 
 [<Fact>]
-let ``analysis takes the chosen side and shows what that side plays by`` () =
-    let w = forAnalysis true 2800 2500
-    Assert.Equal(WhiteSideAnalysis, w.Mode)
+let ``kibitz analysis shows what the side plays by, contempt being the gap on screen`` () =
+    let kibitz = (tryAnalysisPreset "kibitz").Value
+    let w = (kibitz.Apply 2800 2500).Settings
     Assert.Equal(300, w.Contempt)
+    Assert.Equal(2800, w.CalibrationElo)
     Assert.Equal(0.0, w.Objectivity)
     Assert.Equal(1.0, w.Attenuation)
-    let b = forAnalysis false 2500 2800
-    Assert.Equal(BlackSideAnalysis, b.Mode)
+    let b = (kibitz.Apply 2500 2800).Settings
     Assert.Equal(-300, b.Contempt)
+    Assert.Equal(2500, b.CalibrationElo)
 
 [<Fact>]
 let ``support is read from the engine's option list, case-insensitively, and the hidden four never count as missing`` () =

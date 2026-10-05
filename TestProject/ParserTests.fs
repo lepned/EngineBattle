@@ -9,6 +9,7 @@ open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.CoreTypes
 module MoveParser = ChessLibrary.MoveParser
 module FullPGNParser = ChessLibrary.FullPGNParser
+module RoundRobinScheduler = ChessLibrary.Scheduler.RoundRobin
 module PGNHelper = ChessLibrary.PGNHelper
 module EPDExtractor = ChessLibrary.EPDExtractor
 module PGNWriter = ChessLibrary.PGNWriter
@@ -223,7 +224,16 @@ let ``legacy PGN round-robin resume ends on opening 25`` () =
             |> Seq.distinct
             |> Seq.map (fun name -> { EngineConfig.Empty with Name = name })
             |> Seq.toList
-        let pairings = ChessLibrary.TournamentPairing.PairingHelper.generateAllRoundRobinDoubleRounds engines bookGames
+        let cfg : ChessLibrary.Scheduler.ScheduleConfig =
+            { Mode = ChessLibrary.Scheduler.RoundRobin
+              Challengers = engines
+              Opponents = []
+              Openings = bookGames
+              Rounds = bookGames.Length
+              OpeningsTwice = true
+              PreventDeviation = false
+              Distribution = ChessLibrary.Scheduler.Shared }
+        let pairings = RoundRobinScheduler.generate cfg |> ChessLibrary.Scheduler.Diff.toPairings
         let left =
             System.Collections.Generic.HashSet<_>(
                 ChessLibrary.Scheduler.Diff.diffPairings pairings (games |> Seq.toArray), HashIdentity.Reference)
@@ -693,7 +703,7 @@ module FullSpanParserTests =
         let games = parsePgnString pgnContent |> Seq.toList
         Assert.Single(games) |> ignore
         let game = games.Head
-        let moves = getMovesAsStrings game
+        let moves = game.Mainline |> Seq.map (fun m -> m.San) |> Seq.toList
         Assert.Contains("O-O", moves)
         // O-O appears twice (5. O-O and 7... O-O)
 
@@ -744,7 +754,7 @@ module FullSpanParserTests =
 """
         let games = parsePgnString pgnContent |> Seq.toList
         Assert.Single(games) |> ignore
-        let moves = getMovesAsStrings games.Head
+        let moves = games.Head.Mainline |> Seq.map (fun m -> m.San) |> Seq.toList
         Assert.Contains("e8=Q", moves)
 
     [<Fact>]
@@ -759,7 +769,7 @@ module FullSpanParserTests =
 """
         let games = parsePgnString pgnContent |> Seq.toList
         Assert.Single(games) |> ignore
-        let moves = getMovesAsStrings games.Head
+        let moves = games.Head.Mainline |> Seq.map (fun m -> m.San) |> Seq.toList
         Assert.Contains("Qxf7#", moves)
 
     [<Fact>]
@@ -1019,87 +1029,6 @@ module FullSpanParserTests =
         Assert.Equal("*", game.GameMetaData.Result)
         Assert.True(game.Fen.Contains("r1bqkb1r"))
         Assert.Equal(0, game.Mainline.Count)  // No moves, just position
-
-    [<Fact>]
-    let ``FullSpanParser parsePgnStringHeadersOnly extracts headers without parsing moves`` () =
-        let pgn = """[Event "Test Tournament"]
-[Site "Test Site"]
-[Date "2026.01.08"]
-[Round "1"]
-[White "Player1"]
-[Black "Player2"]
-[Result "1-0"]
-[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]
-[SetUp "1"]
-
-1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 1-0
-
-[Event "Second Game"]
-[Site "Another Site"]
-[Date "2026.01.08"]
-[Round "2"]
-[White "Player3"]
-[Black "Player4"]
-[Result "0-1"]
-
-1. d4 d5 2. c4 e6 3. Nc3 Nf6 0-1"""
-
-        let games = parsePgnStringHeadersOnly pgn |> Seq.toArray
-        Assert.Equal(2, games.Length)
-        
-        // First game - headers parsed, no moves
-        Assert.Equal("Test Tournament", games.[0].GameMetaData.Event)
-        Assert.Equal("Player1", games.[0].GameMetaData.White)
-        Assert.Equal("Player2", games.[0].GameMetaData.Black)
-        Assert.Equal("1-0", games.[0].GameMetaData.Result)
-        Assert.True(games.[0].Fen.Contains("rnbqkbnr"))
-        Assert.Equal(0, games.[0].Mainline.Count)  // Moves not parsed
-        
-        // Second game
-        Assert.Equal("Second Game", games.[1].GameMetaData.Event)
-        Assert.Equal("Player3", games.[1].GameMetaData.White)
-        Assert.Equal("Player4", games.[1].GameMetaData.Black)
-        Assert.Equal("0-1", games.[1].GameMetaData.Result)
-        Assert.Equal(0, games.[1].Mainline.Count)
-
-    [<Fact>]
-    let ``FullSpanParser parsePgnStringHeadersOnly is faster than full parsing`` () =
-        // Generate a PGN with many games and long movelists
-        let sb = System.Text.StringBuilder()
-        for i in 1 .. 100 do
-            sb.AppendLine($"[Event \"Game {i}\"]") |> ignore
-            sb.AppendLine("[Site \"Test\"]") |> ignore
-            sb.AppendLine("[Date \"2026.01.08\"]") |> ignore
-            sb.AppendLine($"[Round \"{i}\"]") |> ignore
-            sb.AppendLine("[White \"Alpha\"]") |> ignore
-            sb.AppendLine("[Black \"Beta\"]") |> ignore
-            sb.AppendLine("[Result \"1-0\"]") |> ignore
-            sb.AppendLine() |> ignore
-            // Long movelist
-            sb.Append("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O ") |> ignore
-            sb.Append("9. h3 Nb8 10. d4 Nbd7 11. Nbd2 Bb7 12. Bc2 Re8 13. Nf1 Bf8 14. Ng3 g6 15. Bg5 h6 ") |> ignore
-            sb.AppendLine("16. Bd2 Bg7 17. a4 c5 18. d5 c4 19. b4 Nh5 20. Nxh5 gxh5 1-0") |> ignore
-            sb.AppendLine() |> ignore
-        
-        let pgn = sb.ToString()
-        
-        let sw1 = System.Diagnostics.Stopwatch.StartNew()
-        let headersOnly = parsePgnStringHeadersOnly pgn |> Seq.toArray
-        sw1.Stop()
-        
-        let sw2 = System.Diagnostics.Stopwatch.StartNew()
-        let fullParse = parsePgnString pgn |> Seq.toArray
-        sw2.Stop()
-        
-        Assert.Equal(100, headersOnly.Length)
-        Assert.Equal(100, fullParse.Length)
-        
-        // Headers-only should have no moves
-        Assert.True(headersOnly |> Array.forall (fun g -> g.Mainline.Count = 0))
-        // Full parse should have moves
-        Assert.True(fullParse |> Array.forall (fun g -> g.Mainline.Count > 0))
-        
-        // Headers-only should generally be faster (not strictly asserted due to timing variance)
 
     [<Fact>]
     let ``FullSpanParser parsePgnFileWithRaw populates Raw field`` () =

@@ -187,7 +187,7 @@ let ``startedUtc keeps its colons under a culture whose time separator is a dot`
     try
         CultureInfo.CurrentCulture <- culture
         let started = DateTime(2026, 9, 4, 12, 30, 45, 123, DateTimeKind.Utc)
-        let result = PuzzleJsonOutput.buildResult "p.csv" 1 1 0 3500 "" "" started 1.0 []
+        let result = PuzzleJsonOutputTests.buildResult "p.csv" 1 1 0 3500 "" "" started 1.0 []
         Assert.Equal("2026-09-04T12:30:45.123Z", result.StartedUtc)
     finally
         CultureInfo.CurrentCulture <- saved

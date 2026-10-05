@@ -77,11 +77,6 @@ module EngineHelper =
                         (match engine.StartFailure with "" -> "" | r -> ": " + r))
           engine
 
-  /// createEngine on a pool thread. The constructor starts the process and waits for uciok, which
-  /// blocks; a UI thread (a Blazor handler) must not be the one waiting.
-  let createEngineAsync (config: EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : Task<ChessEngine> =
-      Task.Run(fun () -> createEngine (config, logger))
-
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {
         try

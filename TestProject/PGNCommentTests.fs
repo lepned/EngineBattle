@@ -47,8 +47,6 @@ let ``malformed input degrades to text rather than being swallowed`` () =
 let ``lookup is case-insensitive and takes the first occurrence`` () =
     let p = parse "[%Eval 1.0] [%eval 2.0]"
     Assert.Equal(Some "1.0", PGNComment.tryFind "EVAL" p)
-    Assert.True(PGNComment.hasCommands "[%clk 0:01:00]")
-    Assert.False(PGNComment.hasCommands "just a note")
 
 [<Fact>]
 let ``consecutive comments on one move are both kept`` () =

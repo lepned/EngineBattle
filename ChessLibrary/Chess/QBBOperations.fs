@@ -173,9 +173,6 @@ let inline Pop(bb:uint64) = (uint64)(System.Numerics.BitOperations.PopCount(bb))
 let inline OppSq(sp:int) = sp ^^^ 56
 let inline AbsSq(sq:int, sideToMove:int) = if sideToMove = 0 then sq else OppSq(sq)
 
-// Define functions for each file
-let getAFileKingAttack occupation = ExtractLSB(FileMasks.[0] &&& occupation)
-
 let createKnightMask startSq finalSq =
   let mutable mask = 0UL
   let mutable currentSq = startSq

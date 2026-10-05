@@ -88,27 +88,6 @@ let ``createCommandsFromConfig builds CLI flags from config options`` () =
     Assert.Contains("--backend-opts=\"gpu=2 policy=head\"", cmd)
     Assert.DoesNotContain("UnknownX", cmd)
 
-[<Fact>]
-let ``extractOptionDefaults and createDefaultSetOptionCommandForName resolve defaults`` () =
-    let lines = ResizeArray<string>()
-    lines.Add("id name Fake")
-    lines.Add("option name Hash type spin default 16 min 1 max 1024")
-    lines.Add("option name Ponder type check default false")
-    lines.Add("option name Threads type spin min 1 max 1024")
-
-    let defaults = EP.UCI.extractOptionDefaults lines
-    Assert.Equal(2, defaults.Count)
-    Assert.Equal("16", defaults["Hash"])
-    Assert.Equal("false", defaults["Ponder"])
-
-    let cmdHash = EP.UCI.createDefaultSetOptionCommandForName defaults "hash"
-    let cmdPonder = EP.UCI.createDefaultSetOptionCommandForName defaults "PONDER"
-    let cmdMissing = EP.UCI.createDefaultSetOptionCommandForName defaults "threads"
-
-    Assert.Equal(Some "setoption name Hash value 16", cmdHash)
-    Assert.Equal(Some "setoption name Ponder value false", cmdPonder)
-    Assert.True(cmdMissing.IsNone)
-
 module UciOpt = ChessLibrary.UciOption
 
 [<Fact>]

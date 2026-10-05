@@ -303,7 +303,7 @@
 
     private bool IsEngineThinking() => model.Current != null;
 
-    private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
+    private ChessLibrary.AnalysisEngine analyzer;
 
     protected override void OnInitialized()
     {
@@ -432,11 +432,11 @@
         var generation = ++engineGeneration;
         bool Stale() => generation != engineGeneration || disposeCts.IsCancellationRequested;
         StateHasChanged();
-        AnalysisManager.SimpleEngineAnalyzer created;
+        ChessLibrary.AnalysisEngine created;
         try
         {
-            Action<SearchUpdate> onUpdate = u => HandleSearchUpdate(u, generation);
-            created = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, board, logger, onUpdate, false));
+            var onUpdate = FuncConvert.FromAction<SearchUpdate>(u => HandleSearchUpdate(u, generation));
+            created = await Task.Run(() => EngineHelper.createAnalysisEngine(onUpdate, config, logger, false));
         }
         catch (Exception ex)
         {
@@ -473,7 +473,7 @@
             PlayModel.Go.GoClock c => TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(c.wtime, c.btime, c.winc, c.binc),
             _ => throw new InvalidOperationException()
         };
-        var id = analyzer.Play(command);
+        var id = analyzer.AnalyseBoard(board, command);
         model = PlayModel.step(model, PlayModel.Event.NewStarted(id)).Item1;
     }
 
@@ -492,7 +492,7 @@
         foreach (var option in EngineOptions)
         {
             ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, $"  setoption name {option.Name} value {option.Value}");
-            analyzer.AddSetoption(option);
+            analyzer.SetOption(option);
         }
         if (!engineJustStarted)
         {
@@ -507,7 +507,7 @@
         ApplyEngineOptions(engineJustStarted: true);
         if (OnEngineReady.HasDelegate)
         {
-            IReadOnlyCollection<string> names = analyzer.Engine.GetUCICommands().Keys.ToList();
+            IReadOnlyCollection<string> names = analyzer.GetUCICommands().Keys.ToList();
             await OnEngineReady.InvokeAsync(names);
         }
     }

@@ -48,7 +48,7 @@ let private startedUtc = DateTime(2026, 8, 23, 18, 0, 0, DateTimeKind.Utc)
 
 let private writeTempSummary (scores: Score seq) =
     let result =
-        PuzzleJsonOutput.buildResult "puzzles.csv" 1000 500 0 3900 "" "2600" startedUtc 60.0 scores
+        PuzzleJsonOutputTests.buildResult "puzzles.csv" 1000 500 0 3900 "" "2600" startedUtc 60.0 scores
     let path = Path.Combine(Path.GetTempPath(), sprintf "LichessSummary_test_%s.json" (Guid.NewGuid().ToString "N"))
     File.WriteAllText(path, PuzzleJsonOutput.serialize result)
     path

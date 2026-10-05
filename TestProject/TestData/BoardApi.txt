@@ -24,7 +24,6 @@ type ChessLibrary.Chess.Board
   InsufficientMaterial() : System.Boolean
   IsMate() : System.Boolean
   LoadFen(fen: Microsoft.FSharp.Core.FSharpOption<System.String>) : System.Void
-  LoadMoveHistoryWithVariations(history: System.String) : System.Void
   LoadPGNGameWithVariations(pgn: ChessLibrary.PGNTypes.PgnGame) : System.Void
   MakeMove(move: ChessLibrary.MoveTypes.TMove&) : System.Void
   MakeMoveNoHash(move: ChessLibrary.MoveTypes.TMove&) : System.Void

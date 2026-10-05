@@ -269,16 +269,6 @@ let createReplayDicts (engines: EngineConfig list) : Map<string, ReferenceGameRe
 // Opening Formatting Helpers
 // ============================================================================
 
-/// Format opening moves as string (e.g., "1. e4 e5 2. Nf3 Nc6")
-let formatOpeningMoves (openingMoves: PlyMove seq) : string =
-    openingMoves
-    |> Seq.mapi (fun _ m ->
-        if m.Color = "w" then
-            sprintf "%d. %s" m.MoveNumber m.San
-        else
-            sprintf "%s" m.San)
-    |> String.concat " "
-
 /// Compute an opening-based PGN `Round` label: `{openingNumber}.{N}` where
 /// N is 1 + (games already played at this opening, counting both PGN history
 /// and the queue segment that precedes the current pair). Used by the Swiss,
@@ -286,12 +276,6 @@ let formatOpeningMoves (openingMoves: PlyMove seq) : string =
 /// pair-based `applyPairLabels` instead.
 let computeRoundText (openingNumber: int) (openingsAlreadyPlayed: int) (liveGamesPlayed: int) : string =
     sprintf "%d.%d" openingNumber (openingsAlreadyPlayed + liveGamesPlayed + 1)
-
-/// Get position with moves string for logging
-let getPositionWithMoves (board: Board) : string =
-    let fen = board.StartPosition
-    let start = $"position fen {fen} moves"
-    board.UciMovesPlayed |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
 
 // ============================================================================
 // Replay List Helpers

@@ -20,10 +20,6 @@ module MatchStats =
     /// The reference's Stats(wins, losses, draws) - note the order.
     static member OfWld(wins, losses, draws) = { Stats.Empty with Wins = wins; Losses = losses; Draws = draws }
 
-    /// The reference's Stats(ll, ld, wl, dd, wd, ww).
-    static member OfPenta(ll, ld, wl, dd, wd, ww) =
-      { Stats.Empty with PentaLL = ll; PentaLD = ld; PentaWL = wl; PentaDD = dd; PentaWD = wd; PentaWW = ww }
-
     static member (+) (a: Stats, b: Stats) =
       { Wins = a.Wins + b.Wins; Losses = a.Losses + b.Losses; Draws = a.Draws + b.Draws
         PentaWW = a.PentaWW + b.PentaWW; PentaWD = a.PentaWD + b.PentaWD; PentaWL = a.PentaWL + b.PentaWL

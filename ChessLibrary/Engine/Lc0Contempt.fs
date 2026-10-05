@@ -171,17 +171,6 @@ let tryPreset (id: string) = presets |> List.tryFind (fun p -> p.Id = id)
 /// `p.Apply playsAt opponent` for callers that cannot invoke a curried F# function (C#).
 let applyPreset (p: Preset) (playsAt: int) (opponent: int) = p.Apply playsAt opponent
 
-/// Analysis from one side's point of view: that side plays at `playsAt` against an opponent of
-/// `opponent`. Objectivity 0 so the evals shown are the ones that side plays by; the page pairs
-/// them with an objective search.
-let forAnalysis (whiteSide: bool) (playsAt: int) (opponent: int) : ContemptSettings =
-    { defaults with
-        Mode = (if whiteSide then WhiteSideAnalysis else BlackSideAnalysis)
-        Contempt = contemptBetween playsAt opponent
-        CalibrationElo = playsAt
-        Attenuation = 1.0
-        Objectivity = 0.0 }
-
 /// For analysis from one side's view; the side itself is chosen separately, so these carry
 /// WhiteSideAnalysis as a placeholder. Both are Lc0's own suggested setups (v0.30 post).
 let analysisPresets : Preset list =

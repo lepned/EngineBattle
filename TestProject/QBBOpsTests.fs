@@ -73,14 +73,6 @@ module QBBOperationsTests =
 
     // --- File Mask Functions Tests ---
 
-    [<Fact>]
-    let ``getAFileKingAttack returns expected bit using AFile mask`` () =
-        // When passing the AFile constant as occupation, the function extracts the lowest set bit.
-        let occupation = AFile
-        let result = getAFileKingAttack occupation
-        let expected = ExtractLSB (AFile &&& occupation)
-        Assert.Equal(expected, result)
-
     // --- Knight Mask Tests ---
 
     [<Fact>]

@@ -269,6 +269,8 @@ dotnet run -c Release -- perft 5 10
 
 Analyzes a single position with a chess engine. Accepts engine JSON configs or bare exe paths.
 
+It runs the engine the way the analysis pages do (the same analysis engine): the engine's move overhead is 0, so `--movetime` is searched in full; Winboard engines work too (use `--movetime`); an engine that exits or stops answering ends the command with an error instead of leaving it waiting. `compare` and the piece-value commands search the same way.
+
 **Aliases:** `a`
 
 **Syntax:**

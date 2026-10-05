@@ -220,7 +220,7 @@ let ``tryMakeMove handles castling and promotion`` () =
     | Some fen -> Assert.Equal('Q', pieceAt fen "a8")
     | None -> failwith "promotion should be legal"
 
-// --- short-SAN input (tryParseSan/tryMakeSanMove/pvToUci) -------
+// --- short-SAN input (tryParseSan/pvToUci) -------
 
 [<Fact>]
 let ``tryParseSan resolves moves and tolerates decorations`` () =
@@ -262,12 +262,6 @@ let ``every generated SAN parses back to its own UCI`` () =
     for fen in [ startpos; "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1" ] do
         for m in legalMovesOf fen do
             Assert.Equal(Some m.Uci, tryParseSan fen m.San)
-
-[<Fact>]
-let ``tryMakeSanMove composes parse and apply`` () =
-    match tryMakeSanMove startpos "e4" with
-    | Some fen -> Assert.StartsWith("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b", fen)
-    | None -> failwith "e4 should apply"
 
 [<Fact>]
 let ``pvToUci walks mixed SAN and UCI lines with move numbers`` () =
