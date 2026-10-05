@@ -406,26 +406,29 @@ let private positionsGroup (c: Ctx) =
    | Some line, Some board -> failed c "startpos moves" (sprintf "bestmove %s is not legal in %s" (bestMoveOf line) (board.FEN()))
    | _ -> failed c "startpos moves" "no bestmove within 30 s"; recover c)
   checkedSearch c "fen" ruy [] c.Limited |> ignore
-  // the def's own UCI_Chess960 stays: true writes castling as king takes rook, false is standard
+  // EngineBattle sets UCI_Chess960 per position (analysis) or per game (tournaments), whatever the
+  // def says, so the check does the same: each variant with the option set for it, then the def's
+  // value back
   let defChess960 =
     match c.Configured.TryGetValue "UCI_Chess960" with
     | true, v -> Some (v.Trim().Equals("true", StringComparison.OrdinalIgnoreCase))
     | _ -> None
-  if defChess960 = Some true then c.Report.Add Skip "castling in moves" "the def turns UCI_Chess960 on (castling is king takes rook)"
-  else checkedSearch c "castling in moves" startFen [ "e2e4"; "e7e5"; "g1f3"; "b8c6"; "f1c4"; "g8f6"; "e1g1" ] c.Limited |> ignore
+  let has960 = hasOption c "UCI_Chess960"
+  let set960 (on: bool) = if has960 then c.S.Send (sprintf "setoption name UCI_Chess960 value %b" on)
+  if defChess960 = Some true then set960 false
+  checkedSearch c "castling in moves" startFen [ "e2e4"; "e7e5"; "g1f3"; "b8c6"; "f1c4"; "g8f6"; "e1g1" ] c.Limited |> ignore
+  if defChess960 = Some true then set960 true
   checkedSearch c "en passant in moves" startFen [ "e2e4"; "a7a6"; "e4e5"; "d7d5" ] c.Limited |> ignore
   checkedSearch c "en passant in fen" "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3" [] c.Limited |> ignore
   checkedSearch c "promotion in moves" "8/P6k/8/8/8/8/6K1/8 w - - 0 1" [ "a7a8q" ] c.Limited |> ignore
   checkedSearch c "underpromotion in moves" "8/P6k/8/8/8/8/6K1/8 w - - 0 1" [ "a7a8n" ] c.Limited |> ignore
   checkedSearch c "black to move, fen" "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1" [] c.Limited |> ignore
-  if defChess960 = Some false then c.Report.Add Skip "Chess960" "the def turns UCI_Chess960 off; left as it is"
-  elif defChess960 = Some true then c.Report.Add Skip "Chess960" "the def turns UCI_Chess960 on; left as it is"
-  elif hasOption c "UCI_Chess960" then
-    c.S.Send "setoption name UCI_Chess960 value true"
+  if has960 then
+    set960 true
     checkedSearch c "Chess960 start" "nrbkqbrn/pppppppp/8/8/8/8/PPPPPPPP/NRBKQBRN w GBgb - 0 1" [] c.Limited |> ignore
     // king takes rook: castling as Chess960 writes it
     checkedSearch c "Chess960 castling" "1r2k2r/pppppppp/8/8/8/8/PPPPPPPP/1R2K2R w HBhb - 0 1" [ "e1h1" ] c.Limited |> ignore
-    c.S.Send "setoption name UCI_Chess960 value false"
+    set960 (defChess960 = Some true)
     recover c
   else c.Report.Add Skip "Chess960" "no UCI_Chess960 option"
 

@@ -609,7 +609,7 @@ dotnet run -c Release -- enginecheck <engine> [--only <groups>] [--nodes N] [--m
 **Groups** (all by default; `--only startup,stop,ponder` picks some - `startup` runs with any UCI group, since the others need it; an unknown name is refused):
 - `startup` - `uci` answered with id name, id author, options EngineBattle understands and `uciok`; the def's options, then `isready`; `ucinewgame` + `isready`
 - `options` - every option the def does not set, set to its own default: the engine stays ready
-- `positions` - `startpos` and `fen`, with `moves` containing castling, en passant and (under)promotion, black to move, and Chess960 positions and castling (king takes rook) when the engine has `UCI_Chess960`: each bestmove must be legal
+- `positions` - `startpos` and `fen`, with `moves` containing castling, en passant and (under)promotion, black to move, and Chess960 positions and castling (king takes rook) when the engine has `UCI_Chess960` (switched for each variant whatever the def says, as EngineBattle does, then set back): each bestmove must be legal
 - `limits` - `go depth`, `go nodes` (warns when far over), `go movetime 500`, 2 s on the clock (fails when the engine would lose on time), `movestogo 1`
 - `info` - the info lines of the `positions` and `limits` searches (so it needs one of them): a score is reported and each last pv is legal
 - `stop` - `go infinite` keeps searching until `stop`; `isready` is answered during a search; `stop` gets a prompt bestmove, also when it follows `go` at once (20 times)
