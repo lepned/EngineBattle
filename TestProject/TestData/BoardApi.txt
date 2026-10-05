@@ -37,7 +37,7 @@ type ChessLibrary.Chess.Board
   PlayPVLine(moves: System.Collections.Generic.IEnumerable<System.String>, fen: System.String) : ChessLibrary.EngineTypes.MoveAndFen
   PlayPVLineThreadSafe(moves: System.Collections.Generic.IEnumerable<System.String>, fen: System.String) : ChessLibrary.EngineTypes.MoveAndFen
   PlaySanMove(san: System.String) : System.Void
-  PlaySanMoveWithComments(san: System.String, comments: System.String) : System.Void
+  PlaySanMoveWithComments(san: System.String, comments: System.String) : System.Boolean
   PlayUciMove(move: System.String) : System.Void
   PositionHash() : System.UInt64
   PositionWithMoves() : System.String
@@ -69,6 +69,7 @@ type ChessLibrary.Chess.Board
   prop PlyCount : System.Int32 { get }
   prop Position : ChessLibrary.PositionTypes.Position { get set }
   prop SanMovesPlayed : System.Collections.Generic.List<System.String> { get set }
+  prop SkippedPgnMoves : System.Collections.Generic.IReadOnlyList<System.String> { get }
   prop StartPosition : System.String { get set }
   prop UciMovesPlayed : System.Collections.Generic.List<System.String> { get }
   prop inAnalysisMode : System.Boolean { get set }

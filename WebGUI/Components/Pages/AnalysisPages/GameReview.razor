@@ -550,6 +550,7 @@
         var startFen = string.IsNullOrWhiteSpace(game.Fen) ? Chess.startPos : game.Fen;
         board.ResetBoardStateFromFen(startFen);
         board.LoadPGNGameWithVariations(game);
+        PgnLoadLog.WarnSkipped(board, game, logger);
 
         // Snapshot FENs before any navigation mutates MovesAndFenPlayed
         gameFens = board.MovesAndFenPlayed.Select(m => m.FenAfterMove).ToArray();
@@ -990,6 +991,7 @@
                 var startFen = string.IsNullOrWhiteSpace(annotatedGame.Fen) ? Chess.startPos : annotatedGame.Fen;
                 board.ResetBoardStateFromFen(startFen);
                 board.LoadPGNGameWithVariations(annotatedGame);
+                PgnLoadLog.WarnSkipped(board, annotatedGame, logger);
                 gameFens = board.MovesAndFenPlayed.Select(m => m.FenAfterMove).ToArray();
                 fen = startFen;
 

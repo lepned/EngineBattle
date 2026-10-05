@@ -1611,10 +1611,13 @@
         var board = ChessBoard;
         var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
         board.ResetBoardStateFromFen(fenP);
+        var skipped = new List<string>();
         foreach (var ply in game.Mainline)
         {
-            board.PlaySanMoveWithComments(ply.San, ply.Comment);
+            if (!board.PlaySanMoveWithComments(ply.San, ply.Comment))
+                skipped.Add($"{ply.MoveNumber}{(ply.Color == "w" ? "." : "...")} {ply.San}");
         }
+        PgnLoadLog.WarnSkipped(skipped, game, logger);
 
         fen = board.FEN();
     }

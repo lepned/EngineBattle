@@ -588,6 +588,7 @@
         var startFen = string.IsNullOrWhiteSpace(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
         board.ResetBoardStateFromFen(startFen);
         board.LoadPGNGameWithVariations(game);
+        PgnLoadLog.WarnSkipped(board, game, logger);
         fen = board.FEN();
         moveEvals = PGNHelper.evalsByPly(game);
         UpdateFrcId(board.StartPosition);

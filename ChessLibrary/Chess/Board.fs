@@ -71,6 +71,8 @@ type Board() =
     let graph = VariationGraph()
     /// Moves played by PlaySanMove go in as variations (while a PGN variation is loaded).
     let mutable createNodeIsVariation = false
+    /// The moves the last PGN load could not play ("21... Bf7"), main line and variations.
+    let skippedPgnMoves = ResizeArray<string>()
     // What moveAndFens / uciMoves were last set to, entry for entry, with the node and position
     // hash each move reached, and the node the line ends at. `lineValid` is false until the lists
     // have been built from the graph since it last changed shape.
@@ -531,6 +533,7 @@ type Board() =
     member this.LoadPGNGameWithVariations (pgn: PGNTypes.PgnGame) =
       this.ResetBoardStateFromFen(if String.IsNullOrWhiteSpace pgn.Fen then this.StartPosition else pgn.Fen)
       createNodeIsVariation <- false
+      skippedPgnMoves.Clear()
 
       let rec playLine (startNode: NodeId) (line: PGNTypes.PlyLine) (isMainline: bool) =
         let prevFlag = createNodeIsVariation
@@ -539,7 +542,8 @@ type Board() =
         let mutable currentNode = startNode
         for ply in line do
           let nodeBeforeMove = currentNode
-          this.PlaySanMoveWithComments ply.San (if String.IsNullOrWhiteSpace ply.Comment then "" else ply.Comment)
+          if not (this.PlaySanMoveWithComments ply.San (if String.IsNullOrWhiteSpace ply.Comment then "" else ply.Comment)) then
+            skippedPgnMoves.Add(sprintf "%d%s %s" ply.MoveNumber (if ply.Color = "w" then "." else "...") ply.San)
           currentNode <- graph.Current
           let afterMoveNode = currentNode
           for variation in ply.Variations do
@@ -555,6 +559,9 @@ type Board() =
       graph.Current <- lastMainNode
       createNodeIsVariation <- false
       updatePathFromCurrent ()
+
+    /// The moves the last LoadPGNGameWithVariations could not play (illegal or unreadable), in load order.
+    member _.SkippedPgnMoves : IReadOnlyList<string> = skippedPgnMoves.ToArray()
 
     member this.GetMoveHistory() = this.GetMoveHistoryToCurrentFen(this.FEN())
 
@@ -780,10 +787,10 @@ type Board() =
           moveAndFens.Add({ Move = fenAndMoves; ShortSan = shortSan; FenAfterMove = BoardHelper.posToFen position })
       | None -> failwith $"failed to parse opening move {fromSan}"
 
-    member this.PlaySanMove (san: string) = this.PlaySanMoveWithComments san String.Empty
+    member this.PlaySanMove (san: string) = this.PlaySanMoveWithComments san String.Empty |> ignore
 
     /// Plays a SAN (or coordinate) move as a new edge from the cursor - a variation while a PGN
-    /// variation is loaded. A move that does not match is ignored.
+    /// variation is loaded. A move that does not match is ignored and false is returned.
     member this.PlaySanMoveWithComments (san: string) (comments: string) =
       let moveList = this.GenerateMoves ()
       // SAN is the normal input here, but coordinate notation reaches this from pasted
@@ -810,7 +817,8 @@ type Board() =
           graph.Current <- (graph.Edge edgeId).To
           // The line gains the move: UciMovesPlayed and MovesAndFenPlayed with it.
           updatePathFromCurrent ()
-      | None -> () // keep quiet in parsing errors to avoid writing to closed TextWriter contexts
+          true
+      | None -> false // the caller reports it: printing here can hit a closed TextWriter
 
     /// PlayPVLine under the board's lock, for callers on several threads.
     member this.PlayPVLineThreadSafe moves fen = lock lockObject (fun () -> this.PlayPVLine(moves, fen))

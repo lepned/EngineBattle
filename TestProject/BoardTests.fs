@@ -608,3 +608,14 @@ let ``PV conversion stops at the first unresolvable token`` () =
     let buffer = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
     let pv = BoardUtils.getLongSanPVFromShortSanPV buffer &board ["e4"; "zz9"; "e5"]
     Assert.Equal("e2e4", pv)
+
+[<Fact>]
+let ``PGN load records the moves it could not play`` () =
+    let board = Board()
+    loadPgnText board "1. e4 e5 2. Nf3 Ke7?? 3. Bc4 Nc6 *" // Ke7 is legal; Bf7 below is not
+    Assert.Empty(board.SkippedPgnMoves)
+    loadPgnText board "1. e4 e5 2. Nf3 Bf7 3. Bc4 *"
+    Assert.Equal("2... Bf7", board.SkippedPgnMoves.[0])
+    Assert.Equal("e4 e5 Nf3", String.Join(" ", board.MovesAndFenPlayed |> Seq.map (fun m -> m.ShortSan) |> Seq.filter (String.IsNullOrEmpty >> not)))
+    loadPgnText board "1. d4 *"
+    Assert.Empty(board.SkippedPgnMoves)
