@@ -2437,6 +2437,75 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     | ex ->
         printfn "Error during pvbatch: %s" ex.Message
 
+  /// Book Evaluation from the command line: the GUI page's run (ChessLibrary BookEvaluation), its
+  /// output file beside the input under BookEvals/ unless --out says otherwise. Exit 1 when an
+  /// engine stopped the run.
+  let runBookEval (p: CliParser.BookEvalParams) =
+    let input = Path.GetFullPath(normalizePath p.Input)
+    if not (File.Exists input) then
+        printfn "File not found: %s" input
+        exit 1
+    let ext = Path.GetExtension(input).ToLowerInvariant()
+    if ext <> ".pgn" && ext <> ".epd" then
+        printfn "bookeval reads .pgn or .epd files, not %s" ext
+        exit 1
+    let limitOf (e: CliParser.BookEvalEngine) =
+        match e.Nodes, e.MoveTimeMs, p.DefaultNodes, p.DefaultMoveTimeMs with
+        | Some n, _, _, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit n
+        | _, Some ms, _, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms
+        | _, _, Some n, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit n
+        | _, _, _, Some ms -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms
+        | _ -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit 10000
+    let engines =
+        try p.Engines |> List.map (fun e -> ({ Config = resolveEngineConfig e.Engine []; Limit = limitOf e } : ChessLibrary.BookEvaluation.BookEngine))
+        with ex -> printfn "%s" ex.Message; exit 1
+    let filter =
+        try ChessLibrary.BookEvaluation.parseFilter p.MinEval p.MaxEval p.MaxDiff engines.Length
+        with :? FormatException -> printfn "--min, --max and --maxdiff take numbers"; exit 1
+    let label = ChessLibrary.BookEvaluation.engineLabel engines
+    let outPath =
+        match p.Out with
+        | Some o -> Path.GetFullPath(normalizePath o)
+        | None -> Path.Combine(Path.GetDirectoryName input, "BookEvals", sprintf "BookEval_%s_%s%s" (Path.GetFileName input) label ext)
+    let take (xs: seq<'a>) = match p.Count with Some n -> Seq.truncate n xs | None -> xs
+    printfn "Book evaluation: %s" input
+    printfn "Engines: %s" label
+    printfn "Filter: |eval| %g-%g cp%s" filter.MinEval filter.MaxEval (if engines.Length > 1 then sprintf ", spread below %g cp" filter.MaxDiff else "")
+    let sw = Diagnostics.Stopwatch.StartNew()
+    let mutable lastShown = 0
+    let progress = Action<int, int>(fun done' total ->
+        // one line per 5 % (and the last), not one per position
+        if done' = total || done' * 20 / total > lastShown * 20 / total then
+            lastShown <- done'
+            printf "
+  %d / %d positions (%.0fs)   " done' total sw.Elapsed.TotalSeconds)
+    use cts = new Threading.CancellationTokenSource()
+    Console.CancelKeyPress.Add(fun a -> a.Cancel <- true; cts.Cancel())
+    let passed, evaluated, removed, skipped, failure, cancelled, total =
+        if ext = ".pgn" then
+            let games = ChessLibrary.FullPGNParser.parsePgnFileWithRaw input |> take |> Seq.toList
+            let o = ChessLibrary.BookEvaluation.evaluatePgns engines filter games progress cts.Token
+            ChessLibrary.BookEvaluation.writePgns outPath o.Results
+            o.Results.Count, o.Evaluated, o.Removed, o.Skipped, o.Failure, o.Cancelled, games.Length
+        else
+            let epds = ChessLibrary.EPDExtractor.readEPDs input |> take |> Seq.toList
+            let o = ChessLibrary.BookEvaluation.evaluateEpds engines filter epds progress cts.Token
+            ChessLibrary.BookEvaluation.writeEpds outPath o.Results
+            o.Results.Count, o.Evaluated, o.Removed, o.Skipped, o.Failure, o.Cancelled, epds.Length
+    printfn ""
+    if removed > 0 then printfn "Transpositions dropped: %d of %d" removed total
+    if skipped > 0 then printfn "Unreadable openings skipped: %d" skipped
+    printfn "Passed: %d of %d searched%s in %s" passed evaluated
+        (if evaluated > 0 then sprintf " (%.1f%%)" (100.0 * float passed / float evaluated) else "")
+        (sprintf "%.0fs" sw.Elapsed.TotalSeconds)
+    printfn "Written: %s" outPath
+    if cancelled then printfn "Cancelled - what passed before is written."
+    match failure with
+    | Some reason ->
+        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Stopped: %s" reason)
+        exit 1
+    | None -> ()
+
   /// The console's command list: `help`, and what a run without arguments prints.
   let printConsoleHelp () =
     printfn ""
@@ -2480,6 +2549,11 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
     printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
+    printfn "  bookeval, be <book.pgn|epd> --engine <def|exe> [--nodes N|--movetime MS] [--engine ...]"
+    printfn "                                          Keep the openings every engine scores within --min/--max cp"
+    printfn "                                          (default 80-100) and agree on within --maxdiff (40); a limit"
+    printfn "                                          after an --engine is its own, before the first everyone's;"
+    printfn "                                          --count N openings, --out F (default BookEvals/ beside the book)"
     printfn "  deviations, dev <pgnFile>               Self-consistency and position deviations from PGN"
     printfn "  query, q <fen|startpos> [options]       Position query as JSON (status, legal moves, attackers,"
     printfn "                                          pins, insights, SEE); --epd <file> for a batch"
@@ -2864,6 +2938,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         let devs, summary, coverage = ChessLibrary.DeviationAnalysis.analyzePositionDeviations games
                         printf "%s" (ChessLibrary.DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage)
                         printfn "Done in %.1fs" sw.Elapsed.TotalSeconds
+                | Verb (BookEval p) -> runBookEval p
                 | Verb (PgnCheck path) ->
                     // Pure parser health check: stream the file (never materialize it),
                     // report structure and throughput. Deliberately does NO analysis —

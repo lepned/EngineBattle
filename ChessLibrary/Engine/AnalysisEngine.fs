@@ -100,6 +100,8 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
   let mutable backend = ""
   let mutable chess960Sent = false
   let mutable searchMoves: string list = []
+  // the engine's own text (dump answers, NNUE notes) on the console; a batch run turns it off
+  let mutable echoEngineText = true
 
   let ceresNetworkName =
     match config.Options |> Seq.tryFind (fun e -> e.Key = "Network") with
@@ -315,7 +317,7 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
                 inbox.Post (Ev (AnalysisMachine.Init commands))
             // one write per line: printfn writes the text and the newline apart, and another thread's
             // line could land between them
-            | AnalysisMachine.Print text -> Console.Out.WriteLine text
+            | AnalysisMachine.Print text -> if echoEngineText then Console.Out.WriteLine text
             | AnalysisMachine.Debug text -> if debugOn () then logger.LogDebug text
             | AnalysisMachine.Warn text -> logger.LogWarning text
           with ex ->
@@ -525,6 +527,7 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     ioLog |> Option.iter (fun log -> (log :> IDisposable).Dispose())
     printfn "Engine %s has been shut down." name
 
+  member _.EchoEngineText with get () = echoEngineText and set v = echoEngineText <- v
   member _.SetSearchMoves(moves: string list) = searchMoves <- moves
   member _.ClearSearchMoves() = searchMoves <- []
   member _.SearchMoves = searchMoves

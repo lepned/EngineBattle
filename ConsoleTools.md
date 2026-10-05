@@ -47,6 +47,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `redash` | | Regenerate BO dashboard from saved state |
 | `pgnsummary` | `pgn`, `ps` | Analyze PGN game terminations |
 | `pgncheck` | `pc` | Parser health check on a PGN file (no analysis) |
+| `bookeval` | `be` | Keep the openings of a PGN/EPD book that every engine scores in an eval window (see BookEvaluation.md) |
 | `deviations` | `dev` | Engine self-consistency and position deviations from a PGN |
 | `elo` | `e` | Show Elo ratings and results from PGN |
 | `speed` | `sp` | Show speed statistics from PGN |
@@ -433,6 +434,27 @@ check after changes to the PGN parser.
 ```bash
 dotnet run -c Release -- pgncheck <path-to-pgn-file>
 ```
+
+---
+
+### bookeval
+
+The Book Evaluation page from the command line: every engine searches the final position of
+each opening, and the openings whose evals all lie within `--min`..`--max` centipawns (either
+side may be better) with the engines agreeing within `--maxdiff` are written to a new book.
+Runs on the analysis engine, like `analyze`. Details and the filter in
+[BookEvaluation.md](BookEvaluation.md).
+
+**Aliases:** `be`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- bookeval <book.pgn|book.epd> --engine <def|exe> [--nodes N|--movetime MS] [--engine ...] [--min CP] [--max CP] [--maxdiff CP] [--count N] [--out F]
+```
+
+A limit right after an `--engine` is that engine's own; one before the first `--engine` is the
+default for all (10000 nodes if none is given). Ctrl+C stops and writes what passed; the exit
+code is 1 when an engine stopped the run.
 
 ---
 

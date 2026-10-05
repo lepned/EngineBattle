@@ -54,6 +54,23 @@ type PvBatchParams =
       Rounds: int option
       Out: string option }
 
+/// Engines with their own limit: Nodes/MoveTimeMs None means the run's default limit.
+type BookEvalEngine =
+    { Engine: string
+      Nodes: int option
+      MoveTimeMs: int option }
+
+type BookEvalParams =
+    { Input: string
+      Engines: BookEvalEngine list
+      DefaultNodes: int option
+      DefaultMoveTimeMs: int option
+      MinEval: string
+      MaxEval: string
+      MaxDiff: string
+      Count: int option
+      Out: string option }
+
 type EngineCheckParams =
     { Engine: string
       Nodes: int
@@ -82,6 +99,7 @@ type VerbResult =
     | GUI of page: string * port: int option
     | PgnSummary of path:string
     | PgnCheck of path:string
+    | BookEval of BookEvalParams
     | Deviations of path:string
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
     | PuzzleTrend of folder:string * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
@@ -660,6 +678,40 @@ module CustomParser =
                     let path = args.[index + 1]
                     parseArgs args (index + 2) (Verb (PgnCheck path) :: acc)
                 else failwith "Missing parameter for pgncheck"
+            | "bookeval" | "be" ->
+                // A limit right after an --engine is that engine's; one before the first --engine
+                // is everyone's default.
+                if index + 1 < args.Length then
+                    let input = args.[index + 1]
+                    let mutable i = index + 2
+                    let mutable engines : BookEvalEngine list = []
+                    let mutable defNodes = None
+                    let mutable defMs = None
+                    let mutable minEval = "80"
+                    let mutable maxEval = "100"
+                    let mutable maxDiff = "40"
+                    let mutable count = None
+                    let mutable out = None
+                    let mutable stop = false
+                    let setLimit nodes ms =
+                        match List.rev engines with
+                        | last :: rest -> engines <- List.rev ({ last with Nodes = nodes; MoveTimeMs = ms } :: rest)
+                        | [] -> defNodes <- nodes; defMs <- ms
+                    while not stop && i < args.Length do
+                        match args.[i].ToLower() with
+                        | "--engine" | "-e" -> engines <- engines @ [ { Engine = valueOf args i; Nodes = None; MoveTimeMs = None } ]; i <- i + 2
+                        | "--nodes" -> setLimit (Some (parseInt (valueOf args i))) None; i <- i + 2
+                        | "--movetime" -> setLimit None (Some (parseInt (valueOf args i))); i <- i + 2
+                        | "--min" -> minEval <- valueOf args i; i <- i + 2
+                        | "--max" -> maxEval <- valueOf args i; i <- i + 2
+                        | "--maxdiff" -> maxDiff <- valueOf args i; i <- i + 2
+                        | "--count" -> count <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--out" -> out <- Some (valueOf args i); i <- i + 2
+                        | _ -> stop <- true
+                    if engines.IsEmpty then failwith "bookeval needs at least one --engine"
+                    parseArgs args i (Verb (BookEval { Input = input; Engines = engines; DefaultNodes = defNodes; DefaultMoveTimeMs = defMs
+                                                       MinEval = minEval; MaxEval = maxEval; MaxDiff = maxDiff; Count = count; Out = out }) :: acc)
+                else failwith "Missing PGN/EPD file for bookeval"
             | "deviations" | "dev" ->
                 if index + 1 < args.Length then
                     let path = args.[index + 1]

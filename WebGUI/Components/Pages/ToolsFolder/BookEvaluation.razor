@@ -3,6 +3,8 @@
 @inject GlobalSettingsService SettingsService
 @inject IDialogService DialogService
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+@using Microsoft.FSharp.Core
+@using Microsoft.FSharp.Collections
 
 <PageTitle>Book Evaluation</PageTitle>
 
@@ -206,30 +208,6 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private (List<CoreTypes.EngineConfig> candidates, List<TimeControlTypes.TimeControlCommands.SearchLimit> limits, string label)? ResolveEnginesAndLimits()
-    {
-        if (oobEngines.Count == 0)
-        {
-            SetStatus("No engines configured. Add at least one engine.", true);
-            return null;
-        }
-
-        if (oobEngines.Any(e => e.SearchValue <= 0))
-        {
-            SetStatus("All search values must be positive integers.", true);
-            return null;
-        }
-
-        var candidates = oobEngines.Select(e => e.Config).ToList();
-        var limits = oobEngines.Select(e => e.ToSearchLimit()).ToList();
-        var label = string.Join(", ", oobEngines.Select(e =>
-        {
-            var suffix = e.Mode == SearchMode.Time ? "ms" : "N";
-            return $"{e.Config.Name} ({e.SearchValue:N0}{suffix})";
-        }));
-        return (candidates, limits, label);
-    }
-
     private async Task BrowseAndAddEngine()
     {
         var initialDir = SettingsService.Settings.EngineDefsFolder;
@@ -341,124 +319,66 @@
         }
     }
 
-    private void WriteEvaluatedEpdOpenings(string epdName, List<EPDTypes.EPDEntry> positions)
+    private void WriteEvaluatedEpdOpenings(string epdName, List<EPDTypes.EPDEntry> positions) =>
+        RunBookEval(epdName, positions.Count, "epd", (engines, filter) =>
+        {
+            var outcome = ChessLibrary.BookEvaluation.evaluateEpds(engines, filter, positions, OnProgress, cts.Token);
+            return (outcome.Results.Count, outcome.Evaluated, outcome.Removed, outcome.Skipped, outcome.Failure, outcome.Cancelled,
+                    path => ChessLibrary.BookEvaluation.writeEpds(path, outcome.Results));
+        });
+
+    private void WriteEvaluatedPgnOpenings(string pgnName, List<PGNTypes.PgnGame> games) =>
+        RunBookEval(pgnName, games.Count, "pgn", (engines, filter) =>
+        {
+            var outcome = ChessLibrary.BookEvaluation.evaluatePgns(engines, filter, games, OnProgress, cts.Token);
+            return (outcome.Results.Count, outcome.Evaluated, outcome.Removed, outcome.Skipped, outcome.Failure, outcome.Cancelled,
+                    path => ChessLibrary.BookEvaluation.writePgns(path, outcome.Results));
+        });
+
+    // One run (ChessLibrary/Analysis/BookEvaluation.fs, shared with the bookeval verb): what passed
+    // is written even when the run stopped early, and an engine failure is shown, not an empty result.
+    private void RunBookEval(string sourceName, int total, string ext,
+        Func<FSharpList<ChessLibrary.BookEvaluation.BookEngine>, ChessLibrary.BookEvaluation.Filter,
+             (int Passed, int Evaluated, int Removed, int Skipped, FSharpOption<string> Failure, bool Cancelled, Action<string> Write)> evaluate)
     {
-        var resolved = ResolveEnginesAndLimits();
-        if (resolved == null) return;
-        var (candidates, limits, concatenatedString) = resolved.Value;
+        if (oobEngines.Count == 0) { SetStatus("No engines configured. Add at least one engine.", true); return; }
+        if (oobEngines.Any(e => e.SearchValue <= 0)) { SetStatus("All search values must be positive integers.", true); return; }
+        var engines = ListModule.OfSeq(oobEngines.Select(e =>
+            new ChessLibrary.BookEvaluation.BookEngine(e.Config, e.ToSearchLimit())));
+        ChessLibrary.BookEvaluation.Filter filter;
+        try { filter = ChessLibrary.BookEvaluation.parseFilter(minEvalScore, maxEvalScore, maxEvalDiff, oobEngines.Count); }
+        catch (FormatException) { SetStatus("Min eval, max eval and max diff must be numbers.", true); return; }
+        var label = ChessLibrary.BookEvaluation.engineLabel(engines);
 
         var totalSw = System.Diagnostics.Stopwatch.StartNew();
-        var outPutDir = Path.Combine(outputFolder, "BookEvals");
-        var filePath = Path.Combine(outPutDir, $"BookEval_{epdName}_{concatenatedString}.epd");
-        logger.LogInformation("Sorting openings based on Eval with use of {Engines} started...", concatenatedString);
-        var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(limits, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff, OnProgress, cts.Token);
-
-        if (!Directory.Exists(outPutDir))
-            Directory.CreateDirectory(outPutDir);
-
-        using (FileStream stream = File.Create(filePath))
-        {
-            using (StreamWriter fs = new StreamWriter(stream))
-            {
-                foreach (var epd in positionEvalsWithMoves)
-                {
-                    var theSame = epd.EPD.FEN == epd.EPD.Id?.Value;
-                    var summary = theSame ?
-                        $"{epd.EPD.FEN}; id \"opening analysis by EB\"; other \"{epd.Summary}\";" :
-                        $"{epd.EPD.FEN}; id \"{epd.EPD.Id?.Value}\"; other \"{epd.Summary}\";";
-                    fs.WriteLine(summary);
-                }
-            }
-        }
-
+        var filePath = Path.Combine(outputFolder, "BookEvals", $"BookEval_{sourceName}_{label}.{ext}");
+        logger.LogInformation("Book evaluation of {File} with {Engines} started", sourceName, label);
+        var r = evaluate(engines, filter);
+        r.Write(filePath);
         totalSw.Stop();
+
         lastResult = new EvalResult
         {
-            SourceFile = epdName,
-            TotalAnalyzed = positions.Count,
-            UniqueEvaluated = positions.Count,
-            Removed = 0,
-            Passed = positionEvalsWithMoves.Count,
-            Engines = concatenatedString,
+            SourceFile = sourceName,
+            TotalAnalyzed = total,
+            UniqueEvaluated = r.Evaluated,
+            Removed = r.Removed,
+            Passed = r.Passed,
+            Engines = label,
             EvalRange = $"{minEvalScore} – {maxEvalScore}",
             MaxDiff = maxEvalDiff,
             Duration = FormatHms(totalSw.Elapsed),
             OutputPath = filePath,
-            WasCancelled = cts.Token.IsCancellationRequested
+            WasCancelled = r.Cancelled
         };
-        logger.LogInformation("Evaluated {File}: {Passed}/{Total} passed. Written to {Path}", epdName, positionEvalsWithMoves.Count, positions.Count, filePath);
-        SetStatus(lastResult.WasCancelled ? "Cancelled — partial results saved." : "Evaluation complete.");
-    }
-
-    private void WriteEvaluatedPgnOpenings(string pgnName, List<PGNTypes.PgnGame> games)
-    {
-        var resolved = ResolveEnginesAndLimits();
-        if (resolved == null) return;
-        var (candidates, limits, concatenatedString) = resolved.Value;
-
-        var totalSw = System.Diagnostics.Stopwatch.StartNew();
-        var outPutDir = Path.Combine(outputFolder, "BookEvals");
-        var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.pgn");
-        logger.LogInformation("Sorting openings based on Eval with use of {Engines} started...", concatenatedString);
-        var outcome = PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(limits, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff, OnProgress, cts.Token);
-        var positionEvalsWithMoves = outcome.Results;
-
-        if (!Directory.Exists(outPutDir))
-            Directory.CreateDirectory(outPutDir);
-
-        using (FileStream stream = File.Create(filePath))
+        logger.LogInformation("Evaluated {File}: {Passed}/{Evaluated} passed. Written to {Path}", sourceName, r.Passed, r.Evaluated, filePath);
+        if (FSharpOption<string>.get_IsSome(r.Failure))
         {
-            using (StreamWriter fs = new StreamWriter(stream))
-            {
-                foreach (var pgn in positionEvalsWithMoves)
-                {
-                    var eval = $"[MaxEval \"{pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}\"]";
-                    var raw = (pgn.Pgn.Raw ?? "").Replace("\r\n", "\n").Trim();
-
-                    // Partition the raw game into header tags vs. movetext lines. The index-based
-                    // splice this replaced broke when [Event] wasn't the first bracket, gluing the
-                    // header onto the movetext. Grouping by line is order-independent.
-                    var headerLines = new List<string>();
-                    var moveLines = new List<string>();
-                    foreach (var line in raw.Split('\n'))
-                    {
-                        var t = line.Trim();
-                        if (t.Length == 0) continue;
-                        if (t[0] == '[') headerLines.Add(t);
-                        else moveLines.Add(t);
-                    }
-
-                    // [Event] leads per PGN convention; OrderBy is stable so other tags keep order.
-                    headerLines = headerLines
-                        .OrderByDescending(h => h.StartsWith("[Event", StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    var moveBlock = string.Join(" ", moveLines);
-                    var summary = headerLines.Count > 0
-                        ? $"{string.Join("\n", headerLines)}\n{eval}\n\n{moveBlock}\n"
-                        : $"{eval}\n\n{moveBlock}\n";
-                    fs.WriteLine(summary);
-                }
-            }
+            logger.LogWarning("Book evaluation stopped: {Reason}", r.Failure.Value);
+            SetStatus($"Stopped: {r.Failure.Value} — what passed before is saved.", true);
         }
-
-        totalSw.Stop();
-        lastResult = new EvalResult
-        {
-            SourceFile = pgnName,
-            TotalAnalyzed = games.Count,
-            UniqueEvaluated = outcome.UniqueEvaluated,
-            Removed = outcome.Removed,
-            Passed = positionEvalsWithMoves.Count,
-            Engines = concatenatedString,
-            EvalRange = $"{minEvalScore} – {maxEvalScore}",
-            MaxDiff = maxEvalDiff,
-            Duration = FormatHms(totalSw.Elapsed),
-            OutputPath = filePath,
-            WasCancelled = cts.Token.IsCancellationRequested
-        };
-        logger.LogInformation("Evaluated {File}: {Passed}/{Total} passed. Written to {Path}", pgnName, positionEvalsWithMoves.Count, games.Count, filePath);
-        SetStatus(lastResult.WasCancelled ? "Cancelled — partial results saved." : "Evaluation complete.");
+        else SetStatus((r.Cancelled ? "Cancelled — partial results saved." : "Evaluation complete.")
+                       + (r.Skipped > 0 ? $" {r.Skipped} unreadable opening(s) skipped." : ""));
     }
 
     private string FormatHms(TimeSpan ts)

@@ -92,6 +92,7 @@ type ChessLibrary.AnalysisEngine
   new(Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.SearchUpdate, Microsoft.FSharp.Core.Unit>, ChessLibrary.TypesDef.CoreTypes.EngineConfig, System.Collections.Generic.IEnumerable<System.String>, Microsoft.Extensions.Logging.ILogger, System.Boolean, Microsoft.FSharp.Core.FSharpOption<System.Boolean>)
   prop BenchmarkLC0Cmd : System.String { get }
   prop Config : ChessLibrary.TypesDef.CoreTypes.EngineConfig { get }
+  prop EchoEngineText : System.Boolean { get set }
   prop ErrorOutput : System.Collections.Generic.IEnumerable<System.String> { get }
   prop FullName : System.String { get }
   prop HasExited : System.Boolean { get }

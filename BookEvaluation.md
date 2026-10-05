@@ -49,6 +49,8 @@ This ensures the position is competitive (not dead drawn) but not busted (not cl
 3. A progress bar shows positions evaluated
 4. Click **Stop** to cancel (partial results are saved)
 
+PGN openings that end in the same position (transpositions) are evaluated once; the summary says how many were dropped. If an engine fails - it does not start, crashes, or gives no score (a search too short to report one) - the run stops, the page names the engine and the reason, and what passed before is saved.
+
 ## Output
 
 Results are saved to `<output folder>/BookEvals/`:
@@ -61,6 +63,25 @@ The results summary shows:
 - Engines used and their search limits
 - Eval range and max diff settings
 - Duration and output file path
+
+## From the Command Line
+
+The same run is the `bookeval` verb (alias `be`), for books too large to babysit in the browser:
+
+```bash
+eb-cli bookeval book.pgn --engine Stockfish19.json --movetime 300 --engine Lc0.json --nodes 2000
+eb-cli bookeval book.epd --engine Stockfish19.json --min 30 --max 120 --count 1000 --out balanced.epd
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--engine <def.json\|exe>` | (required) | An engine; repeat for more |
+| `--nodes N` / `--movetime MS` | 10000 nodes | Right after an `--engine`: that engine's limit. Before the first `--engine`: every engine's default |
+| `--min`, `--max`, `--maxdiff` | 80, 100, 40 | The filter above, in centipawns |
+| `--count N` | the whole book | Openings to read from the book |
+| `--out F` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file |
+
+Ctrl+C stops the run and writes what passed. The exit code is 1 when an engine stopped the run.
 
 ## Tips
 
