@@ -70,3 +70,11 @@ let ``a wrapped comment that starts a line with a bracket stays in the movetext`
         Assert.Equal<string list>([ "e4"; "e5"; "Nf3"; "Nc6" ], back.Mainline |> Seq.map (fun m -> m.San) |> List.ofSeq)
         Assert.Equal("a", back.GameMetaData.White)
     finally System.IO.File.Delete path
+
+[<Fact>]
+let ``an opening with an illegal move is unreadable, a transposition is a duplicate`` () =
+    let game (text: string) = ChessLibrary.FullPGNParser.parseFullPgnGame text
+    let unique, unreadable =
+        onlyUniqueOpenings [ game "1. e4 e5 2. Nf3 Nc6 *"; game "1. Nf3 Nc6 2. e4 e5 *"; game "1. e4 Ke7 2. Qh8 *" ]
+    Assert.Equal(1, unique.Count)
+    Assert.Equal(1, unreadable)

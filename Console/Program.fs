@@ -2480,7 +2480,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
             printf "
   %d / %d positions (%.0fs)   " done' total sw.Elapsed.TotalSeconds)
     use cts = new Threading.CancellationTokenSource()
-    Console.CancelKeyPress.Add(fun a -> a.Cancel <- true; cts.Cancel())
+    // the first Ctrl+C stops and writes what passed; a second one ends the program at once
+    Console.CancelKeyPress.Add(fun a -> a.Cancel <- not cts.IsCancellationRequested; cts.Cancel())
     let passed, evaluated, removed, skipped, failure, cancelled, total =
         if ext = ".pgn" then
             let games = ChessLibrary.FullPGNParser.parsePgnFileWithRaw input |> take |> Seq.toList
@@ -2492,19 +2493,18 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
             let o = ChessLibrary.BookEvaluation.evaluateEpds engines filter epds progress cts.Token
             ChessLibrary.BookEvaluation.writeEpds outPath o.Results
             o.Results.Count, o.Evaluated, o.Removed, o.Skipped, o.Failure, o.Cancelled, epds.Length
+    // the page's Results table, row for row (BookEvaluation.summaryRows)
+    let rows =
+        ChessLibrary.BookEvaluation.summaryRows (Path.GetFileName input) total passed evaluated removed skipped
+            failure cancelled engines p.MinEval p.MaxEval p.MaxDiff sw.Elapsed outPath
     printfn ""
-    if removed > 0 then printfn "Transpositions dropped: %d of %d" removed total
-    if skipped > 0 then printfn "Unreadable openings skipped: %d" skipped
-    printfn "Passed: %d of %d searched%s in %s" passed evaluated
-        (if evaluated > 0 then sprintf " (%.1f%%)" (100.0 * float passed / float evaluated) else "")
-        (sprintf "%.0fs" sw.Elapsed.TotalSeconds)
-    printfn "Written: %s" outPath
-    if cancelled then printfn "Cancelled - what passed before is written."
-    match failure with
-    | Some reason ->
-        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Stopped: %s" reason)
-        exit 1
-    | None -> ()
+    printfn ""
+    printfn "Results"
+    for label, value in rows do
+        let line = sprintf "  %-31s %s" label value
+        if label = "Status" then ConsoleUtils.printInColor (if failure.IsSome then ConsoleColor.Red else ConsoleColor.Yellow) line
+        else printfn "%s" line
+    if failure.IsSome then exit 1
 
   /// The console's command list: `help`, and what a run without arguments prints.
   let printConsoleHelp () =

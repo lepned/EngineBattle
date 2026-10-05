@@ -81,7 +81,7 @@ eb-cli bookeval book.epd --engine Stockfish19.json --min 30 --max 120 --count 10
 | `--count N` | the whole book | Openings to read from the book |
 | `--out F` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file |
 
-Ctrl+C stops the run and writes what passed. The exit code is 1 when an engine stopped the run.
+When the run ends, the verb prints the same Results table as the page. Ctrl+C stops the run and writes what passed (a second Ctrl+C ends it at once). The exit code is 1 when an engine stopped the run.
 
 ## Tips
 

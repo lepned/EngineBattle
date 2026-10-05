@@ -67,7 +67,9 @@ let onlyUniqueOpenings (pgns: seq<PgnGame>) =
         try
             board.ResetBoardState()
             if not (String.IsNullOrWhiteSpace pgn.Fen) then board.LoadFen pgn.Fen
-            for move in pgn.Mainline do board.PlaySanMove move.San
+            // an illegal move is skipped by the board, not thrown: such an opening ends elsewhere
+            for move in pgn.Mainline do
+                if not (board.PlaySanMoveWithComments move.San "") then failwithf "illegal move %s" move.San
             if seen.Add(board.DeviationHash()) then unique.Add pgn
         with _ -> unreadable <- unreadable + 1
     unique, unreadable
@@ -136,6 +138,8 @@ let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fen
     try
         try
             for e in engines do searchers.Add(start e)
+            // a cancel stops the searches at once instead of waiting for their limit
+            use _ = ct.Register(fun () -> for s in searchers do try s.Engine.Stop() with _ -> ())
             let threads = engines |> List.sumBy (fun e -> max 1 (HardwareInfo.getThreads e.Config))
             let degree = max 1 (min engines.Length ((Environment.ProcessorCount - 1) / max 1 threads))
             let board = Board()
@@ -153,8 +157,9 @@ let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fen
                         |> fun cs -> Async.Parallel(cs, maxDegreeOfParallelism = degree)
                         |> Async.RunSynchronously
                     match evals |> Array.tryPick (function Error e -> Some e | Ok _ -> None) with
-                    // Ctrl+C reaches the engines too (they share the console): their exit is the cancel
-                    | Some _ when ct.IsCancellationRequested -> ()
+                    // a cancelled position's search was cut short (its evals do not count); Ctrl+C
+                    // reaches the engines too (they share the console): their exit is the cancel
+                    | _ when ct.IsCancellationRequested -> ()
                     | Some e -> failure <- Some e
                     | None ->
                         evaluated <- evaluated + 1
@@ -208,6 +213,31 @@ let engineLabel (engines: BookEngine list) =
         | SearchLimit.NodeLimit n -> sprintf "%s (%sN)" e.Config.Name (n.ToString("N0"))
         | SearchLimit.TimeLimit ms -> sprintf "%s (%sms)" e.Config.Name (ms.ToString("N0")))
     |> String.concat ", "
+
+/// The run's summary as (label, value) rows, the same for the page's table and the verb's closing
+/// block. `read`: the openings read from the book; the eval fields as the user gave them.
+let summaryRows (source: string) (read: int) (passed: int) (evaluated: int) (removed: int) (skipped: int)
+                (failure: string option) (cancelled: bool) (engines: BookEngine list)
+                (minEval: string) (maxEval: string) (maxDiff: string) (elapsed: TimeSpan) (outPath: string) =
+    let n (x: int) = x.ToString("N0")
+    [ yield "Source file", source
+      yield "Positions analyzed", n read
+      if removed > 0 then
+          yield "Transposed / duplicate removed", n removed
+          yield "Unique openings evaluated", n evaluated
+      if skipped > 0 then yield "Unreadable openings skipped", n skipped
+      yield "Positions passed", n passed
+      yield "Pass rate",
+            (if evaluated > 0 then (float passed / float evaluated).ToString("P1") else "N/A")
+            + (if removed > 0 then " of unique" else "")
+      yield "Engines", engineLabel engines
+      yield "Eval range", sprintf "%s - %s" minEval maxEval
+      yield "Max eval diff", sprintf "%s cp" maxDiff
+      yield "Duration", sprintf "%dh %dm %ds" (int elapsed.TotalHours) elapsed.Minutes elapsed.Seconds
+      yield "Output file", outPath
+      match failure with
+      | Some reason -> yield "Status", sprintf "Stopped: %s (what passed before is saved)" reason
+      | None -> if cancelled then yield "Status", "Cancelled (partial results saved)" ]
 
 /// The passing EPD positions, each with the engines' evals in an `other` op.
 let writeEpds (path: string) (results: seq<EpdEvaluationResult>) =

@@ -453,8 +453,8 @@ dotnet run -c Release -- bookeval <book.pgn|book.epd> --engine <def|exe> [--node
 ```
 
 A limit right after an `--engine` is that engine's own; one before the first `--engine` is the
-default for all (10000 nodes if none is given). Ctrl+C stops and writes what passed; the exit
-code is 1 when an engine stopped the run.
+default for all (10000 nodes if none is given). The run ends with the page's Results table.
+Ctrl+C stops and writes what passed; the exit code is 1 when an engine stopped the run.
 
 ---
 

@@ -109,30 +109,16 @@
         }
     </div>
 
-    @if (lastResult != null)
+    @if (lastRows != null)
     {
         <div class="tool-section">
             <h2>Results</h2>
             <div class="tool-table-container" style="max-width:700px;">
                 <table class="tool-table">
                     <tbody>
-                        <tr><td>Source file</td><td>@lastResult.SourceFile</td></tr>
-                        <tr><td>Positions analyzed</td><td>@lastResult.TotalAnalyzed.ToString("N0")</td></tr>
-                        @if (lastResult.Removed > 0)
+                        @foreach (var row in lastRows)
                         {
-                            <tr><td>Transposed / duplicate removed</td><td>@lastResult.Removed.ToString("N0")</td></tr>
-                            <tr><td>Unique openings evaluated</td><td>@lastResult.UniqueEvaluated.ToString("N0")</td></tr>
-                        }
-                        <tr><td>Positions passed</td><td>@lastResult.Passed.ToString("N0")</td></tr>
-                        <tr><td>Pass rate</td><td>@(lastResult.UniqueEvaluated > 0 ? ((double)lastResult.Passed / lastResult.UniqueEvaluated).ToString("P1") : "N/A")@(lastResult.Removed > 0 ? " of unique" : "")</td></tr>
-                        <tr><td>Engines</td><td>@lastResult.Engines</td></tr>
-                        <tr><td>Eval range</td><td>@lastResult.EvalRange</td></tr>
-                        <tr><td>Max eval diff</td><td>@lastResult.MaxDiff cp</td></tr>
-                        <tr><td>Duration</td><td>@lastResult.Duration</td></tr>
-                        <tr><td>Output file</td><td style="word-break:break-all;">@lastResult.OutputPath</td></tr>
-                        @if (lastResult.WasCancelled)
-                        {
-                            <tr><td>Status</td><td style="color:#ef5350;">Cancelled (partial results saved)</td></tr>
+                            <tr><td>@row.Item1</td><td style="@RowStyle(row.Item1)">@row.Item2</td></tr>
                         }
                     </tbody>
                 </table>
@@ -155,22 +141,12 @@
     private int progressProcessed;
     private int progressTotal;
     private CancellationTokenSource cts;
-    private EvalResult lastResult;
+    // the Results table, the same rows the bookeval verb prints (BookEvaluation.summaryRows)
+    private FSharpList<Tuple<string, string>> lastRows;
 
-    private class EvalResult
-    {
-        public string SourceFile { get; set; }
-        public int TotalAnalyzed { get; set; }
-        public int UniqueEvaluated { get; set; }
-        public int Removed { get; set; }
-        public int Passed { get; set; }
-        public string Engines { get; set; }
-        public string EvalRange { get; set; }
-        public string MaxDiff { get; set; }
-        public string Duration { get; set; }
-        public string OutputPath { get; set; }
-        public bool WasCancelled { get; set; }
-    }
+    private static string RowStyle(string label) =>
+        label == "Status" ? "color:#ef5350;" : label == "Output file" ? "word-break:break-all;" : "";
+
     private List<OobEngineEntry> oobEngines = new();
     private string oobSelectedFile = "";
 
@@ -280,7 +256,7 @@
 
         var fileName = Path.GetFileName(oobSelectedFile);
         SetStatus("");
-        lastResult = null;
+        lastRows = null;
         isProcessing = true;
         progressProcessed = 0;
         progressTotal = 0;
@@ -357,20 +333,8 @@
         r.Write(filePath);
         totalSw.Stop();
 
-        lastResult = new EvalResult
-        {
-            SourceFile = sourceName,
-            TotalAnalyzed = total,
-            UniqueEvaluated = r.Evaluated,
-            Removed = r.Removed,
-            Passed = r.Passed,
-            Engines = label,
-            EvalRange = $"{minEvalScore} – {maxEvalScore}",
-            MaxDiff = maxEvalDiff,
-            Duration = FormatHms(totalSw.Elapsed),
-            OutputPath = filePath,
-            WasCancelled = r.Cancelled
-        };
+        lastRows = ChessLibrary.BookEvaluation.summaryRows(sourceName, total, r.Passed, r.Evaluated, r.Removed, r.Skipped,
+            r.Failure, r.Cancelled, engines, minEvalScore, maxEvalScore, maxEvalDiff, totalSw.Elapsed, filePath);
         logger.LogInformation("Evaluated {File}: {Passed}/{Evaluated} passed. Written to {Path}", sourceName, r.Passed, r.Evaluated, filePath);
         if (FSharpOption<string>.get_IsSome(r.Failure))
         {
@@ -379,14 +343,6 @@
         }
         else SetStatus((r.Cancelled ? "Cancelled — partial results saved." : "Evaluation complete.")
                        + (r.Skipped > 0 ? $" {r.Skipped} unreadable opening(s) skipped." : ""));
-    }
-
-    private string FormatHms(TimeSpan ts)
-    {
-        int hours = (int)ts.TotalHours;
-        int minutes = ts.Minutes;
-        int seconds = ts.Seconds;
-        return $"{hours}h {minutes}m {seconds}s";
     }
 
     private int GetRequestedOpeningCount()
