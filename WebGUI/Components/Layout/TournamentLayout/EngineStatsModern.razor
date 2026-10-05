@@ -58,6 +58,13 @@
   <div class="label-cell">Speed</div>
   <div class="stat-cell">@(Engine2.EPS > 0 ? GameAnalysis.Formatting.formatNPS(Engine2.NPS) + " (" + GameAnalysis.Formatting.formatEPS(Engine2.EPS) + ")" : GameAnalysis.Formatting.formatNPS(Engine2.NPS))</div>
 
+  @if (ShowResources)
+  {
+    <div class="stat-cell">@Engine1Resources</div>
+    <div class="label-cell one-line" title="Cores busy (1.0 = one core) and memory of each engine's process">CPU · RAM</div>
+    <div class="stat-cell">@Engine2Resources</div>
+  }
+
   <!-- Row 5: Nodes -->
   <div class="stat-cell">@FormatNodes(Engine1.Nodes)</div>
   <div class="label-cell">Nodes</div>
@@ -221,6 +228,15 @@
 
   [Parameter]
   public bool Engine1ToMove { get; set; }
+
+  [Parameter]
+  public bool ShowResources { get; set; }
+
+  [Parameter]
+  public string Engine1Resources { get; set; } = "";
+
+  [Parameter]
+  public string Engine2Resources { get; set; } = "";
 
   [Parameter]
   public bool IsFRC { get; set; }

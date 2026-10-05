@@ -133,6 +133,11 @@ let play
   logEngineInitCommands logger white black
   GameInitialization.appendGameDescription sb tourny white black board.OpeningMovesPlayed (board.FEN())
   callback (GameStarted white.Name)
+  // both engines' CPU and memory beside the game, until it ends
+  let monitorCts = new CancellationTokenSource()
+  // cancelled however play ends: a stopped tournament cancels this workflow past Async.Catch
+  use _stopMonitor = { new IDisposable with member _.Dispose() = monitorCts.Cancel(); monitorCts.Dispose() }
+  ResourceMonitor.start white black (fun () -> isWhiteToMove board) (fun w b -> callback (Resources (w, b))) monitorCts.Token |> ignore
 
   let gameTimer = Stopwatch.GetTimestamp()
   let gameMoves = board.SanMovesPlayed
@@ -366,6 +371,7 @@ let play
             | Choice2Of2 res -> return res }
 
   let! outcome = Async.Catch (turn None)
+  monitorCts.Cancel()
 
   // stop and drain whatever still runs, so nothing of this game reaches the next
   let endGame = Async.Parallel [ for s in sides -> s.Player.EndGame() ]

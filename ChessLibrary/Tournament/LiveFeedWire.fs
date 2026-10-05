@@ -417,6 +417,9 @@ let private nodeToSot (o: JsonObject) : StartOfTournamentInfo =
 // ---------------------------------------------------------------------------------------------
 
 /// Serialize an `Update` to the JSON wire format. Total over the DU.
+/// Updates that belong on the wire: engine resources are local to this machine, not in the contract.
+let onWire (u: Update) = match u with Update.Resources _ -> false | _ -> true
+
 let serializeUpdate (u: Update) : string =
     let o =
         match u with
@@ -462,6 +465,8 @@ let serializeUpdate (u: Update) : string =
             for kv in d do
                 o[kv.Key] <- js kv.Value
             jobj [ "type", js "EngineStarted"; "engine", js e; "defaults", (o :> JsonNode) ]
+        // never sent (onWire); here so the match stays total
+        | Update.Resources _ -> jobj [ "type", js "Resources" ]
         | Update.GameFinished g ->
             jobj [ "type", js "GameFinished"; "gameNr", ji g.GameNr; "round", js g.RoundNr; "white", js g.White
                    "black", js g.Black; "openingHash", js g.OpeningHash; "result", resultToNode g.Result ]

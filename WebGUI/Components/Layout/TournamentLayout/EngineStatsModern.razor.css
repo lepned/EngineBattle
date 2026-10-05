@@ -226,11 +226,20 @@
         border:none;        
     }
 
+/* A label kept on one line instead of wrapping */
+::deep .label-cell.one-line {
+  max-width: none;
+  white-space: nowrap;
+}
+
 /* Shrink labels in narrow containers */
 @container engine-stats (max-width: 250px) {
   ::deep .label-cell {
     font-size: 0.65em;
     max-width: 4em;
+  }
+  ::deep .label-cell.one-line {
+    max-width: none;
   }
 }
 

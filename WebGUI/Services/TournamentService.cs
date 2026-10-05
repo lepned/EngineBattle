@@ -61,7 +61,7 @@ namespace WebGUI.Services
             // in real time through the wire contract (serialize -> JsonFeedService -> parse -> dispatch).
             // Parallel runs skip this untagged tee: their events arrive gameId-stamped through the
             // tagged sink instead, and an untagged copy would create a phantom ""-key tile in the grid.
-            if (_jsonFeed.HasSubscriber && !IsParallelRun)
+            if (_jsonFeed.HasSubscriber && !IsParallelRun && LiveFeedWire.onWire(update))
             {
                 try { _jsonFeed.Ingest(LiveFeedWire.serializeUpdate(update)); }
                 catch (Exception) { /* bridge is best-effort */ }

@@ -20,6 +20,15 @@ type FinishedGame =
       OpeningHash: string
       Result: Result }
 
+/// One engine's process over the last few seconds of a game: CPU (100 = one core), memory now and
+/// at its peak, and whether it was the engine's turn when measured.
+type EngineResources =
+    { Player: string
+      CpuPercent: float
+      RamBytes: int64
+      PeakRamBytes: int64
+      ToMove: bool }
+
 /// Update messages sent during tournament execution for UI callbacks
 type Update =
     | GameStarted of White:string
@@ -53,6 +62,8 @@ type Update =
     /// with its default as text (buttons have none and are left out). Sent per instance, so an
     /// engine played on several boards sends it more than once.
     | EngineStarted of Engine: string * Defaults: Map<string, string>
+    /// Both engines' processes, every couple of seconds during a game (ResourceMonitor).
+    | Resources of White: EngineResources * Black: EngineResources
 
 /// Messages for the cup bracket state MailboxProcessor
 type CupBracketMessage =

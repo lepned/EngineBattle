@@ -505,6 +505,20 @@
                 </div>
             </div>
 
+            <div class="appearance-section @SectionClass("resources")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("resources")'>
+                    <span class="section-title">Engine resources <span class="scope-badge all">Tournament page</span></span>
+                    <span class="collapse-indicator">@Indicator("resources")</span>
+                </h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="showEngineResources" @bind:after="Apply" />
+                        Show cores and RAM per engine
+                    </label>
+                    <small>A row under Speed with the cores each engine keeps busy (1.0 = one core) and its memory, read twice a second.</small>
+                </div>
+            </div>
+
             <div class="appearance-section @SectionClass("banner")">
                 <h4 class="collapsible-header" @onclick='() => Toggle("banner")'>
                     <span class="section-title">Tournament header <span class="scope-badge all">Tournament page</span></span>
@@ -694,6 +708,7 @@
     private string blackMoveArrowMode = "auto";
     private string blackMoveArrowColor = "#383231";
     private bool useNewTournamentBanner;
+    private bool showEngineResources;
     private string policyLabelMode = "auto";
     private string policyLabelColor = "#FFEB3B";
     private string policyLabelStyle = "circle";
@@ -822,6 +837,7 @@
         showEvalBar = s.ShowEvalBar;
         evalBarPlacement = s.EvalBarPlacement == "right" ? "right" : "left";
         useNewTournamentBanner = s.UseNewTournamentBanner;
+        showEngineResources = s.ShowEngineResources;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
         arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
@@ -1022,6 +1038,7 @@
         merged.ShowEvalBar = showEvalBar;
         merged.EvalBarPlacement = evalBarPlacement;
         merged.UseNewTournamentBanner = useNewTournamentBanner;
+        merged.ShowEngineResources = showEngineResources;
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
         merged.BoardArrowWidth = arrowWidth;
@@ -1058,6 +1075,7 @@
         highlightStyle = d.BoardHighlightStyle;
         moveHighlightMode = "auto";
         showEvalBar = d.ShowEvalBar;
+        showEngineResources = d.ShowEngineResources;
         evalBarPlacement = d.EvalBarPlacement;
         selRingMode = "auto";
         arrowMode = "auto";

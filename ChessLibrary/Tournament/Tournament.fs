@@ -296,6 +296,8 @@ module Manager =
     let mutable pgnReader = None
     let mutable consoleMode = consoleOnly
     let mutable taggedSink : (string -> Update -> unit) option = None
+    // each engine's CPU and memory over the tournament, for the console's closing table
+    let resources = Game.ResourceMonitor.Totals()
     let executablePath() = tournament.OrdoExePath
 
     // Serializes Ordo calls on a background thread with "latest wins" draining
@@ -396,6 +398,17 @@ module Manager =
                       callback.Invoke (Update.GameSummary ordo)
           with e ->
               Console.WriteLine($"Final Ordo error: {e.Message}")
+          if tournament.ConsoleOnly then resources.Report() |> Option.iter Console.WriteLine
+      | Resources (white, black) ->
+          resources.Add white
+          resources.Add black
+          callback.Invoke update
+      | EndOfGame result ->
+          resources.GameEnded [ result.Player1; result.Player2 ]
+          callback.Invoke update
+      | StartOfTournament _ ->
+          resources.Clear()
+          callback.Invoke update
       |_ -> callback.Invoke update
         
     member _.AddTournament tourny = tournament <- tourny

@@ -319,7 +319,7 @@ let private openLiveFeed (logger: ILogger) (tourny: Tournament) (taggedSink: (st
       Emit =
         fun gid u ->
             // Serialise once, fan out to file and/or HTTP; the in-process sink gets the Update itself.
-            if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome then
+            if LiveFeedWire.onWire u && (liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome) then
                 let line = LiveFeedWire.withGameId gid (LiveFeedWire.serializeUpdate u)
                 liveFeedRecorder |> Option.iter (fun r -> r.RecordLine line)
                 liveFeedHttpSink |> Option.iter (fun s -> s.Send line)

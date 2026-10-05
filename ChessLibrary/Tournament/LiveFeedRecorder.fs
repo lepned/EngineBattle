@@ -32,8 +32,9 @@ type LiveFeedRecorder(path: string) =
 
     /// Append one `Update` as a single wire-JSON line.
     member _.Record(update: Update) =
-        let line = serializeUpdate update
-        lock sync (fun () -> writer.WriteLine line)
+        if onWire update then
+            let line = serializeUpdate update
+            lock sync (fun () -> writer.WriteLine line)
 
     member _.Dispose() =
         lock sync (fun () ->

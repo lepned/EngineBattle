@@ -72,6 +72,7 @@
 		<Compile Include="PlayModelTests.fs" />
 		<Compile Include="ReviewModelTests.fs" />
 		<Compile Include="BroadcastFocusTests.fs" />
+		<Compile Include="ResourceMonitorTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
 		<Compile Include="BoardApiSurfaceTests.fs" />

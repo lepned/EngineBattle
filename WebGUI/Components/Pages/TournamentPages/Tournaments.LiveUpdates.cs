@@ -226,6 +226,23 @@ public partial class Tournaments
 				}
 				break;
 
+			case TournamentTypes.Update.Resources r:
+				// read twice a second, shown every two: the CPU averaged over the readings since
+				var (wRes, bRes) = r.White.Player == blackPlayer ? (r.Black, r.White) : (r.White, r.Black);
+				whiteCpuSum += wRes.CpuPercent;
+				blackCpuSum += bRes.CpuPercent;
+				resourceReadings++;
+				if (DateTime.UtcNow - resourcesShownAt < ResourcesShownEvery) break;
+				var (wText, bText) = (ResourceText(whiteCpuSum / resourceReadings, wRes.RamBytes), ResourceText(blackCpuSum / resourceReadings, bRes.RamBytes));
+				(whiteCpuSum, blackCpuSum, resourceReadings, resourcesShownAt) = (0, 0, 0, DateTime.UtcNow);
+				if (wText != whiteResources || bText != blackResources)
+				{
+					(whiteResources, blackResources) = (wText, bText);
+					if (SettingsService.Settings.ShowEngineResources)
+						await InvokeAsync(StateHasChanged);
+				}
+				break;
+
 			case TournamentTypes.Update.NNSeq n:
 				try
 				{
@@ -640,6 +657,8 @@ public partial class Tournaments
 		Engine2.PlayerName = blackPlayer;
 		blackMoveTime = TimeLeftFormatted(TimeSpan.Zero);
 		whiteMoveTime = TimeLeftFormatted(TimeSpan.Zero);
+		whiteResources = blackResources = "";
+		(whiteCpuSum, blackCpuSum, resourceReadings, resourcesShownAt) = (0, 0, 0, DateTime.MinValue);
 		if (runner != null)
 			pairings = runner.GetLastestPairings();   // feed mode: pairings arrive via PairingList events
 		ResetGameState();
@@ -735,6 +754,10 @@ public partial class Tournaments
 		NodeLimitText(white) ?? ClockText(remaining, tenths: InTimeTroubleFor(white, remaining));
 
 	private string TimeLeftFormatted(TimeSpan time) => ClockText(time);
+
+	// "2.9 · 1.4 GB": cores busy, then memory
+	private static string ResourceText(double cpuPercent, long ramBytes) =>
+		$"{ChessLibrary.Game.ResourceMonitor.formatCores(cpuPercent)} · {ChessLibrary.Game.ResourceMonitor.formatBytes(ramBytes)}";
 
 	private void FinalStatusReceived(EngineStatus info)
 	{

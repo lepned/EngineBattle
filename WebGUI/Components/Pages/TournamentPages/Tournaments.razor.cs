@@ -94,6 +94,12 @@ public partial class Tournaments
 	private string whiteTime = "00:00:00";
 	private string blackTime = "00:00:00";
 	private string whiteMoveTime = "00:00:00";
+	private string whiteResources = "";
+	private string blackResources = "";
+	private double whiteCpuSum, blackCpuSum;
+	private int resourceReadings;
+	private DateTime resourcesShownAt = DateTime.MinValue;
+	private static readonly TimeSpan ResourcesShownEvery = TimeSpan.FromSeconds(2);
 	private string blackMoveTime = "00:00:00";
 	private string whitePlayer = "White player";
 	private string blackPlayer = "Black player";
