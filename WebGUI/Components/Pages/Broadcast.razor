@@ -716,8 +716,9 @@
         var g = Focus;
         fen = focusBoard.FEN();
         // between rounds there is no game to follow or leave
-        if (g != null) follow = !g.Finished && fen == g.CurrentFen;
-        // looking through the finished game: it stays (the hand-over and the wait end)
+        // on the newest move, finished or not (the board echoes each loaded move back here)
+        if (g != null) follow = fen == g.CurrentFen;
+        // browsing back through the finished game: it stays (the hand-over and the wait end)
         if (follow != focusModel.Follow) await SendFocus(BroadcastFocus.Event.NewFollowChanged(follow));
         if (fen != lastNotifiedFen)
         {
