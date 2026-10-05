@@ -334,6 +334,20 @@
     font-weight: 600;
 }
 
+/* The followed game ended: countdown to the next live game, with Stay */
+.bc-switch-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+.bc-switch-note .bc-btn {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.78rem;
+}
+
 .bc-hint {
     font-size: 0.75rem;
     color: var(--mud-palette-text-secondary);

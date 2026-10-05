@@ -33,6 +33,8 @@ namespace WebGUI.Services.Broadcast
         /// <summary>Parsed PGN of the latest update (for board replay, e.g. LoadPGNGameWithVariations).</summary>
         public PGNTypes.PgnGame? Parsed { get; set; }
         public DateTime LastUpdateUtc { get; set; }
+        /// <summary>The first move of the PGN the board could not play, "" when all are legal.</summary>
+        public string IllegalMove { get; set; } = "";
         /// <summary>When the last new move arrived (unlike LastUpdateUtc, tag-only updates
         /// don't touch this). Basis for ticking the side-to-move's clock locally.</summary>
         public DateTime LastMoveUtc { get; set; }
@@ -67,6 +69,9 @@ namespace WebGUI.Services.Broadcast
         private readonly object _lock = new();
         private readonly Dictionary<string, BroadcastGame> _games = new();
         private LichessBroadcastClient? _client;
+        private readonly Microsoft.Extensions.Logging.ILogger<BroadcastState> _logger;
+
+        public BroadcastState(Microsoft.Extensions.Logging.ILogger<BroadcastState> logger) => _logger = logger;
 
         public string RoundId { get; private set; } = "";
         public string Status { get; private set; } = "idle";
@@ -172,11 +177,13 @@ namespace WebGUI.Services.Broadcast
             // Replay the game to get per-ply FENs and from/to squares for board rendering.
             var startFen = string.IsNullOrWhiteSpace(meta.Fen) ? Chess.startPos : meta.Fen;
             var plies = new List<BroadcastPly>();
+            IReadOnlyList<string> skipped = Array.Empty<string>();
             try
             {
                 var board = new Chess.Board();
                 board.ResetBoardStateFromFen(startFen);
                 board.LoadPGNGameWithVariations(parsed);
+                skipped = board.SkippedPgnMoves;
                 int plyIdx = 0;
                 foreach (var maf in board.MovesAndFenPlayed)
                 {
@@ -200,6 +207,7 @@ namespace WebGUI.Services.Broadcast
             BroadcastGame game;
             int newMoves;
             bool changed;
+            bool newIllegal;
             lock (_lock)
             {
                 if (!_games.TryGetValue(key, out var existing))
@@ -227,7 +235,12 @@ namespace WebGUI.Services.Broadcast
                 game.RawPgn = pgn;
                 game.LastUpdateUtc = DateTime.UtcNow;
                 if (newMoves > 0) game.LastMoveUtc = game.LastUpdateUtc;
+                // the stream re-sends the whole PGN: warn once per illegal move, not per update
+                var illegal = skipped.Count > 0 ? skipped[0] : "";
+                newIllegal = illegal != game.IllegalMove && illegal != "";
+                game.IllegalMove = illegal;
             }
+            if (newIllegal) WebGUI.Services.PgnLoadLog.WarnSkipped(skipped, parsed, _logger);
 
             if (changed)
             {
