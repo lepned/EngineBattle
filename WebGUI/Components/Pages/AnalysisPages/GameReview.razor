@@ -26,85 +26,74 @@
 
 
 <div class="game-review">
-    @* ── Toolbar ── *@
+    @* ── Toolbar: load / review / export groups; progress sits in the band so the page never shifts ── *@
     <div class="gr-toolbar">
-        <button class="gr-toolbar-btn" @onclick="BrowsePGNFile" title="Load PGN file" disabled="@(isAnalyzing || reviewingAll)">
+        <button class="gr-toolbar-btn" @onclick="BrowsePGNFile" title="Load a PGN file" disabled="@(isAnalyzing || reviewingAll)">
             <MudIcon Icon="@Icons.Material.Filled.FileOpen" Size="Size.Small" /> Load PGN
         </button>
-
         @if (games != null && games.Count > 1)
         {
-            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                       OnClick="PrevGame" Disabled="@(isAnalyzing || reviewingAll || gameIndex <= 0)"
-                       StartIcon="@Icons.Material.Filled.ChevronLeft" />
-            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                       OnClick="OpenPGNDialog" Disabled="@(isAnalyzing || reviewingAll)"
-                       Style="min-width:auto; padding:4px 8px;">
+            <button class="gr-toolbar-btn gr-icon-btn" @onclick="PrevGame" title="Previous game"
+                    disabled="@(isAnalyzing || reviewingAll || gameIndex <= 0)">
+                <MudIcon Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small" />
+            </button>
+            <button class="gr-toolbar-btn" @onclick="OpenPGNDialog" title="Pick a game" disabled="@(isAnalyzing || reviewingAll)">
                 @($"{gameIndex + 1} / {games.Count}")
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                       OnClick="NextGame" Disabled="@(isAnalyzing || reviewingAll || gameIndex >= games.Count - 1)"
-                       StartIcon="@Icons.Material.Filled.ChevronRight" />
+            </button>
+            <button class="gr-toolbar-btn gr-icon-btn" @onclick="NextGame" title="Next game"
+                    disabled="@(isAnalyzing || reviewingAll || gameIndex >= games.Count - 1)">
+                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" />
+            </button>
         }
 
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                   OnClick="StartAnalysis" Disabled="@(isAnalyzing || reviewingAll || currentGame == null || engineConfig == null)"
-                   StartIcon="@Icons.Material.Filled.PlayArrow">
-            Review
-        </MudButton>
+        <span class="gr-toolbar-sep"></span>
 
+        <button class="gr-toolbar-btn gr-primary" @onclick="StartAnalysis" title="Review the game with the engine"
+                disabled="@(isAnalyzing || reviewingAll || currentGame == null || engineConfig == null)">
+            <MudIcon Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" /> Review
+        </button>
         @if (games != null && games.Count > 1)
         {
-            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small"
-                       OnClick="ReviewAllGames" Disabled="@(isAnalyzing || reviewingAll || engineConfig == null)"
-                       StartIcon="@Icons.Material.Filled.PlaylistPlay">
-                Review All
-            </MudButton>
+            <button class="gr-toolbar-btn" @onclick="ReviewAllGames" title="Review every loaded game"
+                    disabled="@(isAnalyzing || reviewingAll || engineConfig == null)">
+                <MudIcon Icon="@Icons.Material.Filled.PlaylistPlay" Size="Size.Small" /> Review all
+            </button>
         }
-
-        <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
-                   OnClick="QuickAnalysis" Disabled="@(isAnalyzing || reviewingAll || currentGame == null)"
-                   StartIcon="@Icons.Material.Filled.FlashOn">
-            Quick Review
-        </MudButton>
-
+        <button class="gr-toolbar-btn" @onclick="QuickAnalysis" title="Score the game from the evals already in the PGN, no engine"
+                disabled="@(isAnalyzing || reviewingAll || currentGame == null)">
+            <MudIcon Icon="@Icons.Material.Filled.FlashOn" Size="Size.Small" /> Quick review
+        </button>
         @if (isAnalyzing || reviewingAll)
         {
-            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
-                       OnClick="CancelAnalysis" StartIcon="@Icons.Material.Filled.Stop">
-                Cancel
-            </MudButton>
+            <button class="gr-toolbar-btn gr-danger" @onclick="CancelAnalysis" title="Stop the review">
+                <MudIcon Icon="@Icons.Material.Filled.Stop" Size="Size.Small" /> Cancel
+            </button>
         }
 
         @if (analysisResult != null)
         {
-            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                       OnClick="BrowseExportFolder" StartIcon="@Icons.Material.Filled.FolderOpen"
-                       title="@(!string.IsNullOrEmpty(exportFolder) ? exportFolder : "Pick export folder")">
-                @(!string.IsNullOrEmpty(exportFolder) ? Path.GetFileName(exportFolder.TrimEnd('/','\\')) : "Export Folder")
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
-                       OnClick="ExportAnnotatedPGN" StartIcon="@Icons.Material.Filled.Download">
-                Export PGN
-            </MudButton>
+            <span class="gr-toolbar-sep"></span>
+            <button class="gr-toolbar-btn" @onclick="ExportAnnotatedPGN"
+                    title="@($"Export the annotated PGN to {(string.IsNullOrEmpty(exportFolder) ? "a browser download" : exportFolder)}")">
+                <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" /> Export PGN
+            </button>
+            <button class="gr-toolbar-btn gr-icon-btn" @onclick="BrowseExportFolder"
+                    title="@($"Export folder: {(string.IsNullOrEmpty(exportFolder) ? "not set" : exportFolder)}")">
+                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" />
+            </button>
+        }
+
+        @if (isAnalyzing || reviewingAll)
+        {
+            <div class="gr-toolbar-progress">
+                <span>
+                    @if (reviewingAll) { @($"Game {reviewAllCurrentGame + 1} of {games.Count} · ") }
+                    @(isAnalyzing ? $"move {progressCurrent} / {progressTotal}" : "")
+                </span>
+                <MudProgressLinear Value="@progressPercent" Max="100" Color="Color.Primary" Rounded="true" Class="gr-toolbar-bar" />
+            </div>
         }
     </div>
-
-    @* ── Review All Progress ── *@
-    @if (reviewingAll)
-    {
-        <div style="padding:4px 8px; font-size:0.85rem; color:var(--mud-palette-text-secondary);">
-            Reviewing game @(reviewAllCurrentGame + 1) of @(games.Count)...
-        </div>
-    }
-
-    @* ── Progress Bar ── *@
-    @if (isAnalyzing)
-    {
-        <MudProgressLinear Value="@progressPercent" Max="100" Color="Color.Primary" Striped="true"
-                           Style="height:6px" />
-        <div class="gr-progress-text">Analyzing move @progressCurrent / @progressTotal</div>
-    }
 
     @* ── Main Content ── *@
     <div class="gr-main">
