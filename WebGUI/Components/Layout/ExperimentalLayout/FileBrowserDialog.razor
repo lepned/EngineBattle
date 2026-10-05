@@ -362,9 +362,11 @@
             NavigateTo(editPath);
         else if (File.Exists(editPath) && Mode == FileBrowserMode.File)
         {
-            var dir = Path.GetDirectoryName(editPath);
+            // NavigateTo resets editPath to the folder: keep the file first
+            var file = editPath;
+            var dir = Path.GetDirectoryName(file);
             if (!string.IsNullOrEmpty(dir)) NavigateTo(dir);
-            selectedFile = editPath;
+            selectedFile = file;
         }
         else
             errorMessage = $"Path not found: {editPath}";
