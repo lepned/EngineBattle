@@ -7,6 +7,7 @@
 @using WebGUI.Services.Broadcast
 @using WebGUI.Components.Layout
 @using WebGUI.Components.Layout.ChessboardLayout
+@using Microsoft.FSharp.Collections
 
 <PageTitle>Lichess Broadcast</PageTitle>
 
@@ -108,11 +109,11 @@
             {
                 <span class="bc-hint">exploring — stepping to the latest move resumes following</span>
             }
-            @if (switchTo is { } next && Focus is { } done)
+            @if (Focus is { Finished: true } done && PendingText() is { } pendingText)
             {
                 <span class="bc-switch-note">
-                    Game over: @done.Result · switching to @next.White – @next.Black in @SwitchSecondsLeft s
-                    <button class="bc-btn" @onclick="CancelSwitch" title="Stay on the finished game">Stay</button>
+                    Game over: @done.Result · @pendingText
+                    <button class="bc-btn" @onclick="StayOnGame" title="Stay on the finished game">Stay</button>
                 </span>
             }
             <button class="bc-btn bc-follow @(follow ? "primary" : "")" @onclick="ToggleFollow">
@@ -296,15 +297,10 @@
         t.StartsAt is DateTimeOffset s ? $"{t.RoundName} · {s.ToLocalTime():MMM d}" : t.RoundName;
 
     private string focusKey = "";
-    // until the user picks a game or a live one is focused, a finished focus gives way to a live game
-    private bool autoFocus = true;
-    // the focus as last seen live: its end, while followed, starts the switch to another live game
-    private string liveFocusKey = "";
-    private BroadcastGame switchTo;
-    private DateTime switchAtUtc;
-    private CancellationTokenSource switchCts;
-    private static readonly TimeSpan SwitchHold = TimeSpan.FromSeconds(10);
-    private int SwitchSecondsLeft => Math.Max(0, (int)Math.Ceiling((switchAtUtc - DateTime.UtcNow).TotalSeconds));
+    // which game is shown, and the automatic choices: a live game on arrival, the next one when the
+    // followed game ends, waiting for one to start, the tour's next round (ChessLibrary/Analysis/BroadcastFocus.fs)
+    private BroadcastFocus.State focusModel = BroadcastFocus.initial("");
+    private readonly System.Diagnostics.Stopwatch focusClock = System.Diagnostics.Stopwatch.StartNew();
     private bool follow = true;
     private string fen = Chess.startPos;
 
@@ -433,7 +429,8 @@
 
         // back on the page while a broadcast runs (a new page instance)
         viewMounted = Feed.IsRunning;
-        if (Focus is { } g) { focusKey = g.Key; autoFocus = g.Finished; liveFocusKey = g.Finished ? "" : g.Key; await LoadFocusGameAsync(); }
+        focusModel = BroadcastFocus.initial(Feed.RoundId);
+        if (viewMounted) await SendFocus(BroadcastFocus.Event.NewGames(FocusGames(), focusClock.Elapsed));
 
         // 1 Hz re-render for the ticking clocks — only while a live game is focused
         // and the watching view is actually visible.
@@ -441,8 +438,13 @@
         {
             try
             {
-                if (Feed.IsRunning && !showLobby && (Focus is { Finished: false } || switchTo != null))
-                    _ = InvokeAsync(StateHasChanged);
+                if (Feed.IsRunning && !showLobby && (Focus is { Finished: false } || !focusModel.Pending.IsNoPending))
+                    _ = InvokeAsync(async () =>
+                    {
+                        if (!focusModel.Pending.IsNoPending)
+                            await SendFocus(BroadcastFocus.Event.NewTick(FocusGames(), focusClock.Elapsed));
+                        StateHasChanged();
+                    });
             }
             catch { /* fires during dispose — ignore */ }
         }, null, 1000, 1000);
@@ -535,12 +537,11 @@
         var roundId = e.Value?.ToString();
         if (string.IsNullOrWhiteSpace(roundId) || roundId == Feed.RoundId) return;
         focusKey = "";
-        autoFocus = true;
-        CancelSwitch();
         follow = true;
         ResetEvalState();
         HoldForNewRound();
         Feed.Start(roundId);
+        focusModel = BroadcastFocus.initial(Feed.RoundId);
     }
 
     private DateTime lastStatsRender = DateTime.MinValue;
@@ -651,14 +652,13 @@
     private void StartRound(string target)
     {
         focusKey = "";
-        autoFocus = true;
-        CancelSwitch();
         follow = true;
         showLobby = false;
         viewMounted = true;
         ResetEvalState();
         HoldForNewRound();
         Feed.Start(target);
+        focusModel = BroadcastFocus.initial(Feed.RoundId);
     }
 
     /// The old round's position leaves the board, and the kibitzer stops searching it; it searches
@@ -686,27 +686,18 @@
         showLobby = false;
         // ✕ ends the watching: the view, the kibitzer and its engine go
         viewMounted = false;
-        CancelSwitch();
+        focusModel = BroadcastFocus.initial("");
         await Feed.StopAsync();
         _ = RefreshLobbyAsync();
     }
 
-    private async Task SelectGame(string key)
-    {
-        autoFocus = false;
-        CancelSwitch();
-        focusKey = key;
-        liveFocusKey = Focus is { Finished: false } ? key : "";
-        follow = true;
-        // Neutral eval bar + empty chart until the kibitzer reports on the new game.
-        ResetEvalState();
-        await LoadFocusGameAsync();
-    }
+    // a tile clicked: the user's own pick, which the automatic choices leave alone
+    private Task SelectGame(string key) => SendFocus(BroadcastFocus.Event.NewPicked(key, FocusGames()));
 
     private async Task ToggleFollow()
     {
         follow = !follow;
-        if (!follow) CancelSwitch();
+        await SendFocus(BroadcastFocus.Event.NewFollowChanged(follow));
         // Returning to the live game discards any exploration and snaps to the latest move.
         if (follow) await LoadFocusGameAsync();
     }
@@ -726,8 +717,8 @@
         fen = focusBoard.FEN();
         // between rounds there is no game to follow or leave
         if (g != null) follow = !g.Finished && fen == g.CurrentFen;
-        // looking through the finished game: it stays
-        if (!follow) CancelSwitch();
+        // looking through the finished game: it stays (the hand-over and the wait end)
+        if (follow != focusModel.Follow) await SendFocus(BroadcastFocus.Event.NewFollowChanged(follow));
         if (fen != lastNotifiedFen)
         {
             lastNotifiedFen = fen;
@@ -793,11 +784,10 @@
         return evals;
     }
 
-    // A round whose games have no move yet raises no GameUpdated: its first game is adopted here.
+    // Every feed change goes to the focus model; while following, the board tracks the focus's newest move.
     private void OnChanged() => _ = InvokeAsync(async () =>
     {
-        if (string.IsNullOrEmpty(focusKey) && viewMounted && Focus is { } g) await AdoptFocus(g.Key);
-        else await PreferLiveGame();
+        if (viewMounted) await SendFocus(BroadcastFocus.Event.NewGames(FocusGames(), focusClock.Elapsed));
         StateHasChanged();
     });
 
@@ -805,84 +795,91 @@
     {
         // an update of the round just left, queued before the switch
         if (!Feed.Games.Any(x => x.Key == game.Key)) return;
-        // First game to arrive becomes the focus; while following, the board tracks the
-        // newest move. While exploring, the board is left alone (tiles keep updating).
-        if (string.IsNullOrEmpty(focusKey)) await AdoptFocus(game.Key);
-        else if (!await PreferLiveGame() && follow && game.Key == focusKey && newMoves > 0) await LoadFocusGameAsync();
-        if (game.Key == focusKey)
-        {
-            if (!game.Finished) liveFocusKey = game.Key;
-            else if (liveFocusKey == game.Key) { liveFocusKey = ""; ScheduleSwitch(); }
-        }
+        var before = focusKey;
+        if (viewMounted) await SendFocus(BroadcastFocus.Event.NewGames(FocusGames(), focusClock.Elapsed));
+        // While exploring, the board is left alone (tiles keep updating).
+        if (focusKey == before && follow && game.Key == focusKey && newMoves > 0) await LoadFocusGameAsync();
         StateHasChanged();
     });
 
-    /// The stream delivers finished games too, in any order: a finished focus the user did not pick
-    /// moves to the strongest live game. True when the focus moved.
-    private async Task<bool> PreferLiveGame()
+    private FSharpList<BroadcastFocus.Game> FocusGames() =>
+        ListModule.OfSeq(Feed.Games.Select(g => new BroadcastFocus.Game(g.Key, g.SanMoves.Count, g.Finished, RatingSum(g))));
+
+    private async Task SendFocus(BroadcastFocus.Event e)
     {
-        if (!autoFocus || !viewMounted || string.IsNullOrEmpty(focusKey) || Focus is not { Finished: true }) return false;
-        var live = OrderedGames.FirstOrDefault(x => !x.Finished);
-        if (live == null) return false;
-        ResetEvalState();
-        await AdoptFocus(live.Key);
-        return true;
+        var result = BroadcastFocus.step(focusModel, e);
+        focusModel = result.Item1;
+        foreach (var effect in result.Item2)
+            await ExecuteFocus(effect);
     }
 
-    /// The followed game ended: hold its result for a while, then go to the strongest live game.
-    private void ScheduleSwitch()
+    private async Task ExecuteFocus(BroadcastFocus.Effect effect)
     {
-        if (!follow || switchTo != null) return;
-        var next = OrderedGames.FirstOrDefault(x => !x.Finished && x.Key != focusKey);
-        if (next == null) return;
-        switchTo = next;
-        switchAtUtc = DateTime.UtcNow + SwitchHold;
-        var cts = switchCts = new CancellationTokenSource();
-        _ = Task.Delay(SwitchHold, cts.Token).ContinueWith(t =>
+        switch (effect)
         {
-            if (t.IsCanceled) return;
-            _ = InvokeAsync(async () =>
+            case BroadcastFocus.Effect.Show show:
+                // another game: neutral eval bar and empty chart until the kibitzer reports on it
+                if (show.other) ResetEvalState();
+                focusKey = show.key;
+                follow = true;
+                await LoadFocusGameAsync();
+                // the board may have mounted with this render (first broadcast, or back on the page):
+                // replay the sync once its reference is live
+                pendingBoardSync = true;
+                break;
+            case BroadcastFocus.Effect.StartRound start:
+                // the tour's next round: the kibitzer carries on with its first game
+                StartRound(start.roundId);
+                break;
+            default:
+                if (effect.IsFetchRounds) _ = FetchRoundsForFocusAsync();
+                break;
+        }
+    }
+
+    /// The round is over while waiting: the tour's rounds, for one that is under way (only a tour
+    /// opened from the lobby is known; a pasted round has no tour).
+    private async Task FetchRoundsForFocusAsync()
+    {
+        var tourId = tourRounds.FirstOrDefault()?.TourId;
+        if (string.IsNullOrEmpty(tourId)) return;
+        // nobody awaits this: a failed fetch is logged, and the next minute asks again
+        try
+        {
+            var (rounds, _) = await BroadcastState.FetchTourRoundsAsync(tourId);
+            await InvokeAsync(async () =>
             {
-                if (cts != switchCts) return;
-                switchTo = null;
-                // the strongest live game now, not the one announced 10 s ago
-                var live = follow && viewMounted && Focus is { Finished: true }
-                    ? OrderedGames.FirstOrDefault(x => !x.Finished) : null;
-                if (live != null)
-                {
-                    ResetEvalState();
-                    await AdoptFocus(live.Key);
-                }
+                if (rounds.Count > 0) tourRounds = rounds;
+                var known = ListModule.OfSeq(rounds.Select(r => new BroadcastFocus.Round(r.RoundId, r.Ongoing)));
+                await SendFocus(BroadcastFocus.Event.NewRoundsFetched(known, focusClock.Elapsed));
                 StateHasChanged();
             });
-        }, TaskScheduler.Default);
+        }
+        catch (ObjectDisposedException) { }
+        catch (Exception ex) { logger.LogWarning("Next-round lookup failed: {Msg}", ex.Message); }
     }
 
-    private void CancelSwitch()
+    /// The note beside a finished focus: the hand-over's countdown, or what it waits for.
+    private string PendingText()
     {
-        switchCts?.Cancel();
-        switchCts = null;
-        switchTo = null;
+        var pending = focusModel.Pending;
+        if (pending is BroadcastFocus.Pending.Holding hold)
+        {
+            var next = Feed.Games.FirstOrDefault(g => g.Key == hold.next);
+            var secs = Math.Max(0, (int)Math.Ceiling((hold.due - focusClock.Elapsed).TotalSeconds));
+            return next != null ? $"switching to {next.White} – {next.Black} in {secs} s" : $"switching in {secs} s";
+        }
+        if (pending.IsWaiting)
+            return Feed.Games.All(g => g.Finished) ? "round over, waiting for the next round" : "waiting for the next game";
+        return null;
     }
 
-    /// The round's first game becomes the focus, followed from its newest move.
-    private async Task AdoptFocus(string key)
-    {
-        // a live game in focus ends the automatic choice
-        if (Feed.Games.FirstOrDefault(x => x.Key == key) is { Finished: false }) { autoFocus = false; liveFocusKey = key; }
-        focusKey = key;
-        follow = true;
-        await LoadFocusGameAsync();
-        // the board may have mounted with this render (first broadcast, or back on the page):
-        // replay the sync once its reference is live
-        pendingBoardSync = true;
-    }
+    private Task StayOnGame() => SendFocus(BroadcastFocus.Event.Stay);
 
     public async ValueTask DisposeAsync()
     {
         Feed.Changed -= OnChanged;
         Feed.GameUpdated -= OnGameUpdated;
-        CancelSwitch();
         if (clockTimer != null) await clockTimer.DisposeAsync();
     }
 }
