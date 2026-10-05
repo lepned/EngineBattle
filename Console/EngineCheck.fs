@@ -270,21 +270,67 @@ type private Ctx =
     StopDelayMs: int
     /// Why the engine can no longer be checked; the rest is skipped.
     mutable Stuck: string option
-    mutable LastFailed: string }
+    mutable LastFailed: string
+    /// Each restart with why, for the summary.
+    Restarts: ResizeArray<string> }
 
 /// A failure, or a skip once the engine is stuck (its failure was reported already).
-let private failed (c: Ctx) name detail =
+let private failed (c: Ctx) name (detail: string) =
   match c.Stuck with
   | Some reason -> c.Report.Add Skip name reason
   | None ->
       c.LastFailed <- name
-      c.Report.Add Fail name (if c.S.Exited then sprintf "%s - the engine exited (code %s)" detail c.S.ExitCode else detail)
+      // the exit added once: some details say it already
+      let exited = c.S.Exited && not (detail.Contains "the engine exited")
+      c.Report.Add Fail name (if exited then sprintf "%s - the engine exited (code %s)" detail c.S.ExitCode else detail)
 
 /// Ready again after a failure, or marked stuck.
 let private recover (c: Ctx) =
   if c.Stuck.IsNone then
     if c.S.Exited then c.Stuck <- Some (sprintf "the engine exited (code %s) at '%s'" c.S.ExitCode c.LastFailed)
     elif not (c.S.Resync 10000) then c.Stuck <- Some (sprintf "the engine stopped answering at '%s'" c.LastFailed)
+
+/// Restarts of an engine that stopped answering, between groups and inside the edge group together;
+/// an engine with several faults (one per group) still reaches the quit check.
+let private maxRestarts = 5
+
+/// A new process for an engine that stopped answering, through the start-up handshake (not checked
+/// again): the checks after a failure still run.
+let private restart (c: Ctx) =
+  c.S.Kill()
+  let s = Session(c.Config)
+  c.S <- s
+  c.Stuck <- None
+  c.LastFailed <- ""
+  s.Start()
+  && (s.Send "uci"
+      let _, uciok, _ = s.Until((fun l -> l.Trim() = "uciok"), 10000)
+      uciok.IsSome)
+  && (for cmd in EngineHelper.createInitialUCICommands c.Config do s.Send cmd
+      s.Send "ucinewgame"
+      s.Send "isready"
+      // a network load (a TensorRT build) can take minutes
+      let _, ready, _ = s.Until(isReadyOk, 600000)
+      ready.IsSome)
+
+/// The stuck engine restarted for `next`: why, its last stderr lines, the restart counted. False
+/// when it did not start again (then it stays stuck).
+let private revive (c: Ctx) (next: string) =
+  let reason = defaultArg c.Stuck "the engine stopped answering"
+  printfn "\n  %s - the engine is restarted for '%s'" reason next
+  for line in c.S.Stderr |> Seq.truncate 20 do printfn "  stderr: %s" line
+  // for the summary: the check it died at and how, not the one it is restarted for
+  let how = if c.S.Exited then sprintf "the engine exited, code %s" c.S.ExitCode else "it stopped answering"
+  let at = c.LastFailed
+  c.Restarts.Add(if at = "" || at = "engine" then sprintf "before '%s' (%s)" next how else sprintf "after '%s' (%s)" at how)
+  if restart c then true
+  else
+    c.Stuck <- Some "the engine did not start again"
+    false
+
+/// Inside a group: an engine that died on a check is restarted for the next one, while restarts last.
+let private reviveIfStuck (c: Ctx) (next: string) =
+  if c.Stuck.IsSome && c.Restarts.Count < maxRestarts then revive c next |> ignore
 
 let private position (fen: string) (moves: string list) =
   if moves.IsEmpty then sprintf "position fen %s" fen
@@ -542,7 +588,7 @@ let private stopGroup (c: Ctx) =
     | None -> i <- rounds
   if answered = rounds then c.Report.Add Pass name (sprintf "%d of %d answered, slowest %d ms" answered rounds worst)
   else
-    failed c name (sprintf "round %d: no bestmove within 5 s%s" (answered + 1) (if c.S.Exited then sprintf " - the engine exited (code %s)" c.S.ExitCode else ""))
+    failed c name (sprintf "round %d: no bestmove within 5 s" (answered + 1))
     recover c
 
 /// go ponder, then ponderhit or stop.
@@ -612,14 +658,18 @@ let private edgeGroup (c: Ctx) =
     c.S.Send "setoption name MultiPV value 1"
     recover c
   else c.Report.Add Skip "MultiPV" "no MultiPV option"
-  // last: some engines crash on searchmoves or on a position without moves
+  // last: some engines crash on searchmoves or on a position without moves; one that does is
+  // restarted for the next of them, so each is checked
+  reviveIfStuck c "searchmoves"
   let _, best, _ = search c (position startFen []) (c.Limited + " searchmoves a2a3 h2h3") 30000
   (match best with
    | None -> failed c "searchmoves" "no bestmove within 30 s"; recover c
    | Some line ->
        let m = bestMoveOf line
        c.Report.Add (if m = "a2a3" || m = "h2h3" then Pass else Warn) "searchmoves" (sprintf "bestmove %s, asked for a2a3 or h2h3" m))
+  reviveIfStuck c "checkmated"
   noMove "checkmated" "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+  reviveIfStuck c "stalemated"
   noMove "stalemated" "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"
 
 let private quitGroup (c: Ctx) =
@@ -765,25 +815,6 @@ let private analysisGroup (p: Params) (report: Report) =
       finally
         engine.Quit()
 
-/// A new process for an engine that stopped answering, through the start-up handshake (not checked
-/// again): the groups after a failure still run.
-let private restart (c: Ctx) =
-  c.S.Kill()
-  let s = Session(c.Config)
-  c.S <- s
-  c.Stuck <- None
-  c.LastFailed <- ""
-  s.Start()
-  && (s.Send "uci"
-      let _, uciok, _ = s.Until((fun l -> l.Trim() = "uciok"), 10000)
-      uciok.IsSome)
-  && (for cmd in EngineHelper.createInitialUCICommands c.Config do s.Send cmd
-      s.Send "ucinewgame"
-      s.Send "isready"
-      // a network load (a TensorRT build) can take minutes
-      let _, ready, _ = s.Until(isReadyOk, 600000)
-      ready.IsSome)
-
 // ── Run ────────────────────────────────────────────────────────────────────────────────────────
 
 let run (p: Params) : int =
@@ -796,7 +827,6 @@ let run (p: Params) : int =
   let want g = p.Only.IsEmpty || List.contains g p.Only
   // restarts of an engine that stopped answering, each with why; a few, then the rest is skipped
   let restarts = ResizeArray<string>()
-  let maxRestarts = 3
   let isWinboard = WinboardIntegration.isWinboardEngine p.Config
   printfn "Checking %s (%s)" p.Config.Name p.Config.Path
   if isWinboard then
@@ -809,7 +839,7 @@ let run (p: Params) : int =
         Searched = ResizeArray()
         Limited = match p.MoveTimeMs with Some ms -> sprintf "go movetime %d" ms | None -> sprintf "go nodes %d" p.Nodes
         StopDelayMs = p.StopDelayMs
-        Stuck = None; LastFailed = "" }
+        Stuck = None; LastFailed = ""; Restarts = restarts }
     // the session in use: a restart replaces it
     report.OnFail <- fun () ->
       printfn "        what was sent and answered before it:"
@@ -831,14 +861,10 @@ let run (p: Params) : int =
                   failed c "engine" reason
                   c.Stuck <- Some reason
                 match c.Stuck with
-                | Some reason when usable.Value && restarts.Count < maxRestarts ->
-                    printfn "\n  %s - the engine is restarted for '%s'" reason name
-                    for line in c.S.Stderr |> Seq.truncate 20 do printfn "  stderr: %s" line
-                    restarts.Add(sprintf "before '%s': %s" name reason)
-                    if restart c then group c
+                | Some _ when usable.Value && restarts.Count < maxRestarts ->
+                    if revive c name then group c
                     else
                       usable.Value <- false
-                      c.Stuck <- Some "the engine did not start again"
                       report.Add Skip "(the whole group)" c.Stuck.Value
                 | Some reason ->
                     if usable.Value then printfn "\n  %s - the remaining groups are skipped" reason
