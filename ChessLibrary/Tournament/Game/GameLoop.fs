@@ -90,7 +90,7 @@ let private prepareEngines skipEngineInit (tourny: Tournament) (board: Board) (w
     GameInitialization.checkAndPrepareContempt white black }
 
 /// Plays one game. `replay`: deviation prevention's white and black replays.
-let play
+let private playWith
   (skipEngineInit: bool)
   (replay: (ReferenceGameReplay * ReferenceGameReplay) option)
   (sb: StringBuilder)
@@ -412,3 +412,8 @@ let play
   | _ -> ()
   callback (EndOfGame result)
   return result }
+
+/// One game. Its updates go through an agent of their own (UpdateAgent.run): the engines' agents
+/// only post, and all of them are out before the result, or an exception, comes back.
+let play skipEngineInit replay sb cts (logger: ILogger) tourny board white black pairing tryGetUserAdjudication (callback: Update -> unit) : Async<Result> =
+  UpdateAgent.run callback logger (playWith skipEngineInit replay sb cts logger tourny board white black pairing tryGetUserAdjudication)

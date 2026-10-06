@@ -172,6 +172,7 @@
 		<Compile Include="Tournament\Game\PlayerMachine.fs" />
 		<Compile Include="Tournament\Game\Player.fs" />
 		<Compile Include="Tournament\Game\ResourceMonitor.fs" />
+		<Compile Include="Tournament\Game\UpdateAgent.fs" />
 		<Compile Include="Tournament\Game\GameLoop.fs" />
 		<Compile Include="Tournament\GamePersistence.fs" />
 		<Compile Include="Tournament\GameSetup.fs" />

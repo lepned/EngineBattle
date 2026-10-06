@@ -28,21 +28,27 @@ namespace WebGUI.Services
         /// live-feed record-and-replay pipeline). Replaces any prior recording.</summary>
         public void StartRecording(string path)
         {
+            var next = new LiveFeedRecorder(path);
+            LiveFeedRecorder? previous;
             lock (_lock)
             {
-                _recorder?.Dispose();
-                _recorder = new LiveFeedRecorder(path);
+                previous = _recorder;
+                _recorder = next;
             }
+            // closed outside the lock: it writes out what it still holds, and updates must not wait for that
+            previous?.Dispose();
         }
 
         /// <summary>Stop and flush the current recording, if any.</summary>
         public void StopRecording()
         {
+            LiveFeedRecorder? previous;
             lock (_lock)
             {
-                _recorder?.Dispose();
+                previous = _recorder;
                 _recorder = null;
             }
+            previous?.Dispose();
         }
 
         private void HandleUpdate(TournamentTypes.Update update)
