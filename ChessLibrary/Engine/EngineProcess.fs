@@ -119,14 +119,22 @@ module internal EngineProcess =
             go <- more
         } :> Task)
 
-    /// Opens logs/engine_<name>_<timestamp>.log under the current directory.
-    static member Open(engineName: string) =
-      let dir = Path.Combine(Environment.CurrentDirectory, "logs")
+    /// Opens a new engine_<name>_<timestamp>.log in `dir`. Two engines of one name started in the
+    /// same second (compare, dual analysis) used to get the same file, and the second failed to
+    /// start: a name taken already gets _2, _3, ...
+    static member internal OpenAt(dir: string, engineName: string, ts: string) =
       if not (Directory.Exists dir) then Directory.CreateDirectory(dir) |> ignore
       let safeName = engineName.Replace(" ", "_").Replace("/", "_").Replace("\\", "_")
-      let ts = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")
-      let path = Path.Combine(dir, $"engine_{safeName}_{ts}.log")
-      path, new IoLog(new StreamWriter(path, append = true))
+      let rec create n =
+        let path = Path.Combine(dir, $"""engine_{safeName}_{ts}{(if n = 1 then "" else $"_{n}")}.log""")
+        try path, new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read)
+        with :? IOException when n < 100 && File.Exists path -> create (n + 1)
+      let path, stream = create 1
+      path, new IoLog(new StreamWriter(stream))
+
+    /// Opens a new logs/engine_<name>_<timestamp>.log under the current directory.
+    static member Open(engineName: string) =
+      IoLog.OpenAt(Path.Combine(Environment.CurrentDirectory, "logs"), engineName, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"))
 
     member _.Write(direction: string, text: string) =
       channel.Writer.TryWrite({ At = DateTime.Now; Direction = direction; Text = text }) |> ignore

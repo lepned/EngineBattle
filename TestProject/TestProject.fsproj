@@ -90,6 +90,7 @@
 		<Compile Include="BuildInfoTests.fs" />
 		<Compile Include="TablebaseProbeTests.fs" />
 		<Compile Include="PgnHeaderTests.fs" />
+		<Compile Include="EngineLogTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
