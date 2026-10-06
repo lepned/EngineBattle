@@ -108,6 +108,8 @@ module Engine =
       let protocol = protocolFor config logger
       let optionsMap = Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)
       let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
+      // the setoption commands sent, one copy each; not the per-move traffic, which grew by tens
+      // of KB a game for as long as the process lived
       let commands = ResizeArray<string>()
       let nonDefaultValues = Dictionary<string, (string * string)>()
       let stderr = EngineProcess.StderrRing()
@@ -494,6 +496,7 @@ module Engine =
       member _.PrintNonDefaultValues = fun () -> printNonDefaultValues name config.Path nonDefaultValues
       member _.IsLc0 = isLc0
       member _.Write (s: string) = write s
+      /// The setoption commands sent to the engine, one copy of each.
       member _.Commands = commands
       member _.PrintUCI() = printConfigCommands name initCommands
       member _.Network = network
@@ -584,9 +587,7 @@ module Engine =
       /// received. More reliable than config display Name or Path.
       member _.UciIdName = uciIdName optionsMap
 
-      member private _.Send (cmd: string) =
-        write cmd
-        commands.Add cmd
+      member private _.Send (cmd: string) = write cmd
 
       member this.Uci() = this.Send "uci"
       member this.IsReady() = this.Send "isready"

@@ -588,6 +588,11 @@ let ``Tournament engine start-up sends uci and the options in the engine's own s
         Assert.Equal<string list>([ "setoption name Threads value 2"; "setoption name Hash value 64" ], eng.GetVerifiedCommands())
         Assert.Equal("FakeUciEngine 1.0", eng.UciIdName)
         Assert.True(eng.CanReuseWinboard)
+        // a game's traffic is not kept: it grew by tens of KB a game for the life of the process
+        eng.UciNewGame()
+        eng.Position "position startpos moves e2e4 e7e5"
+        eng.IsReady()
+        Assert.Equal<string[]>([| "setoption name Threads value 2"; "setoption name Hash value 64" |], eng.Commands.ToArray())
         Assert.False(eng.HasExited())
     finally stopTournament eng
 
