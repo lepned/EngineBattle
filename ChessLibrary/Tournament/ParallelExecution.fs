@@ -61,9 +61,11 @@ let concurrencyFor (tourny: Tournament) =
     max 1 gpuBased
 
 /// Quit politely, then make sure the process is gone. Never throws: teardown must go on.
-let private stopEngine (eng: ChessEngine) =
-    try eng.Quit() with _ -> ()
-    try eng.StopProcess() with _ -> ()
+let private stopEngine (eng: ChessEngine) : Task =
+    task {
+        try eng.Quit() with _ -> ()
+        try do! eng.StopProcessAsync() with _ -> ()
+    }
 
 /// A crashed or aborted game. It carries "1/2-1/2" purely as a placeholder (NotStarted is
 /// Result.Empty from a cancellation race), so it must neither be scored, written to the PGN
@@ -75,7 +77,7 @@ let private notPlayed (r: Result) =
 /// A pool of up to `capacity` instances created on demand by `spawn` (given the instance
 /// index, which is never one a live instance holds). Returned instances are handed out again
 /// before any new one is spawned. An agent runs PoolMachine; generic so it is tested with ints.
-type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> 'T) =
+type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> Task<'T>) =
     let replies = Dictionary<int, TaskCompletionSource<'T>>()
     // the slot of each instance handed out, for Return and Evict
     let slots = Dictionary<'T, int>(HashIdentity.Structural)
@@ -102,11 +104,17 @@ type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> 'T) =
             for effect in effects do
                 match effect with
                 | PoolMachine.Spawn slot ->
-                    // a thread of its own: spawn blocks until the engine is ready, and ten at once on
-                    // the pool starved the games already running
-                    Task.Factory.StartNew((fun () ->
-                        let outcome = try PoolMachine.Spawned (slot, spawn slot) with ex -> PoolMachine.SpawnFailed (slot, ex)
-                        inbox.Post (outcome, None)), TaskCreationOptions.LongRunning) |> ignore
+                    // awaited, not waited for: an engine start holds no thread. Off the agent too:
+                    // a spawn runs synchronously up to its first await (constructor, Process.Start)
+                    task {
+                        let! outcome =
+                            Task.Run<PoolMachine.Event<'T>>(fun () ->
+                                task {
+                                    try
+                                        let! item = spawn slot
+                                        return PoolMachine.Spawned (slot, item)
+                                    with ex -> return PoolMachine.SpawnFailed (slot, ex) })
+                        inbox.Post (outcome, None) } |> ignore
                 | PoolMachine.Give (id, slot, item) ->
                     lock slots (fun () -> slots.[item] <- slot)
                     take id |> Option.iter (fun tcs -> tcs.TrySetResult item |> ignore)
@@ -492,14 +500,14 @@ let parallelTournamentRun
           //    first move, and the sequential runner this path replaced for the GUI only ever
           //    started the two engines about to play. Each engine is registered in allEngines
           //    before init, so an init failure still gets it killed by the finally below.
-          let spawnEngine (e: EngineConfig) (i: int) =
+          let spawnEngine (e: EngineConfig) (i: int) = task {
               let cfg =
                   if gpus <> null && gpus.Length > 0 then
                       let gpu = gpus.[i % gpus.Length]
                       logger.LogInformation($"Engine pool {e.Name} instance {i}: assigning GPU {gpu}")
                       assignDeviceToConfig e gpu
                   else e
-              let eng = EngineHelper.createEngine (cfg, Some logger)
+              let! eng = EngineHelper.createEngineAsync (cfg, Some logger)
               lock allEngines (fun () -> allEngines.Add(eng))
               callback (Update.EngineStarted(e.Name, eng.GetDefaultOptions() |> Seq.map (fun kv -> kv.Key, string kv.Value) |> Map.ofSeq))
               // Pooled engines that skip per-game init must be initialised here. When the game
@@ -507,8 +515,8 @@ let parallelTournamentRun
               // sends StartOfGame before it initialises, so the board shows the pairing while
               // Ceres or Lc0 spend their seconds on readyok - initialising at spawn moved that
               // wait in front of the first thing the page could show.
-              if not initPerGame then EngineHelper.initEngine 0 eng
-              eng
+              if not initPerGame then do! EngineHelper.initEngineAsync 0 eng
+              return eng }
           let enginePools =
               tourny.EngineSetup.Engines
               |> List.map (fun e -> e.Name, LazyPool<ChessEngine>(concurrency, spawnEngine e))
@@ -565,20 +573,19 @@ let parallelTournamentRun
           // what the boards pick next on several (under prevention the gate can pick
           // differently - a respawn, never a hang: an eviction wakes a borrower waiting on the
           // full pool). The colour-swapped twin costs no respawn. Two engines play every game
-          // and are kept. (Not a closure inside playOne's finally: the task builder emits a
-          // finally twice and the compiler rejects the duplicate.)
+          // and are kept. Awaited by playOne after its game, whatever the game's outcome.
           let keepAllEngines = tourny.EngineSetup.Engines.Length <= 2
-          let settleEngine (name: string) (eng: ChessEngine) =
+          let settleEngine (name: string) (eng: ChessEngine) : Task = task {
               let neededSoon =
                   keepAllEngines ||
                   (gate.PeekNext concurrency |> List.exists (fun p -> p.White.Name = name || p.Black.Name = name))
               if neededSoon then enginePools.[name].Return eng
               else
                   enginePools.[name].Evict eng
-                  stopEngine eng
+                  do! stopEngine eng
                   // Stopped for good: the safety net has nothing to do for it, and a long run
                   // with many engines would otherwise hold every wrapper it ever spawned.
-                  lock allEngines (fun () -> allEngines.Remove eng |> ignore)
+                  lock allEngines (fun () -> allEngines.Remove eng |> ignore) }
 
           // Pools spawn on borrow, so a borrow can fail - a binary that is missing or dies at
           // start - with the pairing's other engine already out. Give that one back (with one
@@ -612,6 +619,8 @@ let parallelTournamentRun
               let wEng, bEng =
                   if firstName = pair.White.Name then firstEng, secondEng
                   else secondEng, firstEng
+              // the settles are awaited, which a finally cannot do: the game's exception waits for them
+              let mutable failure : System.Runtime.ExceptionServices.ExceptionDispatchInfo = null
               try
                   let! wOk = wEng |> engineHealthy
                   let! bOk = bEng |> engineHealthy
@@ -649,7 +658,7 @@ let parallelTournamentRun
                                           else None
                                       return! Game.GameLoop.play (not initPerGame) replay sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
                                   with
-                                  | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
+                                  | ex -> return! handleGameExceptionAsync logger ex cts gametimer currentBoard wEng bEng pair  }
 
                           let gameData = metadataOf pair result
                           if tourny.PreventMoveDeviation && not (notPlayed result) then
@@ -665,10 +674,10 @@ let parallelTournamentRun
                       } |> Async.StartAsTask
                   if not (notPlayed res) then
                       results.Add res
-
-              finally
-                  settleEngine pair.White.Name wEng
-                  settleEngine pair.Black.Name bEng
+              with ex -> failure <- System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture ex
+              do! settleEngine pair.White.Name wEng
+              do! settleEngine pair.Black.Name bEng
+              if not (isNull failure) then failure.Throw()
               }
 
           // 5) worker loop: task CE with proper cancellation
@@ -728,10 +737,10 @@ let parallelTournamentRun
               |> Task.WhenAll
               |> Async.AwaitTask
 
-          // 7) teardown
-          for KeyValue(e, pool) in enginePools do
-              pool.Drain() |> Array.Parallel.iter stopEngine
-              printfn $"Engine {e} stopped"
+          // 7) teardown: every engine stopped at once
+          let drained = [| for KeyValue(e, pool) in enginePools -> e, pool.Drain() |]
+          do! Task.WhenAll [| for _, engines in drained do for eng in engines -> stopEngine eng |] |> Async.AwaitTask
+          for e, _ in drained do printfn $"Engine {e} stopped"
 
           // 8) collect results
           let res = ResizeArray<Result>(results)
@@ -761,9 +770,9 @@ let parallelTournamentRun
           return results |> Seq.toList
           finally
               feed.Dispose()
-              // Safety net: stop any engine processes still running (no-op if teardown already stopped them)
-              for eng in allEngines do
-                  try
-                      if not (eng.HasExited()) then stopEngine eng
-                  with _ -> ()
+              // Safety net: stop any engine processes still running (no-op if teardown already stopped them).
+              // A finally cannot await; this is the end of the run, and they are stopped at once.
+              let running = lock allEngines (fun () -> allEngines |> Seq.filter (fun e -> try not (e.HasExited()) with _ -> false) |> Seq.toArray)
+              if running.Length > 0 then
+                  try Task.WhenAll(running |> Array.map stopEngine).Wait() with _ -> ()
   }

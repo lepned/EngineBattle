@@ -187,11 +187,11 @@ let executeGame
       | :? EngineStartupException as ex ->
           let context = createExceptionContext engine1 engine2 pair board tourny
           EngineFailures.log logger ex context
-          handleGameException logger ex cts gametimer board engine1 engine2 pair
+          handleGameExceptionAsync logger ex cts gametimer board engine1 engine2 pair |> Async.RunSynchronously
       | ex ->
           let context = createExceptionContext engine1 engine2 pair board tourny
           EngineFailures.log logger ex context
-          handleGameException logger ex cts gametimer board engine1 engine2 pair
+          handleGameExceptionAsync logger ex cts gametimer board engine1 engine2 pair |> Async.RunSynchronously
 
     let gameLabel =
       if tourny.TotalGames > 0 then sprintf "Game %d/%d: " tourny.CurrentGameNr tourny.TotalGames else ""

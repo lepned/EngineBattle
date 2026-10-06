@@ -34,8 +34,10 @@ type ChessLibrary.Engine.ChessEngine
   ReadStampedLineAsync(token: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.ValueTuple<System.Int64, System.String>>
   SetMoveOverhead(optionName: System.String, milliSeconds: System.Int32) : System.Void
   StartProcess() : System.Void
+  StartProcessAsync() : System.Threading.Tasks.Task
   Stop() : System.Void
   StopProcess() : System.Void
+  StopProcessAsync() : System.Threading.Tasks.Task
   TryToUpdateOption(name: System.String, value: System.String) : System.Void
   Uci() : System.Void
   UciNewGame() : System.Void
@@ -66,6 +68,7 @@ type ChessLibrary.Engine.ChessEngine
   prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
   prop SupportsPonder : System.Boolean { get }
   prop UciIdName : System.String { get }
+  static CreateAsync(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, initCommands: System.Collections.Generic.IEnumerable<System.String>, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : System.Threading.Tasks.Task<ChessLibrary.Engine.ChessEngine>
 type ChessLibrary.AnalysisEngine
   Analyse(positionCommand: System.String, goCommand: System.String) : System.Int32
   AnalyseBoard(board: ChessLibrary.Chess.Board, goCommand: System.String) : System.Int32
@@ -142,6 +145,7 @@ type ChessLibrary.AnalysisOutcome.Tags
 type ChessLibrary.EngineHelper
   static createAnalysisEngine(onUpdate: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.SearchUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : ChessLibrary.AnalysisEngine
   static createEngine(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
+  static createEngineAsync(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : System.Threading.Tasks.Task<ChessLibrary.Engine.ChessEngine>
   static createEngineWithoutValidation(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
   static createInitialUCICommands(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.Collections.Generic.IEnumerable<System.String>
   static initEngine(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : System.Void

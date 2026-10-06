@@ -626,6 +626,67 @@ let ``Tournament engine that is not a UCI engine fails at creation and leaves no
     let ex = Assert.ThrowsAny<exn>(fun () -> startTournament (config log "--exit-on-uci" []) |> ignore)
     Assert.Contains("did not respond to the uci command", ex.Message)
 
+// ── ChessEngine (tournament): async start and stop ─────────────────────────────────────────────
+
+let private createAsync (cfg: EngineConfig) =
+    ChessEngine.CreateAsync(cfg, initCommands cfg, Some (NullLogger.Instance :> ILogger)).GetAwaiter().GetResult()
+
+[<Fact>]
+let ``Tournament engine from CreateAsync is started as the constructor starts it`` () =
+    let log = newLogPath ()
+    let eng = createAsync (config log "" [ "threads", box 2; "hash", box 64 ])
+    try
+        Assert.False(eng.HasExited())
+        Assert.True(eng.PassedValidation)
+        Assert.Equal<string[]>([| "uci"; "setoption name Threads value 2"; "setoption name Hash value 64" |], (synced log eng.Write))
+        Assert.Equal("FakeUciEngine 1.0", eng.UciIdName)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament engine from CreateAsync fails as the constructor does for a binary that is not an engine`` () =
+    let log = newLogPath ()
+    let ex = Assert.ThrowsAny<exn>(fun () -> createAsync (config log "--exit-on-uci" []) |> ignore)
+    Assert.Contains("did not respond to the uci command", ex.Message)
+
+[<Fact>]
+let ``StopProcessAsync returns at once and kills an engine that ignores quit after its grace`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "FakeIgnoreQuit", box true ])
+    eng.Quit()
+    waitForSent log "quit"
+    let sw = Stopwatch.StartNew()
+    let stopping = eng.StopProcessAsync()
+    // the three seconds are awaited, not waited for: the caller gets its thread back at once
+    Assert.True(sw.ElapsedMilliseconds < 500L, sprintf "returned after %d ms" sw.ElapsedMilliseconds)
+    Assert.True(stopping.Wait 10_000)
+    Assert.True(sw.ElapsedMilliseconds >= 2_900L, sprintf "killed after %d ms" sw.ElapsedMilliseconds)
+    Assert.True(eng.HasExited())
+
+/// A caller's context that never runs what is posted to it - a UI thread blocked in a synchronous
+/// call. Every await in Engine.fs is ConfigureAwait(false); one that is not hangs here.
+type private DroppingContext() =
+    inherit SynchronizationContext()
+    override _.Post(_, _) = ()
+    override _.Send(_, _) = ()
+
+[<Fact>]
+let ``Tournament engine starts and stops synchronously from a blocked caller's context`` () =
+    let log = newLogPath ()
+    let mutable error : exn = null
+    let caller = Thread(fun () ->
+        SynchronizationContext.SetSynchronizationContext(DroppingContext())
+        try
+            let eng = startTournament (config log "" [ "FakeIgnoreQuit", box true ])
+            // the later reads too: each await chain starts again on this thread
+            if not (eng.WaitForReadyOk()) then failwith "no readyok"
+            if not (eng.PrepareNewGame()) then failwith "not prepared"
+            eng.StopProcess()
+        with ex -> error <- ex)
+    caller.IsBackground <- true
+    caller.Start()
+    Assert.True(caller.Join 15_000, "the synchronous start or stop hung on the caller's context")
+    Assert.Null(error)
+
 [<Fact>]
 let ``Tournament engine takes the network name from WeightsFile or Network`` () =
     let log = newLogPath ()

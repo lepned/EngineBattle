@@ -37,8 +37,9 @@ let isAppShuttingDown (cts: CancellationTokenSource) =
     || Environment.HasShutdownStarted
     || AppDomain.CurrentDomain.IsFinalizingForUnload()
 
-/// Centralized logging + crash result builder for unexpected exceptions during a game
-let handleGameException
+/// Centralized logging + crash result builder for unexpected exceptions during a game. Its waits
+/// (polling the engines, stopping them) hold no thread.
+let handleGameExceptionAsync
     (logger: ILogger)
     (ex: exn)
     (cts: CancellationTokenSource)
@@ -46,7 +47,7 @@ let handleGameException
     (board: Board)
     (engine1: ChessEngine)
     (engine2: ChessEngine)
-    (pair: Pairing) : Result =
+    (pair: Pairing) : Async<Result> =
 
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let white, black = pair.White.Name, pair.Black.Name
@@ -94,8 +95,6 @@ let handleGameException
         return! poll 0 100
     }
 
-    let e1Exited, e2Exited = pollEngineStatusAsync 5 |> Async.RunSynchronously
-
     // Classify exception type
     let isPipeOrIoError =
         match ex with
@@ -112,78 +111,72 @@ let handleGameException
     let forceStopEngineAsync (eng: ChessEngine) = async {
         try
             if not (eng.HasExited()) then
-                eng.StopProcess()
+                do! eng.StopProcessAsync() |> Async.AwaitTask
                 do! Async.Sleep 1000
         with cleanupEx ->
             logger.LogWarning(cleanupEx, "Error stopping {Engine}", eng.Name)
     }
 
     // Decision tree with async cleanup
-    let result =
+    async {
+        let! e1Exited, e2Exited = pollEngineStatusAsync 5
         match shutdown, e1Exited, e2Exited with
         // Both engines crashed
         | _, true, true ->
             logger.LogCritical(ex, "Both engines crashed: {White} vs {Black}", white, black)
-            createCancelResult ()
+            return createCancelResult ()
 
         // Application shutdown
         | true, _, _ ->
             logger.LogCritical(ex, "App shutdown during game: {White} vs {Black}", white, black)
-            async {
-                do! forceStopEngineAsync engine1
-                do! forceStopEngineAsync engine2
-            } |> Async.RunSynchronously
-            createCancelResult ()
+            do! forceStopEngineAsync engine1
+            do! forceStopEngineAsync engine2
+            return createCancelResult ()
 
         // Engine1 crashed
         | false, true, false ->
             logger.LogCritical(ex, "{Engine} crashed: {White} vs {Black}", engine1.Name, white, black)
-            forceStopEngineAsync engine2 |> Async.RunSynchronously
-            createDisconnectedResult engine1.Name "0-1"
+            do! forceStopEngineAsync engine2
+            return createDisconnectedResult engine1.Name "0-1"
 
         // Engine2 crashed
         | false, false, true ->
             logger.LogCritical(ex, "{Engine} crashed: {White} vs {Black}", engine2.Name, white, black)
-            forceStopEngineAsync engine1 |> Async.RunSynchronously
-            createDisconnectedResult engine2.Name "1-0"
+            do! forceStopEngineAsync engine1
+            return createDisconnectedResult engine2.Name "1-0"
 
         // Both alive - investigate further
         | false, false, false ->
             if isPipeOrIoError then
                 // No stderr clues - poll again with longer timeout
-                let e1b, e2b = pollEngineStatusAsync 10 |> Async.RunSynchronously
+                let! e1b, e2b = pollEngineStatusAsync 10
                 match e1b, e2b with
                 | true, false ->
                     logger.LogCritical("After polling: {Engine} exited", engine1.Name)
-                    forceStopEngineAsync engine2 |> Async.RunSynchronously
-                    createDisconnectedResult engine1.Name "0-1"
+                    do! forceStopEngineAsync engine2
+                    return createDisconnectedResult engine1.Name "0-1"
 
                 | false, true ->
                     logger.LogCritical("After polling: {Engine} exited", engine2.Name)
-                    forceStopEngineAsync engine1 |> Async.RunSynchronously
-                    createDisconnectedResult engine2.Name "1-0"
+                    do! forceStopEngineAsync engine1
+                    return createDisconnectedResult engine2.Name "1-0"
 
                 | true, true ->
                     logger.LogCritical("After polling: both engines exited")
-                    createCancelResult ()
+                    return createCancelResult ()
 
                 | false, false ->
                     logger.LogError(ex, "Unresolved pipe error: {White} vs {Black}", white, black)
-                    async {
-                        do! forceStopEngineAsync engine1
-                        do! forceStopEngineAsync engine2
-                    } |> Async.RunSynchronously
-                    createCancelResult ()
+                    do! forceStopEngineAsync engine1
+                    do! forceStopEngineAsync engine2
+                    return createCancelResult ()
             else
                 // Unexpected exception
                 logger.LogCritical(ex, "Unexpected error: {White} vs {Black}", white, black)
-                async {
-                    do! forceStopEngineAsync engine1
-                    do! forceStopEngineAsync engine2
-                } |> Async.RunSynchronously
-                createCancelResult ()
-
-    result
+                do! forceStopEngineAsync engine1
+                do! forceStopEngineAsync engine2
+                return createCancelResult ()
+    }
 
 /// Returns the first two evaluations from a full eval list (reversed order)
 let firstTwoEvals fullEvalList =

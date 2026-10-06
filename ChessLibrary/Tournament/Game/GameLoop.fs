@@ -65,10 +65,10 @@ let private prepareEngines skipEngineInit (tourny: Tournament) (board: Board) (w
     // a Winboard engine with reuse=0 needs a new process for every game
     if not engine.CanReuseWinboard && not (engine.HasExited()) then
       engine.Quit()
-      engine.StopProcess()
+      do! engine.StopProcessAsync() |> Async.AwaitTask
     if engine.HasExited() then
       logger.LogInformation("Engine {Engine} has exited, starting it", engine.Name)
-      engine.StartProcess()
+      do! engine.StartProcessAsync() |> Async.AwaitTask
     let! ready = engine.PrepareNewGameAsync(max 180 tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask
     if not ready then
       raise (CustomException.EngineStartupException (sprintf "Engine %s not ready for the next game: %s" engine.Name engine.ReadyFailure)) }
@@ -399,9 +399,9 @@ let play
       logger.LogWarning("Engine {Engine} stopped answering; it is restarted before its next game", s.Engine.Name)
       try
         s.Engine.Quit()
-        s.Engine.StopProcess()
+        do! s.Engine.StopProcessAsync() |> Async.AwaitTask
       with _ -> ()
-  // an exception goes to the caller's handleGameException, as before
+  // an exception goes to the caller's handleGameExceptionAsync, as before
   let result =
     match outcome with
     | Choice1Of2 result -> result

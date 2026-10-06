@@ -45,16 +45,21 @@ module EngineHelper =
       eng.DoNotValidate()
       eng
 
-  let createEngine (config:EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : ChessEngine = 
-      let validation = Configuration.Validation.validateChessEngineCmds config
-      match validation with
-      |Configuration.Validation.Errors errors -> 
+  /// The def's setoption commands, or a failure (printed in red) when the def is invalid.
+  let private validatedCommands (config: EngineConfig) =
+      match Configuration.Validation.validateChessEngineCmds config with
+      |Configuration.Validation.Errors errors ->
         for error in errors do
           ConsoleUtils.printInColor ConsoleColor.Red error
         failwith "Engine could not be created"
-      |Configuration.Validation.Ok -> 
-          let cmds = createInitialUCICommands config
-          new ChessEngine(config, cmds, logger)
+      |Configuration.Validation.Ok -> createInitialUCICommands config
+
+  let createEngine (config:EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : ChessEngine =
+      new ChessEngine(config, validatedCommands config, logger)
+
+  /// As createEngine, without holding a thread while the engine starts.
+  let createEngineAsync (config: EngineConfig, logger: ILogger option) : Task<ChessEngine> =
+      ChessEngine.CreateAsync(config, validatedCommands config, logger)
 
   /// An analysis engine, started: blocks until it is ready (a network load can take minutes, so
   /// call it off a UI thread, e.g. in Task.Run), and throws when it cannot start. Every update
@@ -83,7 +88,7 @@ module EngineHelper =
           if delay > 0 then
             do! Async.Sleep(delay*1000)
           if engine.HasExited() then
-            engine.StartProcess()
+            do! engine.StartProcessAsync() |> Async.AwaitTask
           let! ready = engine.WaitForReadyOkAsync() |> Async.AwaitTask
           if ready then
             return $"{engine.Name} isready"
@@ -111,7 +116,7 @@ module EngineHelper =
       if engine.HasExited() |> not && (delay > 0) then
         do! Task.Delay(delay).ConfigureAwait(false)
       if engine.HasExited() then
-        engine.StartProcess()
+        do! engine.StartProcessAsync().ConfigureAwait(false)
       let! ok = engine.WaitForReadyOkAsync().ConfigureAwait(false) // wait for readyok
       if not ok then
           failwith "Engine did not respond to isready command."
@@ -132,9 +137,9 @@ module EngineHelper =
         do! Async.Sleep(delay)
       elif engine1.HasExited() || engine2.HasExited() then
         if engine1.HasExited() then
-          engine1.StartProcess()
+          do! engine1.StartProcessAsync() |> Async.AwaitTask
         if engine2.HasExited() then
-          engine2.StartProcess()
+          do! engine2.StartProcessAsync() |> Async.AwaitTask
         let! res =
           [waitForEngineIsReady delay engine1; waitForEngineIsReady delay engine2]
           |> Async.Parallel

@@ -91,7 +91,7 @@ module Engine =
   //  The tournament wrapper: the caller writes commands and reads the replies itself
   // ════════════════════════════════════════════════════════════════════════════════════════════
 
-  type ChessEngine(config : EngineConfig, initCommands: string seq, logger: ILogger option) =
+  type ChessEngine private (config : EngineConfig, initCommands: string seq, logger: ILogger option, startNow: bool) =
       let name = config.Name
       let isEnabled level = match logger with Some l -> l.IsEnabled level | None -> false
       let logCritical (text: string) = match logger with Some l -> l.LogCritical text | None -> ()
@@ -147,16 +147,30 @@ module Engine =
       let createVerifiedOptions (options: string seq) =
         [ for opt in options -> EngineStartup.inEngineSpelling optionsMap opt ]
 
-      /// Waits up to `timeoutMs` for the engine to go, then kills it; always releases the handle.
-      let terminateProcess (p: Process) (timeoutMs: int) =
-        try
-          if not (p.WaitForExit timeoutMs) then
-            try p.Kill true
-            with ex -> printfn "Warning: could not kill '%s': %s" name ex.Message
-            p.WaitForExit 5_000 |> ignore
-        finally
-          p.Close()
-          p.Dispose()
+      /// True when the process exits within `timeoutMs`; the wait holds no thread.
+      let exitsWithin (p: Process) (timeoutMs: int) : Task<bool> =
+        task {
+          use cts = new CancellationTokenSource(timeoutMs)
+          try
+            do! p.WaitForExitAsync(cts.Token).ConfigureAwait(false)
+            return true
+          with :? OperationCanceledException -> return false
+        }
+
+      /// Gives the engine `timeoutMs` to go, then kills it; always releases the handle.
+      let terminateProcessAsync (p: Process) (timeoutMs: int) : Task =
+        task {
+          try
+            let! exited = (exitsWithin p timeoutMs).ConfigureAwait(false)
+            if not exited then
+              try p.Kill true
+              with ex -> printfn "Warning: could not kill '%s': %s" name ex.Message
+              let! _ = (exitsWithin p 5_000).ConfigureAwait(false)
+              ()
+          finally
+            p.Close()
+            p.Dispose()
+        }
 
       /// Starts the process. Process.Start does not block on the engine, so this runs on the
       /// caller's thread; it used to be handed to a pool thread and waited for, which only cost a
@@ -387,104 +401,121 @@ module Engine =
                 return isOk
         }
 
-      let readUciOptions () =
-        try readUciOptionsAsync().GetAwaiter().GetResult()
-        with
-        | :? OperationCanceledException ->
-            logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
-            false
-        | :? IOException as ex ->
-            logCritical (sprintf "Error reading UCI options: %s" ex.Message)
-            false
-        | ex ->
-            logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
-            false
+      /// The handshake; false (logged) on a timeout or a read failure.
+      let readUciOptionsChecked () : Task<bool> =
+        task {
+          try return! (readUciOptionsAsync ()).ConfigureAwait(false)
+          with
+          | :? OperationCanceledException ->
+              logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
+              return false
+          | :? IOException as ex ->
+              logCritical (sprintf "Error reading UCI options: %s" ex.Message)
+              return false
+          | ex ->
+              logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
+              return false
+        }
 
-      let startProcess () =
-        try
-          assignThread ()
-          if not (readUciOptions ()) then
-            // Winboard: initializeWinboard only returns false when the process EXITED during init
-            // or a hard I/O failure occurred - a healthy-but-quiet v1 engine never lands here.
-            let msg =
-              match protocol with
-              | Winboard _ -> sprintf "Winboard engine %s exited or failed during initialization (path: %s)" name config.Path
-              | Uci -> sprintf "Engine %s did not respond to the uci command (path: %s)" name config.Path
-            logCritical msg
-            raise (CustomException.EngineStartupException msg)
-          if not (hasExited ()) then
-            logDebug (sprintf "Engine %s is already running." name)
-          else
+      /// Starts the process and awaits the handshake; the options are sent once it is done.
+      let startProcessAsync () : Task =
+        task {
+          try
             assignThread ()
-            logDebug (sprintf "Engine %s started successfully." name)
-          for cmd in createVerifiedOptions initCommands do
-            // Ponder is EngineBattle's to set (Configuration.withPonderOption): an engine without the
-            // option is not sent it, and does not ponder (SupportsPonder)
-            match UciOption.parseSetOptionCommand cmd with
-            | Some (optName, _) when optName.Equals("Ponder", StringComparison.OrdinalIgnoreCase) && not (optionsMap.ContainsKey optName) ->
-                logDebug (sprintf "Engine %s has no Ponder option: not sent, the engine does not ponder" name)
-            | _ ->
-              match EngineStartup.check optionsMap cmd with
-              | EngineStartup.Valid (optName, value, changedFrom) ->
-                  changedFrom |> Option.iter (fun def -> nonDefaultValues.[optName] <- (def, value))
-              // QUIRK (pinned): `validate` is still true here even for an engine made by
-              // createEngineWithoutValidation, which turns it off after the constructor.
-              | EngineStartup.Invalid (optName, value) ->
-                  if validate then
-                    passed <- false
-                    ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." optName value)
-              | EngineStartup.Malformed ->
-                  passed <- false
-                  ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
-              write cmd
-              assignNetworkName cmd
-              commands.Add cmd
-          match optionsMap.TryGetValue "name", optionsMap.TryGetValue "author" with
-          | (true, nameOpt), (true, authorOpt) ->
-              match nameOpt.OptionType, authorOpt.OptionType with
-              // Engines restart every game; the version is worth one line per run.
-              | UciOption.IdAndAuthor(_, _, n), UciOption.IdAndAuthor(_, _, a) ->
-                  if lock printLock (fun () -> loggedVersions.Add name)
-                  then logInformation (sprintf "Engine %s is %s by %s" name n a)
-                  else logDebug (sprintf "Engine name: %s and author: %s" n a)
-              | _ -> ()
-          | _ -> ()
-          if validate then
-            if passed then
-              lock printLock (fun () ->
-                ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
-                if printedEngines.Add(name) then
-                  printNonDefaultValues name config.Path nonDefaultValues
-                elif not (String.IsNullOrEmpty config.DeviceOption) then
-                  match nonDefaultValues.TryGetValue(config.DeviceOption) with
-                  | true, (_, value) -> printfn "  %s: %s = %s" name config.DeviceOption value
-                  | _ -> ()
-                let diagnostics = getDiagnostics ()
-                if String.IsNullOrEmpty diagnostics |> not then
-                  ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics))
+            let! answered = (readUciOptionsChecked ()).ConfigureAwait(false)
+            if not answered then
+              // Winboard: initializeWinboard only returns false when the process EXITED during init
+              // or a hard I/O failure occurred - a healthy-but-quiet v1 engine never lands here.
+              let msg =
+                match protocol with
+                | Winboard _ -> sprintf "Winboard engine %s exited or failed during initialization (path: %s)" name config.Path
+                | Uci -> sprintf "Engine %s did not respond to the uci command (path: %s)" name config.Path
+              logCritical msg
+              raise (CustomException.EngineStartupException msg)
+            if not (hasExited ()) then
+              logDebug (sprintf "Engine %s is already running." name)
             else
-              // The offending options were printed in red above.
-              ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
-        with
-        | :? CustomException.EngineStartupException ->
-            // Fail fast (user decision 2026-08-08): a binary that never answers "uci" fails at
-            // creation with a clear message instead of limping into readyok timeouts
-            // mid-tournament. The started-but-mute process is killed so it does not leak, and every
-            // creation path catches the exception. Option validation failures stay non-throwing.
-            passed <- false
-            try if not (hasExited ()) then running.Process.Kill(true) with _ -> ()
-            reraise ()
-        | :? OperationCanceledException ->
-            passed <- false
-            logCritical "Engine initialization timed out."
-        | :? Channels.ChannelClosedException ->
-            passed <- false
-            logCritical "Engine channel was closed unexpectedly."
-        | ex ->
-            passed <- false
-            logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
+              assignThread ()
+              logDebug (sprintf "Engine %s started successfully." name)
+            for cmd in createVerifiedOptions initCommands do
+              // Ponder is EngineBattle's to set (Configuration.withPonderOption): an engine without the
+              // option is not sent it, and does not ponder (SupportsPonder)
+              match UciOption.parseSetOptionCommand cmd with
+              | Some (optName, _) when optName.Equals("Ponder", StringComparison.OrdinalIgnoreCase) && not (optionsMap.ContainsKey optName) ->
+                  logDebug (sprintf "Engine %s has no Ponder option: not sent, the engine does not ponder" name)
+              | _ ->
+                match EngineStartup.check optionsMap cmd with
+                | EngineStartup.Valid (optName, value, changedFrom) ->
+                    changedFrom |> Option.iter (fun def -> nonDefaultValues.[optName] <- (def, value))
+                // QUIRK (pinned): `validate` is still true here even for an engine made by
+                // createEngineWithoutValidation, which turns it off after the constructor.
+                | EngineStartup.Invalid (optName, value) ->
+                    if validate then
+                      passed <- false
+                      ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." optName value)
+                | EngineStartup.Malformed ->
+                    passed <- false
+                    ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
+                write cmd
+                assignNetworkName cmd
+                commands.Add cmd
+            match optionsMap.TryGetValue "name", optionsMap.TryGetValue "author" with
+            | (true, nameOpt), (true, authorOpt) ->
+                match nameOpt.OptionType, authorOpt.OptionType with
+                // Engines restart every game; the version is worth one line per run.
+                | UciOption.IdAndAuthor(_, _, n), UciOption.IdAndAuthor(_, _, a) ->
+                    if lock printLock (fun () -> loggedVersions.Add name)
+                    then logInformation (sprintf "Engine %s is %s by %s" name n a)
+                    else logDebug (sprintf "Engine name: %s and author: %s" n a)
+                | _ -> ()
+            | _ -> ()
+            if validate then
+              if passed then
+                lock printLock (fun () ->
+                  ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
+                  if printedEngines.Add(name) then
+                    printNonDefaultValues name config.Path nonDefaultValues
+                  elif not (String.IsNullOrEmpty config.DeviceOption) then
+                    match nonDefaultValues.TryGetValue(config.DeviceOption) with
+                    | true, (_, value) -> printfn "  %s: %s = %s" name config.DeviceOption value
+                    | _ -> ()
+                  let diagnostics = getDiagnostics ()
+                  if String.IsNullOrEmpty diagnostics |> not then
+                    ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics))
+              else
+                // The offending options were printed in red above.
+                ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
+          with
+          | :? CustomException.EngineStartupException as e ->
+              // Fail fast (user decision 2026-08-08): a binary that never answers "uci" fails at
+              // creation with a clear message instead of limping into readyok timeouts
+              // mid-tournament. The started-but-mute process is killed so it does not leak, and every
+              // creation path catches the exception. Option validation failures stay non-throwing.
+              passed <- false
+              try if not (hasExited ()) then running.Process.Kill(true) with _ -> ()
+              System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e).Throw()
+          | :? OperationCanceledException ->
+              passed <- false
+              logCritical "Engine initialization timed out."
+          | :? Channels.ChannelClosedException ->
+              passed <- false
+              logCritical "Engine channel was closed unexpectedly."
+          | ex ->
+              passed <- false
+              logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
+        }
 
-      do startProcess ()
+      do if startNow then startProcessAsync().GetAwaiter().GetResult()
+
+      /// A started engine, as the constructor gives one, without holding a thread while it starts.
+      static member CreateAsync(config: EngineConfig, initCommands: string seq, logger: ILogger option) : Task<ChessEngine> =
+        task {
+          let engine = new ChessEngine(config, initCommands, logger, false)
+          do! engine.StartProcessAsync().ConfigureAwait(false)
+          return engine
+        }
+
+      new (config: EngineConfig, initCommands: string seq, logger: ILogger option) = new ChessEngine(config, initCommands, logger, true)
 
       member _.GetExitCode() = lastExitCode
       /// Snapshot rather than the live list - callers enumerate while the process may still write.
@@ -562,18 +593,23 @@ module Engine =
             | None -> notFound ()
         | None -> notFound ()
 
-      member this.StartProcess() = startProcess ()
+      member this.StartProcessAsync() : Task = startProcessAsync ()
+      member this.StartProcess() = startProcessAsync().GetAwaiter().GetResult()
 
       member this.DoNotValidate() = validate <- false
 
-      /// Ends the process without sending quit: three seconds to go on its own, then killed.
-      member this.StopProcess() =
-        shutdownRequested <- true   // as deliberate as quit; the exit is not unexpected
-        try
-          if running.Process.HasExited then logInformation (sprintf "Engine %s has already exited" name)
-          else terminateProcess running.Process 3000
-        with :? InvalidOperationException ->
-          logCritical (sprintf "Engine %s: process was never started or is in a bad state — check engine path, permissions, and dependencies" name)
+      /// Ends the process without sending quit: three seconds to go on its own, then killed. The
+      /// waits hold no thread.
+      member this.StopProcessAsync() : Task =
+        task {
+          shutdownRequested <- true   // as deliberate as quit; the exit is not unexpected
+          try
+            if running.Process.HasExited then logInformation (sprintf "Engine %s has already exited" name)
+            else do! (terminateProcessAsync running.Process 3000).ConfigureAwait(false)
+          with :? InvalidOperationException ->
+            logCritical (sprintf "Engine %s: process was never started or is in a bad state — check engine path, permissions, and dependencies" name)
+        }
+      member this.StopProcess() = this.StopProcessAsync().GetAwaiter().GetResult()
 
       member _.PassedValidation = passed
       member this.BenchmarkLC0Cmd = benchMarkLC0Cmd
