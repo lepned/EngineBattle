@@ -124,7 +124,9 @@ module internal EngineProcess =
     /// start: a name taken already gets _2, _3, ...
     static member internal OpenAt(dir: string, engineName: string, ts: string) =
       if not (Directory.Exists dir) then Directory.CreateDirectory(dir) |> ignore
-      let safeName = engineName.Replace(" ", "_").Replace("/", "_").Replace("\\", "_")
+      // every character a file name may not hold, and spaces
+      let invalid = set (Path.GetInvalidFileNameChars())
+      let safeName = String(engineName.ToCharArray() |> Array.map (fun c -> if c = ' ' || invalid.Contains c then '_' else c))
       let rec create n =
         let path = Path.Combine(dir, $"""engine_{safeName}_{ts}{(if n = 1 then "" else $"_{n}")}.log""")
         try path, new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read)

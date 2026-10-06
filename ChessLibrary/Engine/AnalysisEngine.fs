@@ -383,17 +383,21 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     }
 
   let startWinboard (handler: WinboardProtocol.WinboardHandler) =
+    // the handshake goes in the I/O log like every other command
+    let send (cmd: string) =
+      logIO ">>>" cmd
+      transport.WriteLine cmd
     async {
       try
-        for cmd in handler.GetInitCommands() do transport.WriteLine cmd
-        let! ok = initializeWinboardEventBased handler (Some logger) name FeatureTimeoutMs (forceV1 config) transport.WriteLine
+        for cmd in handler.GetInitCommands() do send cmd
+        let! ok = initializeWinboardEventBased handler (Some logger) name FeatureTimeoutMs (forceV1 config) send
         if ok then
           for reply in handler.TakeFeatureReplies() do
             if handler.CommandDelayMs > 0 then do! Async.Sleep handler.CommandDelayMs
-            transport.WriteLine reply
+            send reply
           for cmd in handler.GetPostInitCommands() do
             if handler.CommandDelayMs > 0 then do! Async.Sleep handler.CommandDelayMs
-            transport.WriteLine cmd
+            send cmd
           agent.Post (Ev (AnalysisMachine.Init (initCommandsFor [])))
         else
           logger.LogError("Winboard engine {Engine} did not initialize", name)

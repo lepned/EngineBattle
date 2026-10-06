@@ -334,7 +334,7 @@ module Program =
           .SetMinimumLevel(LogLevel.Critical)
           |> ignore
 
-  // logs/eb-cli-<date>.log in the working directory, beside the WebGUI's and the engines' logs
+  // logs/eb-cli-<date>.log in the working directory, a new file each day and past 10 MB
   let logPath = Path.Combine(Environment.CurrentDirectory, "logs", "eb-cli-.log");
   
   /// <summary>
@@ -344,7 +344,7 @@ module Program =
       Log.Logger <- LoggerConfiguration() // Create a Serilog logger configuration
         .MinimumLevel.Information() // Set the minimum log level
         //.WriteTo.Console() // Write to console
-        .WriteTo.File(logPath, rollingInterval = Serilog.RollingInterval.Day) // Write to file
+        .WriteTo.File(logPath, rollingInterval = Serilog.RollingInterval.Day, rollOnFileSizeLimit = true, fileSizeLimitBytes = 10_000_000L)
         .CreateLogger() // Create the logger
       Host.CreateDefaultBuilder()
           .ConfigureLogging(configureLogging)

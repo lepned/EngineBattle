@@ -21,3 +21,18 @@ let ``two engines of one name started in the same second get a log each`` () =
     Assert.DoesNotContain("uci from the second", File.ReadAllText path1)
     Assert.Contains("uci from the second", File.ReadAllText path2)
   finally Directory.Delete(dir, true)
+
+// Windows forbids these characters (a ':' even opened an alternate data stream); Linux only '/' and '\0',
+// so there the test passes either way.
+[<Fact>]
+let ``an engine name with characters a file name cannot hold still gets a log`` () =
+  let dir = Directory.CreateTempSubdirectory("eb_iolog_").FullName
+  try
+    let path, log = IoLog.OpenAt(dir, "Lc0 v0.31: <net?*>|\"x\"", "2026-10-06_20-30-00")
+    log.Write(">>>", "uci")
+    (log :> IDisposable).Dispose()
+    Assert.True(File.Exists path)
+    let name = Path.GetFileName path
+    Assert.DoesNotContain(" ", name)
+    Assert.Equal(-1, name.IndexOfAny(Path.GetInvalidFileNameChars()))
+  finally Directory.Delete(dir, true)
