@@ -165,14 +165,40 @@ type ProbeOutcome =
 let firstProbeTimeoutMs = 10_000
 let probeTimeoutMs = 3_000
 
-/// Most pieces of any Syzygy table in the directory, from the file names (KBBBBvK.rtbw = 6); 0
-/// when it holds none.
+/// The folders of a tablebase setting: several are separated as Fathom expects (';' on Windows,
+/// ':' elsewhere).
+let tablebaseFolders (tablebasePath: string) =
+    if String.IsNullOrWhiteSpace tablebasePath then [||]
+    else tablebasePath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+
+/// A setting that names at least one folder, every one of which exists.
+let tablebasesExist (tablebasePath: string) =
+    let folders = tablebaseFolders tablebasePath
+    folders.Length > 0 && folders |> Array.forall Directory.Exists
+
+/// Most pieces of any Syzygy table in the folders, from the file names (KBBBBvK.rtbw = 6); 0 when
+/// they hold none.
 let largestTable (tablebasePath: string) =
-    try
-        Directory.EnumerateFiles(tablebasePath, "*.rtbw")
-        |> Seq.map (fun f -> (Path.GetFileNameWithoutExtension f).Replace("v", "").Length)
-        |> Seq.fold max 0
-    with _ -> 0
+    tablebaseFolders tablebasePath
+    |> Array.map (fun folder ->
+        try
+            Directory.EnumerateFiles(folder, "*.rtbw")
+            |> Seq.map (fun f -> (Path.GetFileNameWithoutExtension f).Replace("v", "").Length)
+            |> Seq.fold max 0
+        with _ -> 0)
+    |> Array.fold max 0
+
+/// Whether a position gets probed, and with what timeout.
+type ProbeDecision =
+    | Skip
+    | Run of timeoutMs: int
+
+/// More pieces than the largest table: nothing to ask. Otherwise the first probe of a run may take
+/// longer, while the tables are opened.
+let probeDecision (largest: int) (warm: bool) (pieces: int) =
+    if pieces > largest then Skip
+    elif warm then Run probeTimeoutMs
+    else Run firstProbeTimeoutMs
 
 /// Runs Fathom without holding a thread: its output is read on a thread of its own (a pipe read on
 /// the pool blocks a pool thread) and the exit is awaited, not waited for.
@@ -240,7 +266,7 @@ let private agent = MailboxProcessor<ProberMessage>.Start(fun inbox ->
             resetProbeReports ()
             // the directory is read again: tables may have been added since the last run
             let state = { state with NoAnswerReported = false; Warm = Set.empty; Largest = state.Largest.Remove (key path) }
-            if useTablebases && not (String.IsNullOrEmpty path) && Directory.Exists path then
+            if useTablebases && tablebasesExist path then
                 let state, largest = largestOf state path
                 if largest < men then
                     Console.Error.WriteLine(
@@ -256,17 +282,20 @@ let private agent = MailboxProcessor<ProberMessage>.Start(fun inbox ->
             else return state
         | Probe (path, fen, pieces, cancel, reply) ->
             let state, largest = largestOf state path
-            if pieces > largest || cancel.IsCancellationRequested then
+            match probeDecision largest (state.Warm.Contains (key path)) pieces with
+            | _ when cancel.IsCancellationRequested ->
                 reply.Reply None
                 return state
-            else
+            | Skip ->
+                reply.Reply None
+                return state
+            | Run timeoutMs ->
                 match proberOf state with
                 | state, Error reason ->
                     reportProberUnusable unresolvedProber reason
                     reply.Reply None
                     return state
                 | state, Ok prober ->
-                    let timeoutMs = if state.Warm.Contains (key path) then probeTimeoutMs else firstProbeTimeoutMs
                     let! outcome = runFathomAsync prober path fen timeoutMs cancel
                     let state =
                         match outcome with

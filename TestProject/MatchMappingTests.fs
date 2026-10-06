@@ -138,8 +138,8 @@ let ``adjudication in pawns, and off when the reference has it off`` () =
 let ``tablebases`` () =
     let m = mapped (sf @ lc0 @ [ "-tb"; "C:/tb/wdl;C:/tb/dtz"; "-tbignore50" ])
     let tb = m.Tournament.Adjudication.TBAdj
-    Assert.Equal({ TablebaseDirectory = "C:/tb/wdl"; UseTBAdjudication = true; TBMen = 7 }, tb)
-    hasNote "one tablebase folder" m
+    // every folder, joined as Fathom expects them here
+    Assert.Equal({ TablebaseDirectory = $"C:/tb/wdl{IO.Path.PathSeparator}C:/tb/dtz"; UseTBAdjudication = true; TBMen = 7 }, tb)
     hasNote "-tbignore50" m
     Assert.Equal(5, (mapped (sf @ lc0 @ [ "-tb"; "tb"; "-tbpieces"; "5" ])).Tournament.Adjudication.TBAdj.TBMen)
 

@@ -24,11 +24,21 @@ let ``the largest table is read from the file names`` () =
   withTables [] (fun dir -> Assert.Equal(0, largestTable dir))
 
 [<Fact>]
-let ``a position with more pieces than the tables is not probed`` () =
-  // only 3-piece tables: a 5-piece position gets no answer without Fathom being started
-  withTables [ "KQvK.rtbw" ] (fun dir ->
-    let answer = probeAsync dir "8/8/8/2k5/8/1R6/4P3/4K1n1 w - - 0 1" 5 Threading.CancellationToken.None |> Async.RunSynchronously
-    Assert.True(answer.IsNone))
+let ``a position with more pieces than the largest table is skipped`` () =
+  Assert.Equal(Skip, probeDecision 6 true 7)
+  Assert.Equal(Run probeTimeoutMs, probeDecision 6 true 6)
+  // the first probe of a run opens the tables: it may take longer
+  Assert.Equal(Run firstProbeTimeoutMs, probeDecision 6 false 5)
+
+[<Fact>]
+let ``several tablebase folders count together`` () =
+  withTables [ "KQvK.rtbw"; "KRPvKR.rtbw" ] (fun five ->
+    withTables [ "KBBBBvK.rtbw" ] (fun six ->
+      let both = String.Join(string Path.PathSeparator, [ five; six ])
+      Assert.Equal(6, largestTable both)
+      Assert.True(tablebasesExist both)
+      Assert.False(tablebasesExist (String.Join(string Path.PathSeparator, [ five; Path.Combine(six, "missing") ])))
+      Assert.False(tablebasesExist "")))
 
 let private tourny (dir: string) =
   { Tournament.Empty with
@@ -77,7 +87,10 @@ let ``the probe's answer adjudicates the game`` () =
   | None -> failwith "expected a tablebase result"
 
 [<Fact>]
-let ``without an answer there is no tablebase verdict`` () =
-  match adjudicate [ EvalType.CP 0.5 ] None with
-  | Some r -> Assert.NotEqual(ResultReason.AdjudicateTB, r.Reason)
-  | None -> ()
+let ``the tablebase answer decides over the engines' evals`` () =
+  // both engines say White is winning; the tablebase says draw
+  match adjudicate [ EvalType.CP 9.0; EvalType.CP 9.0; EvalType.CP 9.0; EvalType.CP 9.0 ] (Some "[WDL \"Draw\"]") with
+  | Some r ->
+      Assert.Equal("1/2-1/2", r.Result)
+      Assert.Equal(ResultReason.AdjudicateTB, r.Reason)
+  | None -> failwith "expected a tablebase result"

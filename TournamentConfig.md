@@ -47,7 +47,7 @@ This document provides an overview of the `tournament.json` configuration file u
   - **WinMoveLength**: Number of moves to consider for a win.
   - **MinWinMove**: Minimum number of moves for a win.
 - **TBAdj**:
-  - **TablebaseDirectory**: Directory for tablebases.
+  - **TablebaseDirectory**: Folder with the Syzygy tablebases; several are separated by `;` on Windows and `:` on Linux and macOS. Positions with more pieces than the largest table there are not probed.
   - **UseTBAdjudication**: Enable or disable tablebase adjudication.
   - **TBMen**: Number of men in tablebase adjudication.
 

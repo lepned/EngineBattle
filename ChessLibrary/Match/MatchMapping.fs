@@ -154,11 +154,11 @@ module MatchMapping =
     let tbDir =
       if not tb.Enabled then ""
       else
-        let dirs = tb.SyzygyDirs.Split([| ';' |], StringSplitOptions.RemoveEmptyEntries)
-        if dirs.Length > 1 then note $"-tb: EngineBattle probes one tablebase folder; using {dirs.[0]}"
+        // several folders: joined as Fathom expects them on this platform
+        let dirs = tb.SyzygyDirs.Split([| ';'; Path.PathSeparator |], StringSplitOptions.RemoveEmptyEntries)
         if tb.Ignore50MoveRule then note "-tbignore50 is not applied"
         if tb.ResultType <> MatchArgs.Both then note "-tbadjudicate is not applied; wins, losses and draws are all adjudicated"
-        if dirs.Length > 0 then dirs.[0] else ""
+        String.Join(string Path.PathSeparator, dirs)
     let tbAdj = { TablebaseDirectory = tbDir; UseTBAdjudication = tb.Enabled; TBMen = if tb.MaxPieces > 0 then tb.MaxPieces else 7 }
 
     // output and the rest
