@@ -439,3 +439,32 @@ let ``a resumed run starts from the games already played`` () =
     Assert.Contains("Finished game 4 (B vs A)", text)
     Assert.Contains("Games: 4, Wins: 2, Losses: 0, Draws: 2", text)
     Assert.Contains("Ptnml(0-2): [0, 0, 1, 0, 1]", text)
+
+/// A console that takes nothing until it is released (a selection in a console window).
+type private StuckConsole() =
+  inherit IO.TextWriter()
+  let released = new Threading.ManualResetEventSlim(false)
+  let written = Text.StringBuilder()
+  override _.Encoding = Text.Encoding.UTF8
+  override _.Write(text: string) =
+    // a caller that waits for the write fails here instead of hanging the test run
+    if not (released.Wait 5000) then failwith "the console was written to while it took nothing"
+    lock written (fun () -> written.Append text |> ignore)
+  member _.Release() = released.Set()
+  member _.Text = lock written (fun () -> written.ToString())
+
+[<Fact>]
+let ``match output never waits for a console that takes nothing`` () =
+  let console = new StuckConsole()
+  let out = ChessLibrary.Match.MatchOutput.QueuedWriter(console, console)
+  let sw = Diagnostics.Stopwatch.StartNew()
+  for i in 1 .. 100 do out.Write(sprintf "Finished game %d\n" i)
+  out.WriteError "a warning\n"
+  out.Write "Finished match\n"
+  Assert.True(sw.ElapsedMilliseconds < 1000L, sprintf "the writes waited %d ms" sw.ElapsedMilliseconds)
+  console.Release()
+  out.Complete Threading.Timeout.Infinite
+  // all of it, stdout and stderr in the order written, once the console takes it again
+  let expected = String.Join("", [ for i in 1 .. 100 -> sprintf "Finished game %d\n" i ]) + "a warning\nFinished match\n"
+  Assert.Equal(expected, console.Text)
+  out.Write "after the end"   // ignored, not thrown

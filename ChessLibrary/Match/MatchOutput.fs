@@ -13,6 +13,28 @@ open ChessLibrary.Match.MatchStats
 /// turns them into the platform's (the reference's stdout is in text mode on Windows).
 module MatchOutput =
 
+  /// Writes text in order on a thread of its own, so a writer that stops taking output (a
+  /// selection in a classic console window, a pipe nobody reads) never holds up the caller: the
+  /// match printed under a lock every game shares, and one blocked write stopped every game.
+  /// stderr goes through the same queue, so the two keep their order on one terminal (2>&1).
+  type QueuedWriter(out: IO.TextWriter, err: IO.TextWriter) =
+    let queue = new Collections.Concurrent.BlockingCollection<IO.TextWriter * string>()
+    let thread =
+      Threading.Thread((fun () ->
+        for writer, text in queue.GetConsumingEnumerable() do
+          try
+            writer.Write text
+            writer.Flush()
+          with _ -> ()), IsBackground = true, Name = "match output")
+    do thread.Start()
+    let add item = try queue.Add item with :? InvalidOperationException -> ()   // after Complete
+    member _.Write(text: string) = add (out, text)
+    member _.WriteError(text: string) = add (err, text)
+    /// No more text: waits up to `timeoutMs` for what is queued to be written.
+    member _.Complete(timeoutMs: int) =
+      queue.CompleteAdding()
+      thread.Join timeoutMs |> ignore
+
   let private f2 = MatchFormat.fixedPoint 2
   let private dashes = String('-', 50) + "\n"
 

@@ -59,21 +59,18 @@ type private LogWriterLogger(log: TextWriter, minimum: LogLevel) =
                 log.WriteLine($"[{level}] {formatter.Invoke(state, ex)}")
                 if not (isNull ex) then log.WriteLine(ex.ToString())
 
-/// Runs a match from its command-line arguments (without the verb) and returns the exit code.
-let run (args: string list) (viaVerb: bool) : int =
+/// The match itself; everything for stdout and stderr goes through `output`.
+let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.QueuedWriter) : int =
     let clock = Stopwatch.StartNew()
     let realOut = Console.Out
     let realErr = Console.Error
-    let emit (text: string) =
-        realOut.Write(text.Replace("\n", Environment.NewLine))
-        realOut.Flush()
+    // queued, never blocking: printed under the reporter's lock, which every game shares
+    let emit (text: string) = output.Write(text.Replace("\n", Environment.NewLine))
     let emitMessages (messages: MatchArgs.Message list) =
         for m in messages do
             match m with
             | MatchArgs.Stdout line -> emit (line + "\n")
-            | MatchArgs.Stderr line ->
-                realErr.Write(line + Environment.NewLine)
-                realErr.Flush()
+            | MatchArgs.Stderr line -> output.WriteError(line + Environment.NewLine)
     let env = { MatchArgs.defaultEnv () with LoadConfig = MatchConfigJson.load; Version = versionLine () }
     match MatchArgs.parse env args with
     | MatchArgs.Exit(messages, text) ->
@@ -100,8 +97,7 @@ let run (args: string list) (viaVerb: bool) : int =
             try TextWriter.Synchronized(new StreamWriter(t.Log.File, t.Log.AppendFile, UTF8Encoding(false), AutoFlush = true))
             with _ ->
                 // the reference's text for it, on stderr; the match runs without a log
-                realErr.WriteLine "Failed to open log file."
-                realErr.Flush()
+                output.WriteError("Failed to open log file." + Environment.NewLine)
                 TextWriter.Null
     Console.SetOut log
     Console.SetError log
@@ -138,6 +134,7 @@ let run (args: string list) (viaVerb: bool) : int =
                 Console.CancelKeyPress.Subscribe(fun e ->
                     if interrupted then
                         log.WriteLine "Second CTRL-C: quitting."
+                        output.Complete 2000
                         exit 1
                     interrupted <- true
                     e.Cancel <- true
@@ -243,3 +240,13 @@ let run (args: string list) (viaVerb: bool) : int =
         Console.SetOut realOut
         Console.SetError realErr
         log.Dispose()
+
+/// Runs a match from its command-line arguments (without the verb) and returns the exit code.
+let run (args: string list) (viaVerb: bool) : int =
+    let output = MatchOutput.QueuedWriter(Console.Out, Console.Error)
+    // every way out prints what is queued first: the final statistics are the last of it
+    try runWith args viaVerb output
+    finally
+        // a console that never takes the rest (a pipe nobody reads) can still be left with CTRL-C
+        use _quit = Console.CancelKeyPress.Subscribe(fun _ -> exit 1)
+        output.Complete Threading.Timeout.Infinite
