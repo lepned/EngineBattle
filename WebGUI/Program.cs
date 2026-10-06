@@ -83,7 +83,8 @@ static void EnsureTournamentJsonIsLoaded()
     }
 }
 
-var logPath = Path.Combine(Environment.CurrentDirectory, "logs", "log-{Date}.txt");
+// logs/webgui-<date>.log (the date is inserted by the daily roll)
+var logPath = Path.Combine(Environment.CurrentDirectory, "logs", "webgui-.log");
 
 var log = new LoggerConfiguration()
     .MinimumLevel.Debug()

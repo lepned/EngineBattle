@@ -273,7 +273,11 @@ The `wwwroot` folder includes a selection of images used by the program, located
 
 ### Logs
 
-Log files are written to a `logs/` folder in the current working directory. Logs use daily rolling files with a 10 MB size limit per file.
+Log files are written to a `logs/` folder in the current working directory:
+
+- `webgui-<date>.log` - the WebGUI, one file a day (a new one past 10 MB)
+- `eb-cli-<date>.log` - the console, one file a day
+- `engine_<name>_<time>.log` - what was sent to and read from an analysis engine, one file per engine start
 
 ## Running a Tournament
 

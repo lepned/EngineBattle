@@ -334,7 +334,8 @@ module Program =
           .SetMinimumLevel(LogLevel.Critical)
           |> ignore
 
-  let logPath = Path.Combine("..", "logs", "log-{Date}.txt");
+  // logs/eb-cli-<date>.log in the working directory, beside the WebGUI's and the engines' logs
+  let logPath = Path.Combine(Environment.CurrentDirectory, "logs", "eb-cli-.log");
   
   /// <summary>
   /// Creates and configures the host for the application.

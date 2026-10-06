@@ -518,7 +518,9 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     // every waiting search gets its answer before the queue closes
     (try agent.PostAndReply((fun reply -> Shutdown reply), 2000) with _ -> ())
     try
-      if not (hasExited ()) then transport.WriteLine "quit"
+      if not (hasExited ()) then
+        logIO ">>>" "quit"
+        transport.WriteLine "quit"
       if not (transport.Process.WaitForExit 1000) then transport.Process.Kill true
       transport.Process.Close()
       transport.Process.Dispose()
