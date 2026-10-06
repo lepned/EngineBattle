@@ -226,6 +226,9 @@ module Manager =
         if useParallel then
           ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
         else
+          // parallelTournamentRun starts its run itself; cup, swiss and ladder here start theirs
+          let tb = tournament.Adjudication.TBAdj
+          TablebaseProbe.startRun tb.UseTBAdjudication tb.TBMen tb.TablebaseDirectory
           let mode =
             if String.IsNullOrWhiteSpace tournament.TournamentMode then "RR"
             else tournament.TournamentMode

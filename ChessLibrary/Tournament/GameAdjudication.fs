@@ -67,7 +67,27 @@ let shouldAdjudicateTB (evals: EvalType list) (piecesLeft: int) tbMen =
     else
         false
 
-/// A function to determine the winner and the result by evaluation agreement
+/// Most pieces a position may have to be adjudicated from tablebases.
+let tablebaseMen (tourny: Tournament) =
+    if tourny.Adjudication.TBAdj.UseTBAdjudication then tourny.Adjudication.TBAdj.TBMen else 2
+
+/// The probe this position needs - directory, FEN and piece count - or None: too many pieces,
+/// castling rights (tablebases have none), or a game already over by the rules.
+let tablebaseProbe (tourny: Tournament) (board: Board) =
+    let mutable position = board.Position
+    let pieces = PositionOps.numberOfPieces &position
+    let dir = tourny.Adjudication.TBAdj.TablebaseDirectory
+    if pieces <= tablebaseMen tourny && not (String.IsNullOrEmpty dir) && Directory.Exists dir then
+        let fen = board.FEN()
+        let castling = match fen.Split(' ') with f when f.Length > 2 -> f.[2] | _ -> "-"
+        let over =
+            board.InsufficientMaterial() || board.ClaimThreeFoldRep() || not (board.AnyLegalMove())
+            || board.Position.Count50 >= 100uy
+        if castling = "-" && not over then Some (dir, fen, pieces) else None
+    else None
+
+/// A function to determine the winner and the result by evaluation agreement. `tbOutput`: what
+/// the tablebase probe (tablebaseProbe) said about this position, if it was probed.
 let adjudicateByEval
     (logger: ILogger)
     (board:Board)
@@ -78,7 +98,8 @@ let adjudicateByEval
     (playedLastMove: string)
     gametimer
     gameMoveList
-    moves =
+    moves
+    (tbOutput: string option) =
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let drawPlyLength = tourny.Adjudication.DrawOption.DrawMoveLength * 2
     let winPlyLength = tourny.Adjudication.WinOption.WinMoveLength * 2
@@ -86,11 +107,7 @@ let adjudicateByEval
     let tooLowEvals () = isConsecutiveLowEvalSufficient evals drawPlyLength tourny.Adjudication.DrawOption.MaxDrawScore
     let mutable posToCheck = board.Position
     let piecesLeft = PositionOps.numberOfPieces &posToCheck
-    let withTBadjudicationMen =
-        if tourny.Adjudication.TBAdj.UseTBAdjudication then
-            tourny.Adjudication.TBAdj.TBMen
-        else
-            2
+    let withTBadjudicationMen = tablebaseMen tourny
     let firstTwoEvals () =
         match evals |> List.rev with
         |[] -> []
@@ -106,24 +123,20 @@ let adjudicateByEval
           let firstTwoEvals = firstTwoEvals ()
           let tryProbe =
               try
-                  let dir = tourny.Adjudication.TBAdj.TablebaseDirectory
-                  if String.IsNullOrEmpty(dir) |> not && Directory.Exists dir then
-                      let fen = board.FEN()
-                      match runFathomSafe dir fen 3000 with
-                      | Some tableRes ->
-                          let tb = parse tableRes
-                          match tb.Wdl with
-                          | Some "Win" ->
-                              let res = if board.Position.STM = 0uy then "1-0" else "0-1"
-                              Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                          | Some "Draw" ->
-                              Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                          | Some "Loss" ->
-                              let res = if board.Position.STM = 0uy then "0-1" else "1-0"
-                              Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                          | _ -> None
-                      | None -> None
-                  else None
+                  match tbOutput with
+                  | Some tableRes ->
+                      let tb = parse tableRes
+                      match tb.Wdl with
+                      | Some "Win" ->
+                          let res = if board.Position.STM = 0uy then "1-0" else "0-1"
+                          Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                      | Some "Draw" ->
+                          Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                      | Some "Loss" ->
+                          let res = if board.Position.STM = 0uy then "0-1" else "1-0"
+                          Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                      | _ -> None
+                  | None -> None
               with ex ->
                   logger.LogWarning(ex, "TB adjudication probe failed; continuing without TB")
                   None

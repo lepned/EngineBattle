@@ -152,45 +152,163 @@ let private reportProbeTimeout (timeoutMs: int) =
             sprintf "Tablebase probe timed out after %d ms; that position was not adjudicated. Later timeouts are not repeated."
                 timeoutMs)
 
-/// Runs Fathom with a timeout, returning None on timeout or error
-let runFathomSafe (tablebasePath: string) (fen: string) (timeoutMs:int) : string option =
-    let mutable exePath = unresolvedProber
+/// How one probe ended.
+type ProbeOutcome =
+    | Answer of string
+    /// It ran and gave no answer for this position (castling rights, a material combination the
+    /// directory lacks, a prober that failed); the exit code says which.
+    | NoAnswer of exitCode: int
+    | TimedOut
+    | Failed of string
+
+/// The first probe of a run opens every table file; on a cold disk that took 4 s.
+let firstProbeTimeoutMs = 10_000
+let probeTimeoutMs = 3_000
+
+/// Most pieces of any Syzygy table in the directory, from the file names (KBBBBvK.rtbw = 6); 0
+/// when it holds none.
+let largestTable (tablebasePath: string) =
     try
-        exePath <- getFathomExecutablePath ()
-        let startInfo = ProcessStartInfo()
-        startInfo.FileName <- exePath
-        startInfo.UseShellExecute <- false
-        startInfo.CreateNoWindow <- true
-        startInfo.RedirectStandardOutput <- true
-        startInfo.RedirectStandardError <- false // avoid potential pipe blocking on Linux
-        // Build args safely across platforms
+        Directory.EnumerateFiles(tablebasePath, "*.rtbw")
+        |> Seq.map (fun f -> (Path.GetFileNameWithoutExtension f).Replace("v", "").Length)
+        |> Seq.fold max 0
+    with _ -> 0
+
+/// Runs Fathom without holding a thread: its output is read on a thread of its own (a pipe read on
+/// the pool blocks a pool thread) and the exit is awaited, not waited for.
+let runFathomAsync (prober: string) (tablebasePath: string) (fen: string) (timeoutMs: int) (cancel: Threading.CancellationToken) : Async<ProbeOutcome> = async {
+    try
+        let startInfo = ProcessStartInfo(FileName = prober, UseShellExecute = false, CreateNoWindow = true,
+                                         RedirectStandardOutput = true, RedirectStandardError = false)
         startInfo.ArgumentList.Add($"--path={tablebasePath}")
         startInfo.ArgumentList.Add(fen)
-
         use proc = new Process(StartInfo = startInfo)
-        if not (proc.Start()) then
-            reportProberUnusable exePath "the process could not be started"
-            None
+        if not (proc.Start()) then return Failed "the process could not be started"
         else
-            // Drain stdout concurrently: reading only after WaitForExit deadlocks when
-            // Fathom's output exceeds the pipe buffer (child blocks writing, wait times out).
-            let outputTask = proc.StandardOutput.ReadToEndAsync()
-            if proc.WaitForExit(timeoutMs) then
-                let output = outputTask.Result
-                // It started, it exited, and it said nothing. That is the COMMONEST way this goes
-                // wrong - a TablebaseDirectory that exists but holds no table for this piece
-                // count, so the directory check upstream passes and the probe still cannot answer
-                // - and it produced no error of any kind before.
-                if String.IsNullOrWhiteSpace output then
-                    reportProberUnusable exePath
-                        (sprintf "the prober ran (exit code %d) but returned nothing. Check that %s holds tables for this piece count."
-                            proc.ExitCode tablebasePath)
-                    None
-                else Some output
+            // drained while it runs: Fathom blocks writing once the pipe buffer is full
+            let output =
+                Threading.Tasks.Task.Factory.StartNew((fun () -> try proc.StandardOutput.ReadToEnd() with _ -> ""),
+                                                      Threading.Tasks.TaskCreationOptions.LongRunning)
+            use cts = Threading.CancellationTokenSource.CreateLinkedTokenSource(cancel)
+            cts.CancelAfter timeoutMs
+            let! exited = async {
+                try
+                    do! proc.WaitForExitAsync(cts.Token) |> Async.AwaitTask
+                    return true
+                with _ -> return false }
+            if exited then
+                let! text = output |> Async.AwaitTask
+                return if proc.ExitCode = 0 && not (String.IsNullOrWhiteSpace text) then Answer text else NoAnswer proc.ExitCode
             else
-                try proc.Kill(true) with _ -> ()
-                reportProbeTimeout timeoutMs
-                None
-    with ex ->
-        reportProberUnusable exePath ex.Message
-        None
+                try proc.Kill true with _ -> ()
+                return TimedOut
+    with ex -> return Failed ex.Message }
+
+/// What the prober agent knows: per directory its largest table and whether a probe has opened
+/// its tables this run, the resolved prober, and which failures have been reported.
+type ProberState =
+    { Largest: Map<string, int>
+      Warm: Set<string>
+      Prober: string option
+      NoAnswerReported: bool }
+
+let private initial = { Largest = Map.empty; Warm = Set.empty; Prober = None; NoAnswerReported = false }
+
+type private ProberMessage =
+    | StartRun of useTablebases: bool * men: int * path: string
+    | Probe of path: string * fen: string * pieces: int * Threading.CancellationToken * AsyncReplyChannel<string option>
+
+let private key (path: string) = path.TrimEnd('/', '\\').ToLowerInvariant()
+
+/// The one owner of tablebase probing: probes run one at a time, so the warm-up opens the tables
+/// before the first game's probe, and no state is shared between threads.
+let private agent = MailboxProcessor<ProberMessage>.Start(fun inbox ->
+    let largestOf (state: ProberState) path =
+        match state.Largest.TryFind (key path) with
+        | Some n -> state, n
+        | None -> let n = largestTable path in { state with Largest = state.Largest.Add(key path, n) }, n
+    // resolved once it has worked (on Linux/macOS that includes a chmod); a failure is tried again
+    let proberOf (state: ProberState) =
+        match state.Prober with
+        | Some p -> state, Ok p
+        | None ->
+            try let p = getFathomExecutablePath () in { state with Prober = Some p }, Ok p
+            with ex -> state, Error ex.Message
+    let handle (state: ProberState) message = async {
+        match message with
+        | StartRun (useTablebases, men, path) ->
+            resetProbeReports ()
+            // the directory is read again: tables may have been added since the last run
+            let state = { state with NoAnswerReported = false; Warm = Set.empty; Largest = state.Largest.Remove (key path) }
+            if useTablebases && not (String.IsNullOrEmpty path) && Directory.Exists path then
+                let state, largest = largestOf state path
+                if largest < men then
+                    Console.Error.WriteLine(
+                        sprintf "Tablebases in %s go up to %d pieces; positions with more are not adjudicated from tablebases." path largest)
+                match proberOf state with
+                | state, Ok prober when largest >= 3 ->
+                    // three pieces: every Syzygy set has them; queued probes wait for it
+                    let! outcome = runFathomAsync prober path "8/8/8/4k3/8/8/4P3/4K3 w - - 0 1" firstProbeTimeoutMs Threading.CancellationToken.None
+                    match outcome with
+                    | Answer _ -> return { state with Warm = state.Warm.Add (key path) }
+                    | _ -> return state
+                | state, _ -> return state
+            else return state
+        | Probe (path, fen, pieces, cancel, reply) ->
+            let state, largest = largestOf state path
+            if pieces > largest || cancel.IsCancellationRequested then
+                reply.Reply None
+                return state
+            else
+                match proberOf state with
+                | state, Error reason ->
+                    reportProberUnusable unresolvedProber reason
+                    reply.Reply None
+                    return state
+                | state, Ok prober ->
+                    let timeoutMs = if state.Warm.Contains (key path) then probeTimeoutMs else firstProbeTimeoutMs
+                    let! outcome = runFathomAsync prober path fen timeoutMs cancel
+                    let state =
+                        match outcome with
+                        | Answer _ | NoAnswer _ -> { state with Warm = state.Warm.Add (key path) }
+                        | _ -> state
+                    match outcome with
+                    | Answer text ->
+                        reply.Reply (Some text)
+                        return state
+                    | NoAnswer code ->
+                        if not state.NoAnswerReported then
+                            Console.Error.WriteLine(
+                                sprintf "Tablebase probe gave no answer (exit code %d) for %s; such positions are played on. Later ones are not repeated." code fen)
+                        reply.Reply None
+                        return { state with NoAnswerReported = true }
+                    | TimedOut ->
+                        if not cancel.IsCancellationRequested then reportProbeTimeout timeoutMs
+                        reply.Reply None
+                        return state
+                    | Failed reason ->
+                        reportProberUnusable prober reason
+                        reply.Reply None
+                        return state }
+    // a failure answers the waiting game and keeps the agent: a dead one would hang every probe
+    let rec loop (state: ProberState) = async {
+        let! message = inbox.Receive()
+        let! next = async {
+            try return! handle state message
+            with ex ->
+                match message with
+                | Probe (_, _, _, _, reply) -> try reply.Reply None with _ -> ()
+                | _ -> ()
+                Console.Error.WriteLine(sprintf "Tablebase prober: %s" ex.Message)
+                return state }
+        return! loop next }
+    loop initial)
+
+/// One probe: None when there is no answer (too many pieces for the tables, or none given).
+let probeAsync (tablebasePath: string) (fen: string) (pieces: int) (cancel: Threading.CancellationToken) : Async<string option> =
+    agent.PostAndAsyncReply(fun reply -> Probe (tablebasePath, fen, pieces, cancel, reply))
+
+/// A new run: reports cleared and, with tablebase adjudication on, the tables opened by one probe
+/// before any game's, so the slow first opening happens before a game needs them.
+let startRun (useTablebases: bool) (men: int) (tablebasePath: string) =
+    agent.Post (StartRun (useTablebases, men, tablebasePath))

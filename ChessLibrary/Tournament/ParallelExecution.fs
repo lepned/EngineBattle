@@ -347,8 +347,8 @@ let parallelTournamentRun
   ChessLibrary.Engine.resetPrintedEngines()
   // Same reason, and this sits above the mode dispatch so it covers cup, swiss and ladder too:
   // the WebGUI runs many tournaments in one process, and a prober failure reported during the
-  // first must not leave every run after it silent.
-  ChessLibrary.TablebaseProbe.resetProbeReports()
+  // first must not leave every run after it silent. It also opens the tables in the background.
+  ChessLibrary.TablebaseProbe.startRun tourny.Adjudication.TBAdj.UseTBAdjudication tourny.Adjudication.TBAdj.TBMen tourny.Adjudication.TBAdj.TablebaseDirectory
   match mode with
   | "ladder" ->
       TournamentRunners.ladder logger tourny callback cts tryGetUserAdjudication externalPgnAgent

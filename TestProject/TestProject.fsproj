@@ -88,6 +88,7 @@
 		<Compile Include="MatchOutputTests.fs" />
 		<Compile Include="MatchConfigTests.fs" />
 		<Compile Include="BuildInfoTests.fs" />
+		<Compile Include="TablebaseProbeTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

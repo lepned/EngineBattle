@@ -182,7 +182,8 @@ let play
         | _ -> if cts.IsCancellationRequested then outcome <- Some (Choice2Of2 None)
     return outcome.Value }
 
-  /// The move is on the board and in the PGN; Some result when it ends the game.
+  /// Puts the move on the board; the function it returns takes the tablebase probe's answer for
+  /// the new position, writes the move to the PGN, and gives Some result when it ends the game.
   let applyMove isWhite (s: Side) (played: Played) (ponder: string option) (elapsed: TimeSpan) (stats: SearchStats.SearchStats) =
     let idx = if isWhite then 0 else 1
     let piecesLeft = let mutable p = board.Position in PositionOps.numberOfPieces &p
@@ -225,19 +226,21 @@ let play
         AdjDrawML = GameAdjudication.movesLeftBeforeDrawAdjudication eval evals draw.MinDrawMove (draw.DrawMoveLength * 2) draw.MaxDrawScore }
     let status = { stats.Status with PlayerName = s.Engine.Name }
     let annotate suffix = annotation tourny.MoveAnnotation board (board.SanMoveNumberString played.San + suffix) info |> sb.Append |> ignore
-    match GameAdjudication.adjudicateByEval logger board evals tourny white.Name black.Name s.Engine.Name gameTimer gameMoves movesPlayed with
-    | Some res when res.Reason = ResultReason.Checkmate ->
-        annotate "#"
-        callback (BestMove ({ bestMove with MoveHistory = bestMove.MoveHistory + "#" }, { status with Eval = EvalType.Mate 0 }))
-        Some res
-    | Some res ->
-        annotate ""
-        callback (BestMove (bestMove, status))
-        Some res
-    | None ->
-        annotate ""
-        callback (BestMove (bestMove, status))
-        None
+    let evals = evals
+    fun tbOutput ->
+      match GameAdjudication.adjudicateByEval logger board evals tourny white.Name black.Name s.Engine.Name gameTimer gameMoves movesPlayed tbOutput with
+      | Some res when res.Reason = ResultReason.Checkmate ->
+          annotate "#"
+          callback (BestMove ({ bestMove with MoveHistory = bestMove.MoveHistory + "#" }, { status with Eval = EvalType.Mate 0 }))
+          Some res
+      | Some res ->
+          annotate ""
+          callback (BestMove (bestMove, status))
+          Some res
+      | None ->
+          annotate ""
+          callback (BestMove (bestMove, status))
+          None
 
   /// The position after the predicted reply; None when the reply is illegal or ends the game
   /// (no ponder then, as cutechess).
@@ -309,7 +312,12 @@ let play
                             { Engine = s.Engine.Name; Move = move; TimeLeftInMs = int64 clock.Left.TotalMilliseconds; Hash = pairing.OpeningHash }
                       | None -> ()
                       { Uci = move; San = san; TMove = tmove }
-                match applyMove isWhite s played ponder elapsed stats with
+                let finish = applyMove isWhite s played ponder elapsed stats
+                let! tbOutput =
+                  match GameAdjudication.tablebaseProbe tourny board with
+                  | Some (dir, fen, pieces) -> TablebaseProbe.probeAsync dir fen pieces cts.Token
+                  | None -> async.Return None
+                match finish tbOutput with
                 | Some res -> return Choice2Of2 res
                 | None ->
                     startPonder isWhite s ponder
