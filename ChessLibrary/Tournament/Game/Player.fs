@@ -18,7 +18,9 @@ type IEngineIO =
   abstract CanPing: bool
   abstract Send: Command -> unit
   /// The next line; null when the output ended or the token fired.
-  abstract ReadLine: CancellationToken -> Task<string>
+  /// The next line and the Stopwatch timestamp of its reading (0 = unknown); null when the
+  /// output ended or the token fired.
+  abstract ReadLine: CancellationToken -> Task<struct (int64 * string)>
 
 let engineIO (engine: ChessEngine) =
   { new IEngineIO with
@@ -35,10 +37,12 @@ let engineIO (engine: ChessEngine) =
         | GoPonder text -> engine.GoPonder text
         | PonderHit -> engine.PonderHit()
         | Stop -> engine.Stop()
-      member _.ReadLine token = engine.ReadLineAsyncWithTimeout token }
+      member _.ReadLine token = engine.ReadStampedLineAsync token }
 
 type private Message =
   | Event of Event
+  /// A line and the Stopwatch timestamp of its reading (0 = unknown).
+  | LineRead of string * int64
   | ThinkMsg of ThinkRequest * AsyncReplyChannel<SearchOutcome>
   | EndMsg of AsyncReplyChannel<bool>
 
@@ -46,9 +50,9 @@ type Player(io: IEngineIO, settings: Settings, emit: Update -> unit, logger: ILo
   let clock = Stopwatch.StartNew()
   let pumpCts = new CancellationTokenSource()
 
-  let run (state, thinkReply: AsyncReplyChannel<SearchOutcome> option, endReply: AsyncReplyChannel<bool> option) event =
+  let runAt now (state, thinkReply: AsyncReplyChannel<SearchOutcome> option, endReply: AsyncReplyChannel<bool> option) event =
     let state, effects =
-      try step settings clock.Elapsed state event
+      try step settings now state event
       with ex ->
         // a dead agent would leave the game waiting forever; drop the event instead
         logger.LogError(ex, "{Engine}: {Event} not handled", io.Name, event)
@@ -78,6 +82,13 @@ type Player(io: IEngineIO, settings: Settings, emit: Update -> unit, logger: ILo
     let state = if searchStarted then startedAt clock.Elapsed state else state
     state, thinkReply, endReply
 
+  let run current event = runAt clock.Elapsed current event
+
+  /// A line is timed by when it was read, not when the agent got to it: a busy pool must not be
+  /// charged to the engine's clock.
+  let readAt (stamp: int64) =
+    if stamp = 0L then clock.Elapsed else max TimeSpan.Zero (clock.Elapsed - Stopwatch.GetElapsedTime stamp)
+
   /// A deadline is due even while messages keep coming (an engine flooding info lines).
   let runDue ((state, _, _) as current) =
     match nextDue settings state with
@@ -96,6 +107,7 @@ type Player(io: IEngineIO, settings: Settings, emit: Update -> unit, logger: ILo
           match message with
           | None -> run current Tick
           | Some (Event event) -> run current event
+          | Some (LineRead (line, stamp)) -> runAt (readAt stamp) current (Line line)
           | Some (ThinkMsg (request, reply)) -> run (state, Some reply, endReply) (Think request)
           | Some (EndMsg reply) -> run (state, thinkReply, Some reply) EndGame
         return! loop (runDue next) }
@@ -106,11 +118,11 @@ type Player(io: IEngineIO, settings: Settings, emit: Update -> unit, logger: ILo
       try
         let mutable reading = true
         while reading do
-          let! line = io.ReadLine pumpCts.Token |> Async.AwaitTask
+          let! struct (stamp, line) = io.ReadLine pumpCts.Token |> Async.AwaitTask
           if isNull line then
             reading <- false
             if not pumpCts.IsCancellationRequested then agent.Post (Event OutputClosed)
-          else agent.Post (Event (Line line))
+          else agent.Post (LineRead (line, stamp))
       with ex ->
         // an exception here would take the process down
         logger.LogWarning(ex, "{Engine}: output reader failed", io.Name)

@@ -57,7 +57,7 @@ let ``resources stay off the live-feed wire and the recording`` () =
   Assert.False(ChessLibrary.LiveFeedWire.onWire r)
   Assert.True(ChessLibrary.LiveFeedWire.onWire (GameStarted "A"))
   let path = IO.Path.Combine(IO.Path.GetTempPath(), $"eb_res_{Guid.NewGuid():N}.jsonl")
-  let recorder = ChessLibrary.LiveFeedRecorder(path)
+  let recorder = new ChessLibrary.LiveFeedRecorder(path)
   recorder.Record r
   recorder.Record (GameStarted "A")
   recorder.Dispose()

@@ -139,13 +139,35 @@ module internal EngineProcess =
 
   // ── The engine process ─────────────────────────────────────────────────────────────────────────
 
-  /// How the engine's stdout is read, always on the process's reader thread: pushed line by line
-  /// to a handler (the analysis wrapper), or into a channel (the tournament wrapper), which
+  /// How the engine's stdout is read, always on the process's reader thread: into a channel that
   /// completes when the output ends. A channel read can be cancelled cleanly; a cancelled
   /// StandardOutput read stays pending on the pipe.
   type OutputMode =
-    | Push of onLine: (string -> unit)
+    /// The analysis wrapper.
     | Lines of ChannelWriter<string>
+    /// Each line with the Stopwatch timestamp of its reading, for a clock that must not be
+    /// charged for how long the line waited to be handled.
+    | Stamped of ChannelWriter<struct (int64 * string)>
+
+  /// Reads a pipe line by line on a thread of its own until it ends, then calls `onEnd`. Not the
+  /// pool: Windows opens process pipes without overlapped I/O, so an async read blocks a pool
+  /// thread for as long as the engine is silent. Process.BeginOutputReadLine did that for every
+  /// engine's stdout and stderr, and ten games starved the pool for seconds: bestmoves were read
+  /// late and charged to the engine's clock.
+  let private startReader (name: string) (reader: StreamReader) (onLine: string -> unit) (onEnd: unit -> unit) =
+    let run () =
+      try
+        try
+          let mutable line = reader.ReadLine()
+          while not (isNull line) do
+            (try onLine line with _ -> ())
+            line <- reader.ReadLine()
+        with _ -> () // the process was disposed under the read
+      finally
+        // Process.Close leaves a synchronously read stream open
+        try reader.Dispose() with _ -> ()
+        try onEnd () with _ -> ()
+    Thread(run, 256 * 1024, IsBackground = true, Name = name).Start()
 
   /// One engine process: started in the engine's own folder with its arguments, stdin written a
   /// line at a time under a lock (LF on every platform, flushed at once), stderr kept in the
@@ -176,30 +198,25 @@ module internal EngineProcess =
       | None ->
           note $"WARNING: Could not set working directory. Path: {config.Path}, Dir: {Path.GetDirectoryName(config.Path)}"
       if not (String.IsNullOrEmpty arguments) then proc.StartInfo.Arguments <- arguments
-      proc.ErrorDataReceived.Add(fun args ->
-        try
-          if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
-            stderr.Add args.Data
-            onStderr args.Data
-        with _ -> ())
       proc.Exited.Add(fun _ ->
         let code = try Some proc.ExitCode with _ -> None
         exitCode <- code
         try onExited code with _ -> ())
       proc.EnableRaisingEvents <- true
-      match mode with
-      | Push onLine ->
-          proc.OutputDataReceived.Add(fun args ->
-            if not (String.IsNullOrEmpty args.Data) then onLine args.Data)
-      | Lines writer ->
-          proc.OutputDataReceived.Add(fun args ->
-            if isNull args.Data then writer.TryComplete() |> ignore
-            else writer.TryWrite args.Data |> ignore)
+      let onError (line: string) =
+        if not (String.IsNullOrEmpty line) then
+          stderr.Add line
+          onStderr line
+      let onOutput, onEnd =
+        match mode with
+        | Lines writer -> (fun line -> writer.TryWrite line |> ignore), (fun () -> writer.TryComplete() |> ignore)
+        | Stamped writer ->
+            (fun line -> writer.TryWrite(struct (Stopwatch.GetTimestamp(), line)) |> ignore), (fun () -> writer.TryComplete() |> ignore)
       if proc.Start() then
         proc.StandardInput.NewLine <- "\n"
         proc.StandardInput.AutoFlush <- true
-        proc.BeginErrorReadLine()
-        proc.BeginOutputReadLine()
+        startReader $"{config.Name} stderr" proc.StandardError onError ignore
+        startReader $"{config.Name} stdout" proc.StandardOutput onOutput onEnd
         true
       else false
 

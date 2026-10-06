@@ -77,10 +77,10 @@ module Engine =
   /// The process a ChessEngine is running now, and what has been done to it. A restart makes a new
   /// one, so a warm-up or a MoveOverheadMs sent to the old process never counts for the new one.
   [<AllowNullLiteral>]
-  type private RunningEngine(transport: EngineProcess.Transport, output: Channel<string>) =
+  type private RunningEngine(transport: EngineProcess.Transport, output: Channel<struct (int64 * string)>) =
     member _.Transport = transport
     member _.Process = transport.Process
-    /// The engine's stdout, line by line (EngineProcess.Lines).
+    /// The engine's stdout, line by line with when each was read (EngineProcess.Stamped).
     member _.Output = output
     /// The once-per-process `go nodes 1` has run (ChessEngine.WarmUp).
     member val WarmedUp = false with get, set
@@ -149,7 +149,7 @@ module Engine =
       let terminateProcess (p: Process) (timeoutMs: int) =
         try
           if not (p.WaitForExit timeoutMs) then
-            try p.Kill()
+            try p.Kill true
             with ex -> printfn "Warning: could not kill '%s': %s" name ex.Message
             p.WaitForExit 5_000 |> ignore
         finally
@@ -183,9 +183,9 @@ module Engine =
                       // printfn: visible even where logging is filtered.
                       else printfn "⚠️ Engine %s exited unexpectedly with code %d" name c
                   | _ -> ()))
-          let output = Channel.CreateUnbounded<string>()
+          let output = Channel.CreateUnbounded<struct (int64 * string)>()
           running <- RunningEngine(t, output)
-          if not (t.Start (EngineProcess.Lines output.Writer)) then printfn "\n❌ %s could not be started" name
+          if not (t.Start (EngineProcess.Stamped output.Writer)) then printfn "\n❌ %s could not be started" name
 
       let hasExited () =
         try isNull running || running.Process.HasExited
@@ -221,12 +221,18 @@ module Engine =
         with ex ->
           printfn "Error writing to engine %s: %s" name ex.Message
 
-      /// The next raw line; null when the output has ended. Cancellation throws.
-      let readRaw (token: CancellationToken) =
+      /// The next raw line and the Stopwatch timestamp of its reading; null (stamp 0) when the
+      /// output has ended. Cancellation throws.
+      let readStamped (token: CancellationToken) =
         let output = running.Output
         task {
           try return! output.Reader.ReadAsync(token).AsTask().ConfigureAwait(false)
-          with :? ChannelClosedException -> return null
+          with :? ChannelClosedException -> return struct (0L, null)
+        }
+      let readRaw (token: CancellationToken) =
+        task {
+          let! struct (_, line) = (readStamped token).ConfigureAwait(false)
+          return line
         }
       let read () = (readRaw CancellationToken.None).GetAwaiter().GetResult()
       let readAsync () = readRaw CancellationToken.None
@@ -237,22 +243,27 @@ module Engine =
       /// Every await in this class is ConfigureAwait(false). The synchronous members block on
       /// these tasks, and a continuation sent back to a blocked caller's context (the Blazor
       /// dispatcher) would never run - the call would hang for good.
-      let readAsyncWithTimeout (token: CancellationToken) =
+      let readStampedWithTimeout (token: CancellationToken) =
         task {
           try
-            let! line = (readRaw token).ConfigureAwait(false)
-            return if isNull line then null else inboundOrRaw protocol line
+            let! struct (at, line) = (readStamped token).ConfigureAwait(false)
+            return struct (at, (if isNull line then null else inboundOrRaw protocol line))
           with
-          | :? OperationCanceledException -> return null
+          | :? OperationCanceledException -> return struct (0L, null)
           // StreamReader can throw this when the underlying stream is closed or cancelled.
-          | :? ArgumentOutOfRangeException -> return null
+          | :? ArgumentOutOfRangeException -> return struct (0L, null)
           | :? IOException as ioex ->
               logCritical (sprintf "IO error reading engine output: %s" ioex.Message)
-              return null
+              return struct (0L, null)
           | ex ->
               // Unexpected: log it and end the read rather than crash the host.
               logCritical (sprintf "Unexpected error reading engine output: %s" ex.Message)
-              return null
+              return struct (0L, null)
+        }
+      let readAsyncWithTimeout (token: CancellationToken) =
+        task {
+          let! struct (_, line) = (readStampedWithTimeout token).ConfigureAwait(false)
+          return line
         }
 
       let getDiagnostics () = stderr.Diagnostics(name, lastExitCode)
@@ -626,6 +637,8 @@ module Engine =
 
       member this.ReadLineAsync() = readAsync ()
       member this.ReadLineAsyncWithTimeout(token: CancellationToken) = readAsyncWithTimeout token
+      /// As ReadLineAsyncWithTimeout, with the Stopwatch timestamp of the line's reading (0 with null).
+      member this.ReadStampedLineAsync(token: CancellationToken) = readStampedWithTimeout token
       member this.ReadLine() = read ()
 
       /// The async forms take .NET optional parameters, so C# can leave them out too: a timeout

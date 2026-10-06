@@ -142,7 +142,7 @@ let private thinkingLine (settings: Settings) now (t: Thinking) (line: EngineLin
         | stats, None -> stats, []
   match line with
   | BestMove (move, ponder) ->
-      Idle, flushed @ [ ReplyThink (Moved (move, ponder, now - t.StartedAt, stats)) ]
+      Idle, flushed @ [ ReplyThink (Moved (move, ponder, max TimeSpan.Zero (now - t.StartedAt), stats)) ]
   | Info text ->
       match onInfo view.ShortPv text stats with
       | Some stats when stats.Status.Eval <> EvalType.NA && now - t.LastStatusAt >= settings.StatusInterval ->

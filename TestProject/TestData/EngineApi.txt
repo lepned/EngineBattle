@@ -31,6 +31,7 @@ type ChessLibrary.Engine.ChessEngine
   ReadLine() : System.String
   ReadLineAsync() : System.Threading.Tasks.Task<System.String>
   ReadLineAsyncWithTimeout(token: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.String>
+  ReadStampedLineAsync(token: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.ValueTuple<System.Int64, System.String>>
   SetMoveOverhead(optionName: System.String, milliSeconds: System.Int32) : System.Void
   StartProcess() : System.Void
   Stop() : System.Void

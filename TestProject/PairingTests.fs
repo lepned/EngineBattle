@@ -119,6 +119,20 @@ let ``shuffleOpeningsWithSeed differs across different seeds`` () =
 
     Assert.NotEqual<string list>(r1, r2)
 
+[<Fact>]
+let ``sampleWithSeed draws from the whole book and repeats for the same seed`` () =
+    let sample seed = sampleWithSeed seed 20 [ 1..1000 ]
+    let r1 = sample 7
+    Assert.True((r1 = sample 7))
+    Assert.Equal(20, r1 |> Array.distinct |> Array.length)
+    Assert.True(r1 |> Array.exists (fun i -> i > 20))
+    Assert.False((r1 = sample 8))
+
+[<Fact>]
+let ``sampleWithSeed returns a short book whole and in order`` () =
+    Assert.True((sampleWithSeed 7 20 [ 1..5 ] = [| 1..5 |]))
+    Assert.True((sampleWithSeed 7 0 [ 1..5 ] = [||]))
+
 let private mkOpeningCfg (seed: int) : Opening =
     { OpeningsPath = None
       OpeningsTwice = false

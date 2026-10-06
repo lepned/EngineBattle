@@ -45,6 +45,21 @@ let seededOrder (seed: int) (purpose: string) (n: int) =
     (seededRandom seed purpose).Shuffle(order)
     order
 
+/// `count` items drawn at random from the whole of `source` (reservoir sampling), fixed by the
+/// seed, so a resume draws the same ones. A source no longer than `count` comes back whole, in order.
+let sampleWithSeed (seed: int) (count: int) (source: seq<'T>) : 'T[] =
+    let picked = ResizeArray<'T>(max 0 count)
+    if count > 0 then
+        let rng = seededRandom seed "opening sample"
+        let mutable i = 0
+        for item in source do
+            if i < count then picked.Add item
+            else
+                let j = rng.Next(i + 1)
+                if j < count then picked.[j] <- item
+            i <- i + 1
+    picked.ToArray()
+
 /// Apply the tournament's opening shuffle using `Opening.Seed`. Logs the
 /// effective seed so resume behavior is transparent.
 let shuffleOpeningsForTournament (opening: Opening) (openings: PgnGame list) =

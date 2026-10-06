@@ -397,10 +397,10 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
           agent.Post (Ev (AnalysisMachine.Init (initCommandsFor [])))
         else
           logger.LogError("Winboard engine {Engine} did not initialize", name)
-          try transport.Process.Kill() with _ -> ()
+          try transport.Process.Kill true with _ -> ()
       with ex ->
         logger.LogError(ex, "Winboard engine {Engine}: initialization failed", name)
-        try transport.Process.Kill() with _ -> ()
+        try transport.Process.Kill true with _ -> ()
     }
 
   do
@@ -519,7 +519,7 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     (try agent.PostAndReply((fun reply -> Shutdown reply), 2000) with _ -> ())
     try
       if not (hasExited ()) then transport.WriteLine "quit"
-      if not (transport.Process.WaitForExit 1000) then transport.Process.Kill()
+      if not (transport.Process.WaitForExit 1000) then transport.Process.Kill true
       transport.Process.Close()
       transport.Process.Dispose()
     with _ -> ()

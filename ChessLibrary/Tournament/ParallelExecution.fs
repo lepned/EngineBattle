@@ -102,9 +102,11 @@ type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> 'T) =
             for effect in effects do
                 match effect with
                 | PoolMachine.Spawn slot ->
-                    Task.Run(fun () ->
+                    // a thread of its own: spawn blocks until the engine is ready, and ten at once on
+                    // the pool starved the games already running
+                    Task.Factory.StartNew((fun () ->
                         let outcome = try PoolMachine.Spawned (slot, spawn slot) with ex -> PoolMachine.SpawnFailed (slot, ex)
-                        inbox.Post (outcome, None)) |> ignore
+                        inbox.Post (outcome, None)), TaskCreationOptions.LongRunning) |> ignore
                 | PoolMachine.Give (id, slot, item) ->
                     lock slots (fun () -> slots.[item] <- slot)
                     take id |> Option.iter (fun tcs -> tcs.TrySetResult item |> ignore)
@@ -177,6 +179,10 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
             tourny.Rounds
 
     let mutable epdBook = false
+    // random openings come from the whole book, not its first openings
+    let take (openings: seq<PGNTypes.PgnGame>) =
+        if tourny.Opening.RandomOpenings then PairingHelper.sampleWithSeed tourny.Opening.Seed effectiveBookSize openings
+        else openings |> Seq.truncate effectiveBookSize |> Seq.toArray
     let games =
         match tourny.Opening.OpeningsPath with
         |Some path ->
@@ -186,10 +192,9 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
             [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
         elif path.ToLower().Contains ".epd" then
             epdBook <- true
-            let all = EPDExtractor.parseEPDFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
-            all
+            take (EPDExtractor.parseEPDFile path)
         else
-            let all = ChessLibrary.FullPGNParser.parsePgnFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
+            let all = take (ChessLibrary.FullPGNParser.parsePgnFile path)
             if tourny.VerboseLogging then
                 logger.LogInformation $"Total number of openings in PGN = {all.Length}"
             all

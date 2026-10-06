@@ -35,10 +35,12 @@ type private ScriptedEngine(canPing: bool, silent: bool) =
       | Position _ -> ()
     member _.ReadLine token =
       task {
-        try return! output.Reader.ReadAsync(token).AsTask()
+        try
+          let! line = output.Reader.ReadAsync(token).AsTask()
+          return struct (0L, line)
         with
-        | :? OperationCanceledException -> return null
-        | :? ChannelClosedException -> return null
+        | :? OperationCanceledException -> return struct (0L, null)
+        | :? ChannelClosedException -> return struct (0L, null)
       }
 
 let private settings =
@@ -94,8 +96,10 @@ type private SlowWriteEngine() =
       | _ -> ()
     member _.ReadLine token =
       task {
-        try return! output.Reader.ReadAsync(token).AsTask()
-        with _ -> return null
+        try
+          let! line = output.Reader.ReadAsync(token).AsTask()
+          return struct (0L, line)
+        with _ -> return struct (0L, null)
       }
 
 [<Fact>]
@@ -103,4 +107,33 @@ let ``the time it takes to write the go is not the engine's`` () =
   use player = new Player(SlowWriteEngine(), { settings with CanPing = false }, ignore, NullLogger.Instance)
   match run (player.Think (request None)) with
   | Moved (_, _, elapsed, _) -> Assert.True(elapsed < TimeSpan.FromMilliseconds 150.0, sprintf "charged %A" elapsed)
+  | other -> failwithf "%A" other
+
+/// Answers 50 ms after its go; the line then waits 150 ms to be handled (a busy pool).
+type private LateHandledEngine() =
+  let output = Channel.CreateUnbounded<struct (int64 * string)>()
+  interface IEngineIO with
+    member _.Name = "L"
+    member _.CanPing = false
+    member _.Send command =
+      match command with
+      | Go _ ->
+          Task.Delay(50).ContinueWith(fun (_: Task) ->
+            output.Writer.TryWrite(struct (Diagnostics.Stopwatch.GetTimestamp(), "bestmove e2e4")) |> ignore) |> ignore
+      | _ -> ()
+    member _.ReadLine token =
+      task {
+        try
+          let! read = output.Reader.ReadAsync(token).AsTask()
+          do! Task.Delay 150
+          return read
+        with _ -> return struct (0L, null)
+      }
+
+[<Fact>]
+let ``a bestmove is timed by when it was read, not when the player got to it`` () =
+  use player = new Player(LateHandledEngine(), { settings with CanPing = false }, ignore, NullLogger.Instance)
+  match run (player.Think (request None)) with
+  | Moved (_, _, elapsed, _) ->
+      Assert.True(elapsed >= TimeSpan.FromMilliseconds 40.0 && elapsed < TimeSpan.FromMilliseconds 150.0, sprintf "charged %A" elapsed)
   | other -> failwithf "%A" other
