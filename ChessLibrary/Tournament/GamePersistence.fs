@@ -33,6 +33,7 @@ let buildGameMetadata
     (pair: Pairing)
     (result: Result)
     (roundTxt: string)
+    (plies: int)
     : GameMetadata =
     { OpeningHash = pair.OpeningHash
       Event = tourny.Description
@@ -45,6 +46,7 @@ let buildGameMetadata
       Reason = result.Reason
       GameTime = result.GameTime
       Moves = result.Moves
+      PlyCount = plies
       Fen = pair.Opening.Fen
       OpeningName = pair.Opening.GameMetaData.OpeningName
       Deviations = tourny.DeviationCounter

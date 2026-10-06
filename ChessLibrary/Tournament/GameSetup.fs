@@ -140,7 +140,7 @@ let executeGameWithSetup
         let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
 
         // Process completed game
-        let gameData = buildGameMetadata tourny pair result roundTxt
+        let gameData = buildGameMetadata tourny pair result roundTxt board.UciMovesPlayed.Count
         // A cancelled game's move list is a truncated prefix. writeGameToPgn already refuses
         // it; seeding the replay state with it would let a game that was never written drive
         // move-deviation lookups for later pairings on the same opening. roundRobin and

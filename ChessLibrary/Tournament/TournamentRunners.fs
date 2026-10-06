@@ -411,7 +411,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
 
       if not isCancelled then
         // Process completed game: build metadata, add to replay, write PGN
-        let gameData = buildGameMetadata tourny pair result roundTxt
+        let gameData = buildGameMetadata tourny pair result roundTxt board.UciMovesPlayed.Count
         addToReplayList replayList tourny result gameData board.UciMovesPlayed
         let moveSection = sb.ToString()
         writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts

@@ -39,6 +39,8 @@ module PGNTypes =
         mutable OpeningHash: string
         GameTime: int64
         Moves: int
+        /// Half-moves in the movetext, book included (the PGN PlyCount tag).
+        PlyCount: int
         OpeningName: string
         Fen: string
         Deviations: int
@@ -48,7 +50,7 @@ module PGNTypes =
         static member Empty =
           { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = "";
             Result = ""; Reason = ResultReason.NotStarted; OpeningHash = ""; GameTime = 0L;
-            Moves = 0; OpeningName = ""; Fen = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
+            Moves = 0; PlyCount = 0; OpeningName = ""; Fen = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
         member x.Opening =
           let rec loop (list: Header list) =
             match list with

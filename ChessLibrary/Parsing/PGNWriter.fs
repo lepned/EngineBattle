@@ -287,7 +287,7 @@ let writePGNHeaderSection (writer: StreamWriter) (header: GameMetadata) =
   writer.WriteLine(sprintf "[Black \"%s\"]" header.Black)
   writer.WriteLine(sprintf "[Result \"%s\"]" header.Result)
   writer.WriteLine(sprintf "[Reason \"%s\"]" (header.Reason.ToString()))
-  writer.WriteLine(sprintf "[Ply \"%s\"]" (header.Moves.ToString()))
+  writer.WriteLine(sprintf "[PlyCount \"%d\"]" header.PlyCount)
   writer.WriteLine(sprintf "[GameTime \"%s\"]" (header.GameTime.ToString()))
   writer.WriteLine(sprintf "[Opening \"%s\"]" (PGNHelper.getOpeningOnly header))
   if haveEvals then

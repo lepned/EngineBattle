@@ -433,7 +433,8 @@ let parallelTournamentRun
               logger.LogDebug("{position}", sprintf "position fen %s moves %s" board.StartPosition (String.concat " " board.UciMovesPlayed))
           board
 
-      let metadataOf (pair: Pairing) (result: Result) : PGNTypes.GameMetadata =
+      /// `plies`: the game's half-moves, book included (the board's moves from its start position).
+      let metadataOf (pair: Pairing) (result: Result) (plies: int) : PGNTypes.GameMetadata =
           { OpeningHash = pair.OpeningHash
             Event = tourny.Description
             Site = tourny.Name
@@ -445,6 +446,7 @@ let parallelTournamentRun
             Reason = result.Reason
             GameTime = result.GameTime
             Moves = result.Moves
+            PlyCount = plies
             Fen = pair.Opening.Fen
             OpeningName = pair.Opening.GameMetaData.OpeningName
             Deviations = tourny.DeviationCounter
@@ -660,7 +662,7 @@ let parallelTournamentRun
                                   with
                                   | ex -> return! handleGameExceptionAsync logger ex cts gametimer currentBoard wEng bEng pair  }
 
-                          let gameData = metadataOf pair result
+                          let gameData = metadataOf pair result currentBoard.UciMovesPlayed.Count
                           if tourny.PreventMoveDeviation && not (notPlayed result) then
                               mergeReplay pair localWhiteDict localBlackDict result gameData (ResizeArray(currentBoard.UciMovesPlayed))
                           if not (notPlayed result) && not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then

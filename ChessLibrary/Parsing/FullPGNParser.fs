@@ -511,6 +511,7 @@ let private buildGameFull (st: ParserState) (raw: string) : PgnGame =
       OpeningHash = st.OpeningHash
       GameTime = st.GameTime
       Moves = moveNumberCount st.MainlinePly.Count
+      PlyCount = st.MainlinePly.Count
       OpeningName = st.OpeningName
       Fen = st.Fen
       Deviations = st.Deviations
