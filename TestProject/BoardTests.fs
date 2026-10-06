@@ -177,7 +177,7 @@ let ``PGN with variations parses long game with deep variations`` () =
     // No exact string equality because the formatter may legitimately choose different spacing for long branches.
     // We only compare token-by-token after normalization.
 
-    Assert.Equal<string>(normalize history, normalize formatted)
+    Assert.Equal<string>(normalize history :> seq<string>, normalize formatted :> seq<string>)
     let countMainline tokens =
         tokens
         |> Array.fold (fun (depth,count) tok ->
@@ -235,7 +235,7 @@ let ``Navigation advances past repeated positions without looping`` () =
     let window =
         [ for i in firstRg1 - 1 .. firstRg1 + 4 do
             if i >= 0 && i < sanSeq.Count then yield sanSeq[i] ]
-    Assert.Equal<string>(["Be4"; "Rg1"; "Kd3"; "Rf1"; "Ke3"; "Rg1"], window)
+    Assert.Equal<string>(["Be4"; "Rg1"; "Kd3"; "Rf1"; "Ke3"; "Rg1"] :> seq<string>, window :> seq<string>)
 
 [<Fact>]
 let ``RemoveVariationNode removes only the targeted variation move`` () =
