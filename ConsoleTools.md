@@ -15,7 +15,13 @@ in the download, start `EngineBattle` instead.
 
 ### Building and Running
 
+Needs the [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later.
+
 ```bash
+# Get the source
+git clone https://github.com/lepned/EngineBattle.git
+cd EngineBattle
+
 # Open the Console folder
 cd Console
 
@@ -25,6 +31,22 @@ dotnet build -c Release
 # Run with a command
 dotnet run -c Release -- <command> [arguments]
 ```
+
+### Build eb-cli yourself
+
+One executable, as in the download, from the root of the clone (`EngineBattle`, not `Console`):
+
+```bash
+dotnet publish Console -c Release -r win-x64 --no-self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/eb-cli
+mv publish/eb-cli/EngineBattle.Console.exe publish/eb-cli/eb-cli.exe
+# Linux/macOS: mv publish/eb-cli/EngineBattle.Console publish/eb-cli/eb-cli
+```
+
+- `-r` is required for a single file: `win-x64`, `win-arm64`, `linux-x64`, `osx-x64` or `osx-arm64`.
+- `--no-self-contained` gives a file of about 13 MB that needs the .NET 10 runtime on the machine.
+  `--self-contained` bundles the runtime instead: a much larger file that runs without .NET installed.
+- Keep the `Tools` folder next to the executable: tablebase adjudication runs Fathom from it as a
+  separate program, so it cannot be inside the file.
 
 ### General Syntax
 
