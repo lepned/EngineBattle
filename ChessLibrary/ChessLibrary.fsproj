@@ -176,7 +176,7 @@
 		<Compile Include="Tournament\Game\GameLoop.fs" />
 		<Compile Include="Tournament\GamePersistence.fs" />
 		<Compile Include="Tournament\RecordAgent.fs" />
-		<Compile Include="Tournament\PoolMachine.fs" />
+		<Compile Include="Tournament\EngineMachine.fs" />
 		<Compile Include="Tournament\GameRunner.fs" />
 		<Compile Include="Tournament\MatchScore.fs" />
 		<Compile Include="Tournament\LadderProgress.fs" />

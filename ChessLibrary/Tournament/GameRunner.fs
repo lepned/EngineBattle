@@ -47,100 +47,86 @@ let stopEngine (eng: ChessEngine) : Task =
         try do! eng.StopProcessAsync() with _ -> ()
     }
 
-/// A pool of up to `capacity` instances created on demand by `spawn` (given the instance
-/// index, which is never one a live instance holds). Returned instances are handed out again
-/// before any new one is spawned. An agent runs PoolMachine; generic so it is tested with ints.
-type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> Task<'T>) =
-    let replies = Dictionary<int, TaskCompletionSource<'T>>()
-    // the slot of each instance handed out, for Return and Evict
-    let slots = Dictionary<'T, int>(HashIdentity.Structural)
-    let mutable taken = 0
-    let mutable nextId = 0
-    let take id =
-        lock replies (fun () ->
-            match replies.TryGetValue id with
-            | true, tcs -> replies.Remove id |> ignore; Some tcs
+/// A game's engines could not be had: one failed to start (`Engine` names it), or the run's
+/// engines were shut down (`Engine` is empty).
+type EngineRefusedException(engine: string, cause: exn) =
+    inherit Exception((if engine = "" then cause.Message else sprintf "Engine %s: %s" engine cause.Message), cause)
+    member _.Engine = engine
+
+/// Runs EngineMachine: the one owner of a run's engine instances. `start name slot` starts an
+/// instance, `stop` stops one. A game requests its pair, is granted both at once, and releases
+/// them when it ends. Generic so it is tested with strings.
+type EngineAgent<'T>(policy: EngineMachine.Policy, start: string -> int -> Task<'T>, stop: 'T -> Task) =
+    let grants = Dictionary<int, TaskCompletionSource<'T * 'T>>()
+    let drained = TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+    // the state after the last step, readable from outside: a wedged agent cannot answer for itself
+    [<VolatileField>]
+    let mutable published = EngineMachine.initial policy
+    let take game =
+        lock grants (fun () ->
+            match grants.TryGetValue game with
+            | true, tcs -> grants.Remove game |> ignore; Some tcs
             | _ -> None)
 
-    let agent = MailboxProcessor<PoolMachine.Event<'T> * AsyncReplyChannel<'T list> option>.Start(fun inbox ->
+    let agent = MailboxProcessor<EngineMachine.Event<'T>>.Start(fun inbox ->
         let rec loop state = async {
-            let! event, reply = inbox.Receive()
+            let! event = inbox.Receive()
             let state, effects =
-                // a dead agent would hang every borrower; drop the event instead, refusing a borrow
-                try PoolMachine.step state event
+                // a dead agent would hang every game: a step that throws refuses a request and
+                // stops an engine that arrived, so neither a game nor a process is left behind
+                try EngineMachine.step state event
                 with ex ->
-                    eprintfn "Engine pool: %A not handled: %s" event ex.Message
+                    eprintfn "Engines: %A not handled: %s" event ex.Message
                     match event with
-                    | PoolMachine.Borrow id -> state, [ PoolMachine.Refuse (id, ex) ]
+                    | EngineMachine.Request r -> state, [ EngineMachine.Refuse (r.Game, "", ex) ]
+                    | EngineMachine.Started (id, item) -> state, [ EngineMachine.Stop (id, item) ]
                     | _ -> state, []
-            // published before anyone is answered, so a caller sees it settled
-            taken <- state.Taken.Count
-            let mutable released = []
+            published <- state
             for effect in effects do
                 match effect with
-                | PoolMachine.Spawn slot ->
-                    // awaited, not waited for: an engine start holds no thread. Off the agent too:
-                    // a spawn runs synchronously up to its first await (constructor, Process.Start)
+                | EngineMachine.Start (id, name, slot) ->
+                    // off the agent, and awaited rather than waited for: an engine start holds no thread
                     task {
                         let! outcome =
-                            Task.Run<PoolMachine.Event<'T>>(fun () ->
+                            Task.Run<EngineMachine.Event<'T>>(Func<Task<EngineMachine.Event<'T>>>(fun () ->
                                 task {
                                     try
-                                        let! item = spawn slot
-                                        return PoolMachine.Spawned (slot, item)
-                                    with ex -> return PoolMachine.SpawnFailed (slot, ex) })
-                        inbox.Post (outcome, None) } |> ignore
-                | PoolMachine.Give (id, slot, item) ->
-                    lock slots (fun () -> slots.[item] <- slot)
-                    take id |> Option.iter (fun tcs -> tcs.TrySetResult item |> ignore)
-                | PoolMachine.Refuse (id, ex) ->
-                    take id |> Option.iter (fun tcs -> tcs.TrySetException ex |> ignore)
-                | PoolMachine.Release items ->
-                    lock slots (fun () -> for item in items do slots.Remove item |> ignore)
-                    released <- items
-            reply |> Option.iter (fun r -> r.Reply released)
+                                        let! item = start name slot
+                                        return EngineMachine.Started (id, item)
+                                    with ex -> return EngineMachine.StartFailed (id, ex) }))
+                        inbox.Post outcome } |> ignore
+                | EngineMachine.Stop (id, item) ->
+                    // Stopped always comes back: the capacity it frees may be what a waiting game needs
+                    task {
+                        try
+                            try do! Task.Run(Func<Task>(fun () -> stop item))
+                            with _ -> ()
+                        finally inbox.Post (EngineMachine.Stopped id) } |> ignore
+                | EngineMachine.Grant (game, white, black) ->
+                    take game |> Option.iter (fun tcs -> tcs.TrySetResult((white, black)) |> ignore)
+                | EngineMachine.Refuse (game, name, ex) ->
+                    take game |> Option.iter (fun tcs -> tcs.TrySetException(EngineRefusedException(name, ex)) |> ignore)
+                | EngineMachine.Drained -> drained.TrySetResult() |> ignore
             return! loop state }
-        loop (PoolMachine.initial capacity))
+        loop published)
 
-    let slotOf (item: 'T) =
-        let slot =
-            lock slots (fun () ->
-                match slots.TryGetValue item with
-                | true, slot -> Some slot
-                | _ -> None)
-        // its slot would stay taken, and a borrower of a full pool wait for it for ever
-        if slot.IsNone then eprintfn "Engine pool: %A is not one of its instances" item
-        slot
-
-    member _.Borrow() : Task<'T> =
-        let tcs = TaskCompletionSource<'T>(TaskCreationOptions.RunContinuationsAsynchronously)
-        let id = Interlocked.Increment &nextId
-        lock replies (fun () -> replies.[id] <- tcs)
-        agent.Post (PoolMachine.Borrow id, None)
+    /// A game's two engines, granted together.
+    member _.Request(game: int, white: string, black: string) : Task<'T * 'T> =
+        let tcs = TaskCompletionSource<'T * 'T>(TaskCreationOptions.RunContinuationsAsynchronously)
+        lock grants (fun () -> grants.[game] <- tcs)
+        agent.Post (EngineMachine.Request { Game = game; White = white; Black = black })
         tcs.Task
 
-    member _.Return(item: 'T) =
-        slotOf item |> Option.iter (fun slot -> agent.PostAndReply(fun r -> PoolMachine.Return (slot, item), Some r) |> ignore)
+    /// The game ended. `keep`: the engines needed soon (the others are stopped); None keeps all.
+    member _.Release(game: int, keep: Set<string> option) = agent.Post (EngineMachine.Release (game, keep))
 
-    /// The borrower is not returning this instance: it has been stopped. Frees its slot so a
-    /// later borrow spawns a fresh one, and wakes a borrower waiting on the full pool.
-    member _.Evict(item: 'T) =
-        slotOf item |> Option.iter (fun slot ->
-            lock slots (fun () -> slots.Remove item |> ignore)
-            agent.PostAndReply(fun r -> PoolMachine.Evict slot, Some r) |> ignore)
+    /// Refuses whatever still waits and stops every engine; done when the last has stopped.
+    member _.Shutdown() : Task =
+        agent.Post EngineMachine.Shutdown
+        drained.Task
 
-    /// The returned instances, for the caller to stop: their slots are free again, so a later
-    /// borrow spawns a fresh one.
-    member _.Shed() : Task<'T[]> =
-        task {
-            let! released = agent.PostAndAsyncReply(fun r -> PoolMachine.Shed, Some r)
-            return List.toArray released }
-
-    /// How many instances exist right now (spawned, whether out on loan or returned).
-    member _.Spawned = taken
-
-    /// Every instance that was returned, for teardown. Never called while borrows are live.
-    member _.Drain() : 'T[] = agent.PostAndReply(fun r -> PoolMachine.Drain, Some r) |> List.toArray
+    /// The engines as of the last step.
+    member _.State = published
 
 /// The board at the end of the opening: the FEN (or the start position), then the book moves
 /// up to OpeningsPly. EPD books carry no moves. Sets the tournament's FRC flag from a FEN opening.
@@ -162,16 +148,6 @@ let boardAfterOpening (logger: ILogger) (tourny: Tournament) (epdBook: bool) (pa
         logger.LogDebug("{position}", sprintf "position fen %s moves %s" board.StartPosition (String.concat " " board.UciMovesPlayed))
     board
 
-/// One board, before a game: the idle instances of every engine the game does not play are
-/// released from their pools and stopped (`stop`), so a later game of theirs starts them afresh.
-let shedIdleExcept (pools: Map<string, LazyPool<'T>>) (playing: string list) (stop: string -> 'T -> Task) : Task =
-    task {
-        for KeyValue(name, pool) in pools do
-            if not (List.contains name playing) then
-                let! idle = pool.Shed()
-                for item in idle do
-                    do! stop name item }
-
 /// What the games of a run share.
 type GameContext =
     { Logger: ILogger
@@ -186,7 +162,7 @@ type GameContext =
       /// The user's adjudication of the running game.
       Adjudicate: unit -> UserAdjudication option
       Record: RecordAgent.RecordAgent
-      /// Games played at once: the pools hold this many instances of each engine.
+      /// Games played at once: up to this many instances of each engine.
       Concurrency: int
       /// An EPD book carries no moves to play out.
       EpdBook: bool
@@ -208,11 +184,11 @@ type GameRunner(ctx: GameContext) =
     // Track all spawned engines for cleanup safety net
     let allEngines = ResizeArray<ChessEngine>()
 
-    // One engine pool per engine name, capacity = parallelism. Instances are spawned on the
-    // first borrow, not up front: a run starts as soon as the first game's two engines are
-    // ready instead of after every instance of every name has started and answered readyok -
-    // with several Ceres or Lc0 engines that was minutes before the first move. Each engine is
-    // registered in allEngines before init, so an init failure still gets it killed by Dispose.
+    // Up to `parallelism` instances of each engine, started when a game first needs them, not up
+    // front: a run starts as soon as the first game's two engines are ready instead of after
+    // every instance of every engine has started and answered readyok - with several Ceres or
+    // Lc0 engines that was minutes before the first move. Each engine is registered in
+    // allEngines before init, so an init failure still gets it killed by Dispose.
     let spawnEngine (e: EngineConfig) (i: int) = task {
         let cfg =
             if gpus <> null && gpus.Length > 0 then
@@ -228,17 +204,42 @@ type GameRunner(ctx: GameContext) =
         // sends StartOfGame before it initialises, so the board shows the pairing while
         // Ceres or Lc0 spend their seconds on readyok - initialising at spawn moved that
         // wait in front of the first thing the page could show.
-        if not initPerGame then do! EngineHelper.initEngineAsync 0 eng
+        // An engine whose init fails is stopped here: the machine forgets a failed start, so
+        // nothing else would stop its process before the run ends.
+        if not initPerGame then
+            try do! EngineHelper.initEngineAsync 0 eng
+            with ex ->
+                do! stopEngine eng
+                lock allEngines (fun () -> allEngines.Remove eng |> ignore)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
         return eng }
-    let enginePools =
-        tourny.EngineSetup.Engines
-        |> List.map (fun e -> e.Name, LazyPool<ChessEngine>(ctx.Concurrency, spawnEngine e))
-        |> Map.ofList
+    let configs = tourny.EngineSetup.Engines |> List.map (fun e -> e.Name, e) |> Map.ofList
 
     let forget (eng: ChessEngine) =
         // Stopped for good: the safety net has nothing to do for it, and a long run
         // with many engines would otherwise hold every wrapper it ever spawned.
         lock allEngines (fun () -> allEngines.Remove eng |> ignore)
+
+    // An engine is not kept for nothing: keeping every engine of a ten-engine round robin
+    // alive - ten networks on one GPU, times the number of boards - is not what anyone signed
+    // up for. One board: before a game, the idle engines it does not play are stopped. Several:
+    // after a game, an engine none of the next games needs (NeededSoon) is stopped - a
+    // forecast, so a respawn now and then, never a hang. Two engines play every game and are
+    // always kept.
+    let keepAllEngines = tourny.EngineSetup.Engines.Length <= 2
+    let engines =
+        EngineAgent<ChessEngine>(
+            // one board: the engine a game does not play is gone before the next one starts (one
+            // network on the GPU at a time, as before); several boards start without waiting
+            { Capacity = ctx.Concurrency; OneBoard = ctx.Concurrency = 1 && not keepAllEngines; StopBeforeStart = ctx.Concurrency = 1 },
+            (fun name slot -> spawnEngine configs.[name] slot),
+            (fun eng ->
+                task {
+                    do! stopEngine eng
+                    forget eng }))
+    let mutable nextGame = 0
+    // two boards refused by the same engine report it once
+    let mutable startFailureReported = 0
 
     // Helper function to check the status of each engine and restart if necessary
     let engineHealthy (engine:ChessEngine) = task {
@@ -265,41 +266,27 @@ type GameRunner(ctx: GameContext) =
             return false
     }
 
-    // An engine is not kept for nothing: keeping every engine of a ten-engine round robin
-    // alive - ten networks on one GPU, times the number of boards - is not what anyone signed
-    // up for. One board: before a game, the idle engines it does not play are stopped. Several:
-    // after a game, an engine none of the next games needs (NeededSoon) is stopped - a
-    // forecast, so a respawn now and then, never a hang: an eviction wakes a borrower waiting
-    // on the full pool. Two engines play every game and are always kept.
-    let keepAllEngines = tourny.EngineSetup.Engines.Length <= 2
-    let stopIdleExcept (pair: Pairing) : Task = task {
-        if ctx.Concurrency = 1 && not keepAllEngines then
-            do! shedIdleExcept enginePools [ pair.White.Name; pair.Black.Name ] (fun _ eng ->
-                task {
-                    do! stopEngine eng
-                    forget eng }) }
-    let settleEngine (name: string) (eng: ChessEngine) : Task = task {
-        if ctx.Concurrency = 1 || keepAllEngines || ctx.NeededSoon name then enginePools.[name].Return eng
-        else
-            enginePools.[name].Evict eng
-            do! stopEngine eng
-            forget eng }
+    // After a game: one board keeps its engines (the next request stops what it does not
+    // play); several keep only the engines one of the next games needs.
+    let keepAfterGame () =
+        if ctx.Concurrency = 1 || keepAllEngines then None
+        else Some (configs.Keys |> Seq.filter ctx.NeededSoon |> Set.ofSeq)
 
-    // Pools spawn on borrow, so a borrow can fail - a binary that is missing or dies at
-    // start - with the pairing's other engine already out. Give that one back (with one
-    // board a leaked engine hangs every later game it is in) and stop the run: an engine
-    // that cannot start ended the run before the pools were lazy, and a run that quietly
-    // plays on without it is worse. The logger is not visible in the console, so stdout.
-    let borrowEngine (name: string) (giveBack: unit -> unit) = task {
-        try return! enginePools.[name].Borrow()
-        with ex ->
-            giveBack ()
-            ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
-                (sprintf "Engine %s failed to start: %s - stopping the tournament" name ex.Message)
-            callback (Update.EngineStartFailed(name, ex.Message))
+    // Engines start on demand, so a request can fail - a binary that is missing or dies at
+    // start. That stops the run: an engine that cannot start ended the run before engines
+    // started lazily, and a run that quietly plays on without it is worse. The pairing's other
+    // engine is already free again. The logger is not visible in the console, so stdout.
+    let requestEngines (game: int) (pair: Pairing) = task {
+        try return! engines.Request(game, pair.White.Name, pair.Black.Name)
+        with :? EngineRefusedException as ex when ex.Engine <> "" ->
+            if Interlocked.Exchange(&startFailureReported, 1) = 0 then
+                let cause = if isNull ex.InnerException then ex.Message else ex.InnerException.Message
+                ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
+                    (sprintf "Engine %s failed to start: %s - stopping the tournament" ex.Engine cause)
+                callback (Update.EngineStartFailed(ex.Engine, cause))
             ctx.Cts.Cancel()
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
-            return Unchecked.defaultof<ChessEngine> }
+            return Unchecked.defaultof<ChessEngine * ChessEngine> }
 
     // what the engine-failure log keeps of a game that ended in an exception
     let incident (white: ChessEngine) (black: ChessEngine) (pair: Pairing) (board: Board) : ChessLibrary.CustomException.CatchContext =
@@ -325,20 +312,10 @@ type GameRunner(ctx: GameContext) =
     /// or restart, a replay or record that fails); a game that ends in an engine failure is a
     /// result, recorded like any other.
     member _.Play(slot: int, pair: Pairing) : Task<Result * RecordAgent.Recorded> = task {
-        do! stopIdleExcept pair
-        // Borrow engines in sorted name order to prevent ABBA deadlock.
-        // With openingsTwice, consecutive pairings swap colors (A-white/B-black then B-white/A-black).
-        // Two workers borrowing in white-then-black order can deadlock when they cross.
-        let firstName, secondName =
-            if String.Compare(pair.White.Name, pair.Black.Name, StringComparison.Ordinal) <= 0
-            then pair.White.Name, pair.Black.Name
-            else pair.Black.Name, pair.White.Name
-        let! firstEng = borrowEngine firstName ignore
-        let! secondEng = borrowEngine secondName (fun () -> enginePools.[firstName].Return firstEng)
-        let wEng, bEng =
-            if firstName = pair.White.Name then firstEng, secondEng
-            else secondEng, firstEng
-        // the settles are awaited, which a finally cannot do: the game's exception waits for them
+        // both engines at once: no borrow order to keep, no engine to give back
+        let game = Interlocked.Increment &nextGame
+        let! wEng, bEng = requestEngines game pair
+        // the engines are released before the game's exception goes on
         let mutable failure : System.Runtime.ExceptionServices.ExceptionDispatchInfo = null
         let mutable outcome = Unchecked.defaultof<Result * RecordAgent.Recorded>
         try
@@ -400,8 +377,7 @@ type GameRunner(ctx: GameContext) =
                 } |> Async.StartAsTask
             outcome <- res
         with ex -> failure <- System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture ex
-        do! settleEngine pair.White.Name wEng
-        do! settleEngine pair.Black.Name bEng
+        engines.Release(game, keepAfterGame ())
         if not (isNull failure) then failure.Throw()
         // the standings as they are now, not as they were when this game ended: a slower
         // game can never send an older table after a newer one
@@ -413,11 +389,10 @@ type GameRunner(ctx: GameContext) =
             with ex -> logger.LogError(ex, "Standings after game {Round} not sent", pair.RoundNr)
         return outcome }
 
-    /// Stops every engine at once, at the end of a run (no borrows live).
+    /// Stops every engine, at the end of a run.
     member _.Shutdown() : Task = task {
-        let drained = [| for KeyValue(e, pool) in enginePools -> e, pool.Drain() |]
-        do! Task.WhenAll [| for _, engines in drained do for eng in engines -> stopEngine eng |]
-        for e, _ in drained do printfn $"Engine {e} stopped" }
+        do! engines.Shutdown()
+        for e in configs.Keys do printfn $"Engine {e} stopped" }
 
     interface IDisposable with
         /// Safety net: stops any engine process still running (a no-op after Shutdown). A

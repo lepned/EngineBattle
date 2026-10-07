@@ -51,7 +51,8 @@
 		<Compile Include="DeviationReportTests.fs" />
 		<Compile Include="GameReplayTests.fs" />
 		<Compile Include="ReplayGateTests.fs" />
-		<Compile Include="LazyPoolTests.fs" />
+		<Compile Include="EngineAgentTests.fs" />
+		<Compile Include="EngineMachineTests.fs" />
 		<Compile Include="LadderProgressTests.fs" />
 		<Compile Include="EngineStartupTests.fs" />
 		<Compile Include="SeededDrawTests.fs" />
@@ -93,6 +94,7 @@
 		<Compile Include="EngineLogTests.fs" />
 		<Compile Include="UpdateAgentTests.fs" />
 		<Compile Include="RecordAgentTests.fs" />
+		<Compile Include="PgnAgentTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

@@ -70,11 +70,11 @@ let private onRunnerExit (cleanup: unit -> unit) =
   { new IDisposable with
       member _.Dispose() = try cleanup() with _ -> () }
 
-/// Standard cleanup for a runner-owned PGN agent
+/// Standard cleanup for a runner-owned PGN agent: its file is closed before the agent goes
 let private pgnAgentGuard (ownsAgent: bool) (agent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage>) =
   onRunnerExit (fun () ->
     if ownsAgent then
-      agent.Post(FullPGNParser.Dispose)
+      FullPGNParser.closePgnAgent agent
       agent.Dispose())
 
 /// A cup, swiss or ladder run's record and engines: the round robin's, on one board.

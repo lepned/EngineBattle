@@ -298,13 +298,12 @@ let parallelTournamentRun
               match externalPgnAgent with
               | Some a -> a, false
               | None -> ChessLibrary.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
-          // Dispose the owned agent (open FileStream on the output PGN) on every exit
-          // path, not just the happy path.
+          // Close the owned agent (open FileStream on the output PGN) on every exit path, and
+          // wait for it: the next run may open the same file at once.
           use _pgnGuard =
               { new IDisposable with
                   member _.Dispose() =
-                      if ownsAgent then
-                          try pgnAgent.Post(ChessLibrary.FullPGNParser.Dispose) with _ -> () }
+                      if ownsAgent then ChessLibrary.FullPGNParser.closePgnAgent pgnAgent }
 
           // the run's record - results, replay, the deviation total, when the standings are due - is
           // one agent: games only send it what they did, so they share no state

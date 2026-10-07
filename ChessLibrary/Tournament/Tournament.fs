@@ -353,7 +353,8 @@ module Manager =
     member _.DisposePgnReader() =
         match pgnReader with
         | Some reader ->
-            reader.Post(ChessLibrary.FullPGNParser.Dispose)
+            // waited for: the tuner opens the same file again for its next match
+            ChessLibrary.FullPGNParser.closePgnAgent reader
             pgnReader <- None
         | None -> ()
 

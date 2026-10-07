@@ -705,7 +705,7 @@ type PgnGameMessage =
     /// there produced a file of blank separators. Kept separate because retaining the raw
     /// text of every game is expensive, and the tuner polls GetPGNGames on a cumulative PGN.
     | GetPGNGamesWithRaw of reply:AsyncReplyChannel<ResizeArray<PgnGame>>
-    | Dispose
+    /// Closes the file, then answers: use closePgnAgent.
     | DisposeReply of reply:AsyncReplyChannel<unit>
 
 let startPgnGameReaderWriter (filePath: string) =
@@ -727,10 +727,6 @@ let startPgnGameReaderWriter (filePath: string) =
           while running do
               let! message = inbox.Receive()
               match message with
-              | Dispose ->
-                  writer.Dispose()
-                  reader.Dispose()
-                  running <- false
               | DisposeReply reply ->
                   writer.Dispose()
                   reader.Dispose()
@@ -777,3 +773,9 @@ let startPgnGameReaderWriter (filePath: string) =
                       reply.Reply(ResizeArray<Result>())
       }
   )
+
+/// Closes a PGN agent's file and waits until it is closed (at most 10 s, so a dead agent cannot
+/// hang a run's end): whatever comes next may open or delete the same file at once. Never throws.
+let closePgnAgent (agent: MailboxProcessor<PgnGameMessage>) =
+  try agent.TryPostAndReply((fun reply -> DisposeReply reply), 10_000) |> ignore
+  with _ -> ()
