@@ -92,6 +92,7 @@
 		<Compile Include="PgnHeaderTests.fs" />
 		<Compile Include="EngineLogTests.fs" />
 		<Compile Include="UpdateAgentTests.fs" />
+		<Compile Include="RecordAgentTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

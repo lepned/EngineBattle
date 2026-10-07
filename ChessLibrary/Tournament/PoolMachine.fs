@@ -22,13 +22,15 @@ type Event<'T> =
   | Return of slot: int * 'T
   /// The instance was stopped instead of returned.
   | Evict of slot: int
+  /// The idle instances are being stopped: released, their slots free again.
+  | Shed
   | Drain
 
 type Effect<'T> =
   | Spawn of slot: int
   | Give of id: int * slot: int * 'T
   | Refuse of id: int * exn
-  /// The idle instances, for teardown.
+  /// The idle instances, for teardown or Shed.
   | Release of 'T list
 
 let initial capacity =
@@ -79,6 +81,11 @@ let step (state: State<'T>) (event: Event<'T>) : State<'T> * Effect<'T> list =
       | [] -> { state with Idle = state.Idle @ [ slot, item ] }, []
 
   | Evict slot -> serveWaiter { state with Taken = state.Taken.Remove slot }
+
+  | Shed ->
+      // an idle instance means no one waits (a return serves a waiter first): no waiter to serve
+      let freed = state.Idle |> List.map fst |> Set.ofList
+      { state with Idle = []; Taken = state.Taken - freed }, [ Release (state.Idle |> List.map snd) ]
 
   | Drain ->
       let refused = state.Waiting |> List.map (fun id -> Refuse (id, afterDrain ()))

@@ -456,7 +456,7 @@
                     results.Clear();
                     seenStandings.Clear();
                     foreach (var r in pr.results)
-                        if (seenStandings.Add(JsonFeedService.ResultKey(r)))
+                        if (JsonFeedService.IsScored(r) && seenStandings.Add(JsonFeedService.ResultKey(r)))
                             results.Add(r);
                     standings = FeedStats.playerResultsFromResults(results);
                     break;
@@ -474,7 +474,7 @@
                         // Standings: dedup — a Ceres game arrives both as a per-thread gameEnd and a
                         // global gameResult (the latter gives full catch-up on join). Count once.
                         var sig = JsonFeedService.ResultKey(eog.Result);
-                        if (seenStandings.Add(sig))
+                        if (JsonFeedService.IsScored(eog.Result) && seenStandings.Add(sig))
                         {
                             results.Add(eog.Result);
                             standings = FeedStats.playerResultsFromResults(results);

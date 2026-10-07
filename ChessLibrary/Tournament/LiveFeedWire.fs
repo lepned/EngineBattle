@@ -307,7 +307,7 @@ let private nodeToResult (o: JsonObject) : Result =
       Reason = (try stringToResultReason (getStr o "reason" "NS") with _ -> ResultReason.NotStarted)
       GameTime = getI64 o "gameTime" 0L
       OutOfOpeningEvals = (match o["outOfOpeningEvals"] with null -> [] | n -> nodeToEvalList n)
-      TimeOverrunMs = getI64 o "timeOverrunMs" 0L }
+      TimeOverrunMs = getI64 o "timeOverrunMs" 0L; GameDeviations = 0 }
 
 let private nnToNode (v: NNValues) =
     jobj [ "player", js v.Player

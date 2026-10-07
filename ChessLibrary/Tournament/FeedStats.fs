@@ -21,6 +21,11 @@ let private challengersAndPlayers (tournament: Tournament) =
     let players = tournament.EngineSetup.Engines |> List.map _.Name
     challengers, players
 
+/// Whether a result counts in the standings: a cancelled game does not (its 1/2-1/2 is a
+/// placeholder, never written to the PGN). NotStarted does count here: on a feed it is the
+/// fallback for a reason the decoder does not know, and those are games that were played.
+let isScored (r: Result) = r.Reason <> ChessLibrary.MiscTypes.ResultReason.Cancel
+
 /// Standings computed purely from accumulated results (no tournament config / engine list needed)
 /// — for the multi-game grid view. Mirrors Runner.GetPlayerResultsFromPGN.
 let playerResultsFromResults (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =

@@ -444,18 +444,20 @@ module TypesDef =
         GameTime: int64
         OutOfOpeningEvals: EvalType list
         /// A time loss: how far below zero the loser's clock went, in ms; 0 otherwise.
-        TimeOverrunMs: int64 }
+        TimeOverrunMs: int64
+        /// Moves this game replayed instead of the engine's (PreventMoveDeviation); not in the PGN.
+        GameDeviations: int }
         override x.ToString() =
           let time = float x.GameTime / 1000.0
           sprintf "%s vs %s: %s (%s), %d moves, %.1f seconds" x.Player1 x.Player2 x.Result (x.Reason.Explanation) x.Moves time
         static member Empty =
-          { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = []; TimeOverrunMs = 0L }
+          { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = []; TimeOverrunMs = 0L; GameDeviations = 0 }
     let createResult p1 p2 (moves: ResizeArray<string>) result reason gameTime =
       let moveCount = if moves.Count % 2 = 0 then moves.Count / 2 else (moves.Count / 2) + 1
-      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []; TimeOverrunMs = 0L }
+      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []; TimeOverrunMs = 0L; GameDeviations = 0 }
     let createResultWithEval p1 p2 (moves: ResizeArray<string>) result reason gameTime evals =
       let moveCount = if moves.Count % 2 = 0 then moves.Count / 2 else (moves.Count / 2) + 1
-      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals; TimeOverrunMs = 0L }
+      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals; TimeOverrunMs = 0L; GameDeviations = 0 }
 
 
     type PlayerResult =
@@ -698,7 +700,6 @@ module TypesDef =
         mutable LayoutOption: LayoutOption
         TimeControl: TimeControl
         LiveFeed: LiveFeedConfig
-        [<JsonIgnore>] mutable OpeningName: string
         [<JsonIgnore>] mutable TotalGames: int
         [<JsonIgnore>] mutable CurrentGameNr: int  }
       with
@@ -986,7 +987,6 @@ module TypesDef =
 
           DelayBetweenGames = TimeSpan.Zero
           MoveOverhead = TimeSpan.Zero
-          OpeningName = ""
           // Feed fallback (e.g. the Ceres feed, which carries no EB layout) uses Empty's layout —
           // default it to a standings-focused broadcast view with the live PV board shown.
           LayoutOption =

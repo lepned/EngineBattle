@@ -347,7 +347,7 @@ let mapGameEnd (source: string) (gameId: string) (line: string) : string option 
               Reason = reason
               GameTime = getI64 o "gameTimeMs" 0L
               OutOfOpeningEvals = []
-              TimeOverrunMs = 0L }
+              TimeOverrunMs = 0L; GameDeviations = 0 }
         // Global "gameResult" tagging for the consumer's pentanomial pairing:
         //  - If Ceres sends "openingIndex" on the result, tag "r{threadId}~o{openingIndex}" so the
         //    consumer pairs the two colors of an opening by that id — robust to threads, parallelism,

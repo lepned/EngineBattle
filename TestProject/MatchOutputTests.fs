@@ -294,8 +294,9 @@ let private game nr w b r reason = { GameNr = nr; RoundNr = "1.1"; White = w; Bl
 let ``resumed numbering, a header without a book, the player table and an interrupted end`` () =
     let sb = Text.StringBuilder()
     let rep = MatchOutput.Reporter(h2h "fastchess", fun s -> sb.Append s |> ignore)
-    rep.Started(1, "A", "B")
-    rep.Finished(game 1 "A" "B" "0-1" ForfeitLimits) |> ignore
+    // two games played before the resume: the runner numbers this one 3
+    rep.Started(3, "A", "B")
+    rep.Finished(game 3 "A" "B" "0-1" ForfeitLimits) |> ignore
     let code = rep.End(MatchOutput.Interrupted("./eb", "config.json"), TimeSpan(1, 2, 3))
     Assert.Equal(1, code)
     let text = sb.ToString()
@@ -431,9 +432,9 @@ let ``a resumed run starts from the games already played`` () =
     rep.Preload("A", "B", "1-0", "h1")
     rep.Preload("B", "A", "0-1", "h1")
     Assert.Equal(0, sb.Length)
-    // the runner numbers this run's games from 1; the output adds the two played before
-    rep.Finished({ game 1 "A" "B" "1/2-1/2" Repetition with RoundNr = "2.1"; OpeningHash = "h2" }) |> ignore
-    rep.Finished({ game 2 "B" "A" "1/2-1/2" Repetition with RoundNr = "2.2"; OpeningHash = "h2" }) |> ignore
+    // the runner numbers this run's games after the two played before
+    rep.Finished({ game 3 "A" "B" "1/2-1/2" Repetition with RoundNr = "2.1"; OpeningHash = "h2" }) |> ignore
+    rep.Finished({ game 4 "B" "A" "1/2-1/2" Repetition with RoundNr = "2.2"; OpeningHash = "h2" }) |> ignore
     let text = sb.ToString()
     Assert.Contains("Finished game 3 (A vs B)", text)
     Assert.Contains("Finished game 4 (B vs A)", text)

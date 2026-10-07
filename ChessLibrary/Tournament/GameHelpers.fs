@@ -253,38 +253,3 @@ let loadReferenceGames (referencePath: string) : PgnGame[] =
         ChessLibrary.FullPGNParser.parsePgnFile referencePath |> Seq.toArray
     else
         [||]
-
-/// Create replay dictionaries for all engines
-let createReplayDicts (engines: EngineConfig list) : Map<string, ReferenceGameReplay> =
-    [ for eng in engines -> eng.Name, ReferenceGameReplay() ] |> Map.ofList
-
-// ============================================================================
-// Opening Formatting Helpers
-// ============================================================================
-
-/// Compute an opening-based PGN `Round` label: `{openingNumber}.{N}` where
-/// N is 1 + (games already played at this opening, counting both PGN history
-/// and the queue segment that precedes the current pair). Used by the Swiss,
-/// Cup, and Ladder runners; Gauntlet and RoundRobin use the Scheduler's
-/// pair-based `applyPairLabels` instead.
-let computeRoundText (openingNumber: int) (openingsAlreadyPlayed: int) (liveGamesPlayed: int) : string =
-    sprintf "%d.%d" openingNumber (openingsAlreadyPlayed + liveGamesPlayed + 1)
-
-// ============================================================================
-// Replay List Helpers
-// ============================================================================
-
-/// Search replay list and update deviation counter
-let searchAndPrepareReplay
-    (pairing: Pairing)
-    (replayDicts: Map<string, ReferenceGameReplay>)
-    (replayList: ResizeArray<GameReplay>)
-    (referencGamesPlayed: PgnGame[])
-    (gamesAlreadyPlayed: PgnGame[])
-    (tourny: Tournament)
-    : unit =
-    let lastGame = gamesAlreadyPlayed |> Seq.tryLast
-    let deviations = match lastGame with | Some g -> g.GameMetaData.Deviations | _ -> 0
-    if deviations > tourny.DeviationCounter then
-        tourny.DeviationCounter <- deviations
-    prepareGameReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed

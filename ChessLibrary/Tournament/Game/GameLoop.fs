@@ -89,6 +89,16 @@ let private prepareEngines skipEngineInit (tourny: Tournament) (board: Board) (w
     let! _ = Async.Parallel [ prepare white; prepare black; Async.Sleep delay ]
     GameInitialization.checkAndPrepareContempt white black }
 
+/// Exception.Data key under which a game that ended in an exception carries its deviation count.
+let deviationsKey = "EngineBattle.GameDeviations"
+
+/// The deviation count a game's exception carries, wrapped or not; 0 when it has none.
+let rec deviationsOf (ex: exn) =
+  match ex.Data.[deviationsKey], ex.InnerException with
+  | (:? int as n), _ -> n
+  | _, null -> 0
+  | _, inner -> deviationsOf inner
+
 /// Plays one game. `replay`: deviation prevention's white and black replays.
 let private playWith
   (skipEngineInit: bool)
@@ -112,12 +122,13 @@ let private playWith
   let clocks =
     [| Clock.create tourny.TimeControl (timeConfig white) tourny.MoveOverhead
        Clock.create tourny.TimeControl (timeConfig black) tourny.MoveOverhead |]
-  tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
+  // atomic: parallel games number themselves on the shared record
+  Interlocked.Increment(&tourny.CurrentGameNr) |> ignore
   callback (StartOfGame
     { WhitePlayer = white.Config; BlackPlayer = black.Config; StartPos = board.FEN()
       OpeningMovesAndFen = ResizeArray<MoveAndFen>(board.MovesAndFenPlayed)
       WhiteTime = clocks.[0].Left; BlackTime = clocks.[1].Left; WhiteToMove = isWhiteToMove board
-      OpeningName = tourny.OpeningName; CurrentGameNr = pairing.GameNr; OpeningHash = pairing.OpeningHash })
+      OpeningName = PGNHelper.getOpeningInfo pairing.Opening; CurrentGameNr = pairing.GameNr; OpeningHash = pairing.OpeningHash })
   board.MovesAndFenPlayed.Clear()
 
   // the variant comes from this game's board: parallel games may mix FRC and standard
@@ -143,6 +154,7 @@ let private playWith
   let gameMoves = board.SanMovesPlayed
   let mutable evals : EvalType list = []           // every move's eval, newest first
   let mutable movesPlayed = 0                       // engine moves, not the opening's
+  let mutable gameDeviations = 0                    // this game's replayed moves (PreventMoveDeviation)
   let lastEval = [| EvalType.NA; EvalType.NA |]     // per side, for a move without info lines
   let moveList = Array.init 256 (fun _ -> defaultof<TMove>)
 
@@ -299,7 +311,9 @@ let private playWith
                   | Some old ->
                       match tryGetMoveAndSanFromUci &board old with
                       | Some (oldMove, oldSan) ->
+                          // the shared counter is the GUI's live total; the game's own count goes with its result
                           Interlocked.Increment(&tourny.DeviationCounter) |> ignore
+                          gameDeviations <- gameDeviations + 1
                           { Uci = old; San = oldSan; TMove = oldMove }
                       | None ->
                           ConsoleUtils.printInColor ConsoleColor.Red
@@ -405,7 +419,11 @@ let private playWith
   let result =
     match outcome with
     | Choice1Of2 result -> result
-    | Choice2Of2 ex -> System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw(); Unchecked.defaultof<Result>
+    | Choice2Of2 ex ->
+        // the caller turns it into a result (a disconnect is still scored): the count goes with it
+        ex.Data.[deviationsKey] <- gameDeviations
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw(); Unchecked.defaultof<Result>
+  let result = { result with GameDeviations = gameDeviations }
   match result.Reason with
   | ResultReason.AdjudicatedByUser -> logger.LogInformation("Game adjudicated by user: {Result}", result.Result)
   | ResultReason.Cancel -> logger.LogInformation("Game {GameNr} cancelled", pairing.GameNr)

@@ -23,6 +23,7 @@ let getResultsFromPGNGame (game:PgnGame) =
     GameTime = data.GameTime
     OutOfOpeningEvals = []
     TimeOverrunMs = 0L   // not stored in the PGN
+    GameDeviations = 0
   }
 
 /// Writes the opening PGN moves.

@@ -4,7 +4,7 @@ open System
 open Xunit
 open System.Collections.Generic
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.ParallelExecution
+open ChessLibrary.GameRunner
 
 let makeConfig deviceOption deviceTemplate (options: (string * obj) list) =
     let dict = Dictionary<string, obj>(StringComparer.OrdinalIgnoreCase)

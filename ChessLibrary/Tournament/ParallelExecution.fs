@@ -4,10 +4,7 @@ open System
 open System.IO
 open System.Threading
 open System.Threading.Tasks
-open System.Text
-open System.Threading.Channels
 open System.Collections.Generic
-open System.Diagnostics
 open Microsoft.Extensions.Logging
 open ChessLibrary
 open ChessLibrary.Engine
@@ -22,27 +19,6 @@ open ChessLibrary.GameHelpers
 open ChessLibrary.GameReplay
 open ChessLibrary.GamePersistence
 open ChessLibrary.TournamentRunners.TournamentUtils
-open System.Text.RegularExpressions
-
-let assignDeviceToConfig (config: EngineConfig) (gpu: int) =
-    if String.IsNullOrEmpty config.DeviceOption || String.IsNullOrEmpty config.DeviceTemplate then
-        config
-    else
-        let newOptions = Dictionary<string, obj>(config.Options, StringComparer.OrdinalIgnoreCase)
-        let parts = config.DeviceTemplate.Split([|"{0}"|], StringSplitOptions.None)
-        let pattern = String.Join(@"\d+", parts |> Array.map Regex.Escape)
-        let value =
-            match newOptions.TryGetValue(config.DeviceOption) with
-            | true, existing ->
-                let existingStr = string existing
-                let mutable offset = 0
-                Regex.Replace(existingStr, pattern, fun _ ->
-                    let result = config.DeviceTemplate.Replace("{0}", string (gpu + offset))
-                    offset <- offset + 1
-                    result)
-            | false, _ -> config.DeviceTemplate.Replace("{0}", string gpu)
-        newOptions.[config.DeviceOption] <- box value
-        { config with Options = newOptions }
 
 /// How many games the runner plays at once: the games asked for, fewer when one copy of each
 /// engine times that number does not fit in 70% of the memory (measured once per engine setup and
@@ -59,100 +35,6 @@ let concurrencyFor (tourny: Tournament) =
         else
             memBased
     max 1 gpuBased
-
-/// Quit politely, then make sure the process is gone. Never throws: teardown must go on.
-let private stopEngine (eng: ChessEngine) : Task =
-    task {
-        try eng.Quit() with _ -> ()
-        try do! eng.StopProcessAsync() with _ -> ()
-    }
-
-/// A crashed or aborted game. It carries "1/2-1/2" purely as a placeholder (NotStarted is
-/// Result.Empty from a cancellation race), so it must neither be scored, written to the PGN
-/// nor seed replay state - a written game counts in standings/SPRT and makes Scheduler.Diff
-/// treat the pair as played on resume.
-let private notPlayed (r: Result) =
-    r.Reason = MiscTypes.ResultReason.Cancel || r.Reason = MiscTypes.ResultReason.NotStarted
-
-/// A pool of up to `capacity` instances created on demand by `spawn` (given the instance
-/// index, which is never one a live instance holds). Returned instances are handed out again
-/// before any new one is spawned. An agent runs PoolMachine; generic so it is tested with ints.
-type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> Task<'T>) =
-    let replies = Dictionary<int, TaskCompletionSource<'T>>()
-    // the slot of each instance handed out, for Return and Evict
-    let slots = Dictionary<'T, int>(HashIdentity.Structural)
-    let mutable taken = 0
-    let mutable nextId = 0
-    let take id =
-        lock replies (fun () ->
-            match replies.TryGetValue id with
-            | true, tcs -> replies.Remove id |> ignore; Some tcs
-            | _ -> None)
-
-    let agent = MailboxProcessor<PoolMachine.Event<'T> * AsyncReplyChannel<'T list> option>.Start(fun inbox ->
-        let rec loop state = async {
-            let! event, reply = inbox.Receive()
-            let state, effects =
-                // a dead agent would hang every borrower; drop the event instead
-                try PoolMachine.step state event
-                with ex ->
-                    eprintfn "Engine pool: %A not handled: %s" event ex.Message
-                    state, []
-            // published before anyone is answered, so a caller sees it settled
-            taken <- state.Taken.Count
-            let mutable released = []
-            for effect in effects do
-                match effect with
-                | PoolMachine.Spawn slot ->
-                    // awaited, not waited for: an engine start holds no thread. Off the agent too:
-                    // a spawn runs synchronously up to its first await (constructor, Process.Start)
-                    task {
-                        let! outcome =
-                            Task.Run<PoolMachine.Event<'T>>(fun () ->
-                                task {
-                                    try
-                                        let! item = spawn slot
-                                        return PoolMachine.Spawned (slot, item)
-                                    with ex -> return PoolMachine.SpawnFailed (slot, ex) })
-                        inbox.Post (outcome, None) } |> ignore
-                | PoolMachine.Give (id, slot, item) ->
-                    lock slots (fun () -> slots.[item] <- slot)
-                    take id |> Option.iter (fun tcs -> tcs.TrySetResult item |> ignore)
-                | PoolMachine.Refuse (id, ex) ->
-                    take id |> Option.iter (fun tcs -> tcs.TrySetException ex |> ignore)
-                | PoolMachine.Release items -> released <- items
-            reply |> Option.iter (fun r -> r.Reply released)
-            return! loop state }
-        loop (PoolMachine.initial capacity))
-
-    let slotOf (item: 'T) =
-        lock slots (fun () ->
-            match slots.TryGetValue item with
-            | true, slot -> Some slot
-            | _ -> None)
-
-    member _.Borrow() : Task<'T> =
-        let tcs = TaskCompletionSource<'T>(TaskCreationOptions.RunContinuationsAsynchronously)
-        let id = Interlocked.Increment &nextId
-        lock replies (fun () -> replies.[id] <- tcs)
-        agent.Post (PoolMachine.Borrow id, None)
-        tcs.Task
-
-    member _.Return(item: 'T) =
-        slotOf item |> Option.iter (fun slot -> agent.PostAndReply(fun r -> PoolMachine.Return (slot, item), Some r) |> ignore)
-
-    /// The borrower is not returning this instance: it has been stopped. Frees its slot so a
-    /// later borrow spawns a fresh one, and wakes a borrower waiting on the full pool.
-    member _.Evict(item: 'T) =
-        slotOf item |> Option.iter (fun slot ->
-            lock slots (fun () -> slots.Remove item |> ignore)
-            agent.PostAndReply(fun r -> PoolMachine.Evict slot, Some r) |> ignore)
-
-    /// How many instances exist right now (spawned, whether out on loan or returned).
-    member _.Spawned = taken
-
-    /// Every instance that was returned, for teardown. Never called while borrows are live.
-    member _.Drain() : 'T[] = agent.PostAndReply(fun r -> PoolMachine.Drain, Some r) |> List.toArray
 
 /// What a run plays, worked out once before any engine starts: the book sized for the mode,
 /// the plan, and the plan diffed against the games already in the output PGN (a resume plays
@@ -273,6 +155,8 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
         afterLimits
         |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
         |> ChessLibrary.Scheduler.Diff.toPairings
+        // a resumed run numbers its games after the ones already played, as cup, swiss and ladder do
+        |> List.map (fun p -> { p with GameNr = priorGames + p.GameNr })
 
     if tourny.VerboseLogging then
         PairingHelper.logOpeningPairs logger gamesLeftToPlay
@@ -390,95 +274,12 @@ let parallelTournamentRun
           if tourny.VerboseLogging then
               ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray msg
 
-      // Deviation prevention shares moves between games through replayDicts, one per engine. A
-      // game seeds its own copies before it starts - saved games first, then what earlier games
-      // of this run established - and merges them back only when it has finished, so a game
-      // running alongside it never sees a partial line. Both under one lock.
-      let replayList = ResizeArray<GameReplay>()
-      let replayDicts =
-          [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
-      let replayLock = obj()
-      let seedReplay (pair: Pairing) (white: ReferenceGameReplay) (black: ReferenceGameReplay) =
-          lock replayLock (fun () ->
-              let localDicts = [ pair.White.Name, white; pair.Black.Name, black ] |> Map.ofList
-              prepareGameReplay pair localDicts replayList referenceGames gamesAlreadyPlayed
-              for kvp in replayDicts.[pair.White.Name] do
-                  if not (white.ContainsKey kvp.Key) then white.[kvp.Key] <- kvp.Value
-              for kvp in replayDicts.[pair.Black.Name] do
-                  if not (black.ContainsKey kvp.Key) then black.[kvp.Key] <- kvp.Value)
-      let mergeReplay (pair: Pairing) (white: ReferenceGameReplay) (black: ReferenceGameReplay) (result: Result) (gameData: PGNTypes.GameMetadata) (moves: ResizeArray<string>) =
-          lock replayLock (fun () ->
-              for kvp in white do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value
-              for kvp in black do replayDicts.[pair.Black.Name].[kvp.Key] <- kvp.Value
-              addToReplayList replayList tourny result gameData moves)
-
-      // The board at the end of the opening: the FEN (or the start position), then the book
-      // moves up to OpeningsPly. EPD books carry no moves. Sets the tournament's FRC flag from
-      // a FEN opening, as before.
-      let boardAfterOpening (pair: Pairing) =
-          let board = Board()
-          let start = if String.IsNullOrEmpty pair.Opening.Fen then Chess.startPos else pair.Opening.Fen
-          board.LoadFen start
-          board.StartPosition <- start
-          if not (String.IsNullOrEmpty pair.Opening.Fen) then tourny.IsChess960 <- board.IsFRC
-          let openingMoves = pair.Opening.Mainline |> Seq.truncate tourny.Opening.OpeningsPly |> Seq.toArray
-          if not epdBook then
-              for m in openingMoves do board.PlayOpeningMove m.San
-          if tourny.VerboseLogging then
-              let line =
-                  openingMoves
-                  |> Seq.map (fun m -> if m.Color = "w" then sprintf "%d. %s" m.MoveNumber m.San else m.San)
-                  |> String.concat " "
-              logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, line)
-              logger.LogDebug("{position}", sprintf "position fen %s moves %s" board.StartPosition (String.concat " " board.UciMovesPlayed))
-          board
-
-      /// `plies`: the game's half-moves, book included (the board's moves from its start position).
-      let metadataOf (pair: Pairing) (result: Result) (plies: int) : PGNTypes.GameMetadata =
-          { OpeningHash = pair.OpeningHash
-            Event = tourny.Description
-            Site = tourny.Name
-            Date = DateTime.Now.ToShortDateString()
-            Round = pair.RoundNr
-            White = result.Player1
-            Black = result.Player2
-            Result = result.Result
-            Reason = result.Reason
-            GameTime = result.GameTime
-            Moves = result.Moves
-            PlyCount = plies
-            Fen = pair.Opening.Fen
-            OpeningName = pair.Opening.GameMetaData.OpeningName
-            Deviations = tourny.DeviationCounter
-            StartEvals = result.OutOfOpeningEvals
-            OtherTags = pair.Opening.GameMetaData.OtherTags }
-
-      // The sequential runners reseed the deviation counter from PGN history before every
-      // pairing (via searchAndPrepareReplay); the parallel path called the bare
-      // prepareGameReplay and never did, so a resumed run restarted the count at zero and
-      // wrote Deviations tags lower than games already in the same file. The seed value
-      // comes from gamesAlreadyPlayed, which is fixed for the whole run, so it belongs here
-      // once rather than inside the workers where it would race.
-      let seededDeviations =
-          gamesAlreadyPlayed |> Seq.tryLast |> Option.map (fun g -> g.GameMetaData.Deviations) |> Option.defaultValue 0
-      if seededDeviations > tourny.DeviationCounter then
-          tourny.DeviationCounter <- seededDeviations
-
-      let gpus = tourny.TestOptions.GPUs
       let concurrency = concurrencyFor tourny
 
-      // A user can adjudicate "the" running game only when there is exactly one; with several
-      // boards the request has no single target, so it is answered with None.
-      let adjudicate = if concurrency = 1 then tryGetUserAdjudication else (fun () -> None)
       // Standings refresh. Console: every 10 games as before - each refresh re-reads the PGN
       // and runs Ordo there, and the tuner's SPRT check hangs off it. GUI: every 2 games with
       // one board, what the sequential runner it replaces did, and every `concurrency` above.
       let periodicEvery = if tourny.ConsoleOnly then 10 else max 2 concurrency
-      // Full per-game engine initialisation (MoveOverheadMs, restart checks, the GUI's opening
-      // delay) is what the sequential runner this replaces did for the GUI; only the GUI with
-      // one board gets it. Pooled engines in the console and in multi-board runs skip it but
-      // still get ucinewgame + readyok before every game, which is cheap - see GameLoop.prepareEngines.
-      let initPerGame = not tourny.ConsoleOnly && concurrency = 1
 
       if gamesLeftToPlay.Length = 0 then
           feed.Dispose()
@@ -490,41 +291,9 @@ let parallelTournamentRun
           //    plays against a partial line and the two then race to define it. See ReplayGate.
           let gate = ReplayGate.ReplayGate(gamesLeftToPlay, tourny.PreventMoveDeviation, tourny.PreventMoveDeviationFor)
 
-          // Track all spawned engines for cleanup safety net
-          let allEngines = ResizeArray<ChessEngine>()
+          try // the feed is closed on every exit path
 
-          try // safety net: ensure engine processes are killed even if async fails before teardown
-
-          // 2) one engine pool per engine name, capacity = parallelism. Instances are spawned on
-          //    the first borrow, not up front: a run starts as soon as the first game's two
-          //    engines are ready instead of after every instance of every name has started and
-          //    answered readyok - with several Ceres or Lc0 engines that was minutes before the
-          //    first move, and the sequential runner this path replaced for the GUI only ever
-          //    started the two engines about to play. Each engine is registered in allEngines
-          //    before init, so an init failure still gets it killed by the finally below.
-          let spawnEngine (e: EngineConfig) (i: int) = task {
-              let cfg =
-                  if gpus <> null && gpus.Length > 0 then
-                      let gpu = gpus.[i % gpus.Length]
-                      logger.LogInformation($"Engine pool {e.Name} instance {i}: assigning GPU {gpu}")
-                      assignDeviceToConfig e gpu
-                  else e
-              let! eng = EngineHelper.createEngineAsync (cfg, Some logger)
-              lock allEngines (fun () -> allEngines.Add(eng))
-              callback (Update.EngineStarted(e.Name, eng.GetDefaultOptions() |> Seq.map (fun kv -> kv.Key, string kv.Value) |> Map.ofSeq))
-              // Pooled engines that skip per-game init must be initialised here. When the game
-              // initialises its own engines (GUI, one board) it must NOT happen here: the game
-              // sends StartOfGame before it initialises, so the board shows the pairing while
-              // Ceres or Lc0 spend their seconds on readyok - initialising at spawn moved that
-              // wait in front of the first thing the page could show.
-              if not initPerGame then do! EngineHelper.initEngineAsync 0 eng
-              return eng }
-          let enginePools =
-              tourny.EngineSetup.Engines
-              |> List.map (fun e -> e.Name, LazyPool<ChessEngine>(concurrency, spawnEngine e))
-              |> Map.ofList
-
-          // 3) PGN agent: use external if provided, else create local
+          // 2) PGN agent: use external if provided, else create local
           let pgnAgent, ownsAgent =
               match externalPgnAgent with
               | Some a -> a, false
@@ -537,153 +306,36 @@ let parallelTournamentRun
                       if ownsAgent then
                           try pgnAgent.Post(ChessLibrary.FullPGNParser.Dispose) with _ -> () }
 
-          // a thread‐safe result collector
-          let results = System.Collections.Concurrent.ConcurrentBag<Result>()
+          // the run's record - results, replay, the deviation total, when the standings are due - is
+          // one agent: games only send it what they did, so they share no state
+          let record =
+              RecordAgent.RecordAgent(
+                  { Tourny = tourny
+                    Pgn = Some pgnAgent
+                    ReferenceGames = referenceGames
+                    GamesAlreadyPlayed = gamesAlreadyPlayed
+                    PeriodicEvery = periodicEvery }, logger)
 
-          // Helper function to check the status of each engine and restart if necessary
-          let engineHealthy (engine:ChessEngine) = task {
-              try
-                  // Check if engine has exited and try to restart
-                  if engine.HasExited() then
-                      logger.LogWarning($"Engine {engine.Name} has exited, attempting restart")
-                      try
-                          // The same init as the pool's first start, warm-up included: pooled
-                          // engines skip per-game init, so this is the only place the new
-                          // process can load its network before a clock runs. Throws on failure.
-                          do! EngineHelper.initEngineAsync 0 engine
-                          logger.LogCritical($"Successfully restarted engine {engine.Name}")
-                          return true
-                      with
-                      | ex ->
-                          logger.LogCritical(ex, $"Exception restarting engine {engine.Name}")
-                          return false
-                  else
-                      return true
-              with
-              | ex ->
-                  logger.LogCritical(ex, $"Failed to get engine {engine.Name} restarted")
-                  return false
-          }
+          // 3) the engines and the games played on them. With several boards, "the next games"
+          //    an engine is kept for are the next `concurrency` pairings in plan order, roughly
+          //    what the boards pick next (under prevention the gate can pick differently).
+          use runner =
+              new GameRunner.GameRunner(
+                  { Logger = logger
+                    Tourny = tourny
+                    Callback = callback
+                    Feed = feed.Emit
+                    FeedAny = feed.Any
+                    Cts = cts
+                    // A user can adjudicate "the" running game only when there is exactly one; with
+                    // several boards the request has no single target, so it is answered with None.
+                    Adjudicate = if concurrency = 1 then tryGetUserAdjudication else (fun () -> None)
+                    Record = record
+                    Concurrency = concurrency
+                    EpdBook = epdBook
+                    NeededSoon = fun name -> gate.PeekNext concurrency |> List.exists (fun p -> p.White.Name = name || p.Black.Name = name) })
 
-
-          // After a game: keep the engine in the pool, or stop it. An engine that none of the
-          // next games needs is stopped rather than kept: the sequential runner this path
-          // replaced spawned per pairing and killed after the game, and keeping every engine
-          // of a ten-engine round robin alive - ten networks on one GPU, times the number of
-          // boards - is not what anyone signed up for. "The next games" are the next
-          // `concurrency` pairings in plan order: the one game to come on one board, roughly
-          // what the boards pick next on several (under prevention the gate can pick
-          // differently - a respawn, never a hang: an eviction wakes a borrower waiting on the
-          // full pool). The colour-swapped twin costs no respawn. Two engines play every game
-          // and are kept. Awaited by playOne after its game, whatever the game's outcome.
-          let keepAllEngines = tourny.EngineSetup.Engines.Length <= 2
-          let settleEngine (name: string) (eng: ChessEngine) : Task = task {
-              let neededSoon =
-                  keepAllEngines ||
-                  (gate.PeekNext concurrency |> List.exists (fun p -> p.White.Name = name || p.Black.Name = name))
-              if neededSoon then enginePools.[name].Return eng
-              else
-                  enginePools.[name].Evict eng
-                  do! stopEngine eng
-                  // Stopped for good: the safety net has nothing to do for it, and a long run
-                  // with many engines would otherwise hold every wrapper it ever spawned.
-                  lock allEngines (fun () -> allEngines.Remove eng |> ignore) }
-
-          // Pools spawn on borrow, so a borrow can fail - a binary that is missing or dies at
-          // start - with the pairing's other engine already out. Give that one back (with one
-          // board a leaked engine hangs every later game it is in) and stop the run: an engine
-          // that cannot start ended the run before the pools were lazy, and a run that quietly
-          // plays on without it is worse. The logger is not visible in the console, so stdout.
-          let borrowEngine (name: string) (giveBack: unit -> unit) = task {
-              try return! enginePools.[name].Borrow()
-              with ex ->
-                  giveBack ()
-                  ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
-                      (sprintf "Engine %s failed to start: %s - stopping the tournament" name ex.Message)
-                  callback (Update.EngineStartFailed(name, ex.Message))
-                  cts.Cancel()
-                  System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
-                  return Unchecked.defaultof<ChessEngine> }
-
-          // 4) play one pairing on borrowed engines. `slot` is the worker/board index - the
-          //    live-feed gameId, so the grid shows a fixed set of boards (one tile per slot),
-          //    reused as games finish and new ones start.
-          let playOne (slot: int) (pair: Pairing) = task {
-              // Borrow engines in sorted name order to prevent ABBA deadlock.
-              // With openingsTwice, consecutive pairings swap colors (A-white/B-black then B-white/A-black).
-              // Two workers borrowing in white-then-black order can deadlock when they cross.
-              let firstName, secondName =
-                  if String.Compare(pair.White.Name, pair.Black.Name, StringComparison.Ordinal) <= 0
-                  then pair.White.Name, pair.Black.Name
-                  else pair.Black.Name, pair.White.Name
-              let! firstEng = borrowEngine firstName ignore
-              let! secondEng = borrowEngine secondName (fun () -> enginePools.[firstName].Return firstEng)
-              let wEng, bEng =
-                  if firstName = pair.White.Name then firstEng, secondEng
-                  else secondEng, firstEng
-              // the settles are awaited, which a finally cannot do: the game's exception waits for them
-              let mutable failure : System.Runtime.ExceptionServices.ExceptionDispatchInfo = null
-              try
-                  let! wOk = wEng |> engineHealthy
-                  let! bOk = bEng |> engineHealthy
-                  if wOk |> not || bOk |> not then
-                      logger.LogCritical($"One of the engines is unhealthy, skipping game between {pair.White.Name} and {pair.Black.Name}")
-                      Exception("Unhealthy engine detected, potentially skipping game") |> raise
-                  let! res =
-                      async {
-                          tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
-                          let currentBoard = boardAfterOpening pair
-                          let sb = StringBuilder()
-                          Update.RoundNr pair.RoundNr |> callback
-                          feed.Emit "" (Update.RoundNr pair.RoundNr)
-
-                          let localWhiteDict = ReferenceGameReplay()
-                          let localBlackDict = ReferenceGameReplay()
-
-                          // Per-game callback: stamp this game's events with its worker slot for the live feed.
-                          let gameCallback =
-                              if feed.Any then
-                                  let gid = string slot
-                                  fun (u: Update) -> feed.Emit gid u; callback u
-                              else callback
-
-                          // The game itself. Pooled engines skip per-game init (see initPerGame);
-                          // with prevention on, each side is held to the moves in its replay copy.
-                          let! result =
-                              let gametimer = Stopwatch.GetTimestamp()
-                              async {
-                                  try
-                                      let replay =
-                                          if tourny.PreventMoveDeviation then
-                                              seedReplay pair localWhiteDict localBlackDict
-                                              Some (localWhiteDict, localBlackDict)
-                                          else None
-                                      return! Game.GameLoop.play (not initPerGame) replay sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
-                                  with
-                                  | ex -> return! handleGameExceptionAsync logger ex cts gametimer currentBoard wEng bEng pair  }
-
-                          let gameData = metadataOf pair result currentBoard.UciMovesPlayed.Count
-                          if tourny.PreventMoveDeviation && not (notPlayed result) then
-                              mergeReplay pair localWhiteDict localBlackDict result gameData (ResizeArray(currentBoard.UciMovesPlayed))
-                          if not (notPlayed result) && not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
-                              pgnAgent.Post (ChessLibrary.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, sb.ToString(), result))
-                              callback (Update.GameFinished
-                                  { GameNr = pair.GameNr; RoundNr = pair.RoundNr; White = pair.White.Name; Black = pair.Black.Name
-                                    OpeningHash = pair.OpeningHash; Result = result })
-                          if tourny.VerboseLogging then
-                              logger.LogInformation(gameMetadataSummary gameData)
-                          return result
-                      } |> Async.StartAsTask
-                  if not (notPlayed res) then
-                      results.Add res
-              with ex -> failure <- System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture ex
-              do! settleEngine pair.White.Name wEng
-              do! settleEngine pair.Black.Name bEng
-              if not (isNull failure) then failure.Throw()
-              }
-
-          // 5) worker loop: task CE with proper cancellation
-          let mutable gameCounter = 0
+          // 4) worker loop: task CE with proper cancellation
           let worker i = task {
               try
                   let mutable keepGoing = true
@@ -705,15 +357,11 @@ let parallelTournamentRun
                                   // console's own G-number is not reliable once games overlap.
                                   verbose (sprintf "Gate: worker %d starts round %s: %s vs %s" i pair.RoundNr pair.White.Name pair.Black.Name)
                                   logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
-                                  do! playOne i pair
-                                  let gc = Interlocked.Increment(&gameCounter)
-                                  if gc % periodicEvery = 0 then
-                                      let res = ResizeArray<Result>(results)
-                                      callback (Update.PeriodicResults res)
+                                  let! _ = runner.Play(i, pair)
+                                  ()
                               with ex ->
                                   logger.LogError(ex, "Worker {Worker} failed game {White} vs {Black}, continuing",
                                       i, pair.White.Name, pair.Black.Name)
-                                  Interlocked.Increment(&gameCounter) |> ignore
                           finally
                               // Released whether the game was played, cancelled or failed: a key
                               // held by a dead game would stall every repeat of it for the run.
@@ -733,23 +381,22 @@ let parallelTournamentRun
                   when ae.InnerExceptions |> Seq.exists (fun e -> e :? OperationCanceledException) -> ()
           }
 
-          // 6) launch exactly p workers
+          // 5) launch exactly p workers
           let! _ =
               [| for i in 1..concurrency -> worker i |]
               |> Task.WhenAll
               |> Async.AwaitTask
 
-          // 7) teardown: every engine stopped at once
-          let drained = [| for KeyValue(e, pool) in enginePools -> e, pool.Drain() |]
-          do! Task.WhenAll [| for _, engines in drained do for eng in engines -> stopEngine eng |] |> Async.AwaitTask
-          for e, _ in drained do printfn $"Engine {e} stopped"
+          // 6) teardown: every engine stopped at once
+          do! runner.Shutdown() |> Async.AwaitTask
 
-          // 8) collect results
+          // 7) collect results
+          let! results = record.Results()
           let res = ResizeArray<Result>(results)
           callback (Update.PeriodicResults res)
           // Signal tournament completion over the live feed so a grid/feed viewer can show a
           // distinct "Completed" state (vs a silently dropped feed). The internal callback's own
-          // EndOfTournament fires later in Tournament.fs — after these sinks are disposed — so we
+          // EndOfTournament fires later in Tournament.fs - after these sinks are disposed - so we
           // tee it here while the recorder/HTTP sinks are still alive. No-op when no feed is set.
           feed.Emit "" (Update.EndOfTournament tourny)
           // Bounded like every other agent round-trip in the project: if the PGN agent has
@@ -762,19 +409,14 @@ let parallelTournamentRun
                 logger.LogError "PGN agent did not answer within 30s; leaving the ordered PGN copy untouched"
                 ResizeArray<PgnGame>()
           // writeRawPgnGamesAdjustedToFile deletes the target before writing, so handing it an
-          // empty sequence would erase a good "_ordered" file from an earlier run — turning a
+          // empty sequence would erase a good "_ordered" file from an earlier run - turning a
           // hang into data loss. Only rewrite it when we actually have the games.
           if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not && games.Count > 0 then
               let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
               let path = Path.GetFileNameWithoutExtension(tourny.PgnOutPath) + "_ordered" + ".pgn"
               let combined = Path.Combine(directory,path)
               ChessLibrary.PGNWriter.writeRawPgnGamesAdjustedToFile combined games
-          return results |> Seq.toList
+          return results
           finally
               feed.Dispose()
-              // Safety net: stop any engine processes still running (no-op if teardown already stopped them).
-              // A finally cannot await; this is the end of the run, and they are stopped at once.
-              let running = lock allEngines (fun () -> allEngines |> Seq.filter (fun e -> try not (e.HasExited()) with _ -> false) |> Seq.toArray)
-              if running.Length > 0 then
-                  try Task.WhenAll(running |> Array.map stopEngine).Wait() with _ -> ()
   }

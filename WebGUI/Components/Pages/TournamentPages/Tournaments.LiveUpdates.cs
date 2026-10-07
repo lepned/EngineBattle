@@ -70,7 +70,7 @@ public partial class Tournaments
 				var resultToken = e.Result.Result.Replace('-', '‑');
 				var mh = $"{moveHistory}  ({resultToken} : {explanation})";
 				moveHistory = mh;
-				if (e.Result.Reason != ResultReason.Cancel)
+				if (JsonFeedService.IsScored(e.Result))
 				{
 					results.Insert(0, e.Result);
 					infoBannerInfo.ResultTxt = e.Result.Result;
@@ -128,7 +128,7 @@ public partial class Tournaments
 				// Feed mode: the join catch-up (global gid) carries the full tournament results as a
 				// PeriodicResults -- load it so standings reflect the whole fed tournament, not just the
 				// focused game's own EndOfGame events (which is why the table was empty on the focus page).
-				results = new List<Result>(pr.results);
+				results = pr.results.Where(JsonFeedService.IsScored).ToList();
 				scoreTable = PlayerResults(results);
 				table = Crosstable(results);
 				GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);

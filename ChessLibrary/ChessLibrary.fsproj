@@ -175,13 +175,14 @@
 		<Compile Include="Tournament\Game\UpdateAgent.fs" />
 		<Compile Include="Tournament\Game\GameLoop.fs" />
 		<Compile Include="Tournament\GamePersistence.fs" />
-		<Compile Include="Tournament\GameSetup.fs" />
+		<Compile Include="Tournament\RecordAgent.fs" />
+		<Compile Include="Tournament\PoolMachine.fs" />
+		<Compile Include="Tournament\GameRunner.fs" />
 		<Compile Include="Tournament\MatchScore.fs" />
 		<Compile Include="Tournament\LadderProgress.fs" />
 		<Compile Include="Tournament\SwissProgress.fs" />
 		<Compile Include="Tournament\TournamentRunners.fs" />
 		<Compile Include="Tournament\ReplayGate.fs" />
-		<Compile Include="Tournament\PoolMachine.fs" />
 		<Compile Include="Tournament\ParallelExecution.fs" />
 
 		<!-- Tournament runner (depends on everything) -->

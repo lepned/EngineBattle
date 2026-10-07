@@ -237,9 +237,9 @@ module MatchOutput =
     member _.Preload(white: string, black: string, result: string, openingHash: string) =
       lock gate (fun () -> board.Add(white, black, result, openingHash) |> ignore)
 
-    /// `Started game`, for a game of this run numbered from 1 (EngineBattle's pairing number).
+    /// `Started game`, numbered as EngineBattle's pairing is: after the games a resume starts from.
     member _.Started(gameNr: int, white: string, black: string) =
-      lock gate (fun () -> if not decided then write (started (cfg.PriorGames + gameNr) cfg.TotalGames white black))
+      lock gate (fun () -> if not decided then write (started gameNr cfg.TotalGames white black))
 
     /// A game's end: `Finished game`, the scoreboard, the result and rating intervals and the SPRT,
     /// in the reference's order. Returns the SPRT decision that stops the match, once.
@@ -247,7 +247,7 @@ module MatchOutput =
       lock gate (fun () ->
         if decided then None
         else
-          let id = cfg.PriorGames + g.GameNr
+          let id = g.GameNr
           write (finished id g.White g.Black g.Result.Result (annotation g.White g.Result))
           match g.Result.Reason with
           | ForfeitLimits -> track (if g.Result.Result = "1-0" then g.Black else g.White) true

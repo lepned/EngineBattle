@@ -3,7 +3,7 @@ module LazyPoolTests
 open System
 open System.Threading.Tasks
 open Xunit
-open ChessLibrary.ParallelExecution
+open ChessLibrary.GameRunner
 
 // ---------------------------------------------------------------------------
 // The engine pool's slot accounting, with ints standing in for engines: at most
@@ -130,3 +130,60 @@ let ``drain releases the idle instances and refuses waiters and later borrows`` 
   match e with
   | [ Refuse (2, _) ] -> ()
   | other -> failwithf "%A" other
+
+[<Fact>]
+let ``shed releases the idle instances and frees their slots`` () =
+  let s, _ = run (initial 2) [ Borrow 1; Spawned (0, "a"); Borrow 2; Spawned (1, "b"); Return (0, "a") ]
+  let s, e = step s Shed
+  Assert.Equal<Effect<string> list>([ Release [ "a" ] ], e)
+  Assert.Equal<Set<int>>(Set.ofList [ 1 ], s.Taken)       // "b" is still out on loan
+  let _, e = step s (Borrow 3)
+  Assert.Equal<Effect<string> list>([ Spawn 0 ], e)        // a fresh one into the freed slot
+
+[<Fact>]
+let ``a shed pool spawns afresh and the shed instance is never handed out again`` () =
+  let mutable spawns = 0
+  let pool = LazyPool<int>(1, fun _ -> spawns <- spawns + 1; Task.FromResult(spawns * 100))
+  let a = pool.Borrow().Result
+  pool.Return a
+  Assert.Equal<int list>([ 100 ], pool.Shed().Result |> Array.toList)
+  Assert.Equal(0, pool.Spawned)
+  Assert.Equal(200, pool.Borrow().Result)
+  Assert.Equal<int list>([], pool.Drain() |> Array.toList)  // 200 is out on loan, 100 is gone
+
+// ---------------------------------------------------------------------------
+// One board end to end: the schedule of the run that hung once (sf2 never respawned at its
+// game 5), through the real pools and GameRunner.shedIdleExcept, many times over.
+// ---------------------------------------------------------------------------
+
+open System.Threading
+
+[<Fact>]
+let ``one board: the hung run's schedule never waits on a pool and never hands out a stopped engine`` () =
+    let names = [ "sf1"; "sf2"; "sf3" ]
+    let games = [ "sf1", "sf2"; "sf2", "sf1"; "sf3", "sf1"; "sf1", "sf3"; "sf2", "sf3"; "sf3", "sf2" ]
+    for _ in 1 .. 200 do
+        let next = ref 0
+        let live = System.Collections.Concurrent.ConcurrentDictionary<int, string>()
+        let pools =
+            names
+            |> List.map (fun n ->
+                n, LazyPool<int>(1, fun _ -> task {
+                    do! Task.Yield()                       // a real start awaits, so this one does too
+                    let id = Interlocked.Increment(&next.contents)
+                    live.[id] <- n
+                    return id }))
+            |> Map.ofList
+        for white, black in games @ games do
+            (shedIdleExcept pools [ white; black ] (fun _ id -> task { live.TryRemove id |> ignore })).Wait()
+            // sorted, as GameRunner.Play borrows
+            let first, second = if String.CompareOrdinal(white, black) <= 0 then white, black else black, white
+            let a = pools.[first].Borrow()
+            Assert.True(a.Wait 2000, sprintf "borrow of %s waited" first)
+            let b = pools.[second].Borrow()
+            Assert.True(b.Wait 2000, sprintf "borrow of %s waited" second)
+            Assert.True(live.ContainsKey a.Result && live.ContainsKey b.Result, "a stopped engine was handed out")
+            // only the game's two engines are running
+            Assert.Equal<string list>(List.sort [ white; black ], live.Values |> Seq.sort |> List.ofSeq)
+            pools.[first].Return a.Result
+            pools.[second].Return b.Result

@@ -87,7 +87,7 @@ let private result =
       Reason = ResultReason.Checkmate
       GameTime = 450000L
       OutOfOpeningEvals = [ CP 0.1; Mate 3; NA ]
-      TimeOverrunMs = 0L }
+      TimeOverrunMs = 0L; GameDeviations = 0 }
 
 let private nn =
     { NNValues.Empty with
@@ -291,3 +291,11 @@ let ``EngineStarted keeps its event when a producer writes a default as a number
         Assert.Equal(Some "false", Map.tryFind "Ponder" d)
         Assert.Equal(Some "", Map.tryFind "SyzygyPath" d)
     | other -> Assert.True(false, sprintf "expected EngineStarted, got %A" other)
+
+[<Fact>]
+let ``a cancelled game is not scored; a feed game with a reason the decoder does not know is`` () =
+    let r = { (ChessLibrary.TypesDef.CoreTypes.Result.Empty) with Player1 = "A"; Player2 = "B"; Result = "1-0"; Reason = ChessLibrary.MiscTypes.ResultReason.Checkmate }
+    Assert.True(ChessLibrary.FeedStats.isScored r)
+    Assert.False(ChessLibrary.FeedStats.isScored { r with Result = "1/2-1/2"; Reason = ChessLibrary.MiscTypes.ResultReason.Cancel })
+    // the wire falls back to NotStarted for an unknown reason: that game was played
+    Assert.True(ChessLibrary.FeedStats.isScored { r with Reason = ChessLibrary.MiscTypes.ResultReason.NotStarted })

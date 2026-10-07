@@ -30,6 +30,9 @@ namespace WebGUI.Services
         /// Stable per-game signature used to dedup result events from different streams.
         public static string ResultKey(CoreTypes.Result r) =>
             $"{r.Player1}|{r.Player2}|{r.Result}|{r.Moves}|{r.GameTime}";
+
+        /// Whether a result counts in the standings (FeedStats.isScored: a cancelled game does not).
+        public static bool IsScored(CoreTypes.Result r) => FeedStats.isScored(r);
         private readonly Dictionary<string, GameSnap> _snaps = new();               // current game per stream key
 
         private sealed class GameSnap
@@ -211,7 +214,7 @@ namespace WebGUI.Services
                     Snap(key).LastBestMove = update;
                     break;
                 case TournamentTypes.Update.EndOfGame e:
-                    if (_resultKeys.Add(ResultKey(e.Result)))
+                    if (IsScored(e.Result) && _resultKeys.Add(ResultKey(e.Result)))
                     {
                         _results.Add(e.Result);
                         _resultIds.Add(key);
