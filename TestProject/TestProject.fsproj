@@ -103,6 +103,7 @@
 		<Compile Include="ResumeAnywhereTests.fs" />
 		<Compile Include="PgnValidationTests.fs" />
 		<Compile Include="SpeedFormatTests.fs" />
+		<Compile Include="CommentAttributionTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
