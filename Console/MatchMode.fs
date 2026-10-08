@@ -216,7 +216,7 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
                 if games * threads > Environment.ProcessorCount then
                     emit $"Warning: {games} games x {threads} threads = {games * threads} search threads on {Environment.ProcessorCount} hardware threads.\n"
             if not interrupted then
-                let runner = Tournament.Manager.Runner(logger, Action<Update>(callback), false, true)
+                let runner = Tournament.Manager.Runner(logger, Action<Update>(callback), false)
                 runner.SuppressDashboard <- true
                 runner.AddTournament tourny
                 runnerRef <- Some runner

@@ -31,7 +31,7 @@ public partial class Tournaments
 		if (!IsSwissMode)
 			return true;
 
-		var statePath = GetSwissStatePath();
+		var statePath = ModeStatePaths.Prepare(Environment.ContentRootPath, tournament, StatePaths.Mode.Swiss, logger);
 		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
 			return true;
 
@@ -66,10 +66,7 @@ public partial class Tournaments
 
 	private string GetSwissStatePath()
 	{
-		var configured = tournament?.SwissOptions?.StatePath ?? "wwwroot/swiss_state.json";
-		if (Path.IsPathRooted(configured))
-			return configured;
-		return Path.Combine(Environment.ContentRootPath, configured);
+		return ModeStatePaths.Swiss(Environment.ContentRootPath, tournament);
 	}
 
 	private static void DeleteSwissStateFiles(string statePath)
@@ -184,7 +181,7 @@ public partial class Tournaments
 		if (!IsLadderMode)
 			return true;
 
-		var statePath = GetLadderStatePath();
+		var statePath = ModeStatePaths.Prepare(Environment.ContentRootPath, tournament, StatePaths.Mode.Ladder, logger);
 		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
 			return true;
 
@@ -218,10 +215,7 @@ public partial class Tournaments
 
 	private string GetLadderStatePath()
 	{
-		var configured = tournament?.LadderOptions?.StatePath ?? "wwwroot/ladder_state.json";
-		if (Path.IsPathRooted(configured))
-			return configured;
-		return Path.Combine(Environment.ContentRootPath, configured);
+		return ModeStatePaths.Ladder(Environment.ContentRootPath, tournament);
 	}
 
 	private static void DeleteLadderStateFiles(string statePath)
@@ -328,7 +322,7 @@ public partial class Tournaments
 		if (!IsCupMode)
 			return true;
 
-		var bracketPath = GetCupBracketPath();
+		var bracketPath = ModeStatePaths.Prepare(Environment.ContentRootPath, tournament, StatePaths.Mode.Cup, logger);
 		ChessLibrary.Tournament.Manager.setCupBracketPathOverride(bracketPath);
 		if (string.IsNullOrWhiteSpace(bracketPath) || !File.Exists(bracketPath))
 			return true;
@@ -371,10 +365,7 @@ public partial class Tournaments
 
 	private string GetCupBracketPath()
 	{
-		var configured = tournament?.CupOptions?.BracketPath ?? "wwwroot/cup_bracket.json";
-		if (Path.IsPathRooted(configured))
-			return configured;
-		return Path.Combine(Environment.ContentRootPath, configured);
+		return ModeStatePaths.Cup(Environment.ContentRootPath, tournament);
 	}
 
 	private static void DeleteCupBracketFiles(string bracketPath)

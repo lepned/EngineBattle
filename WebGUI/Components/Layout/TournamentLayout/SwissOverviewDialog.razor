@@ -7,12 +7,12 @@
             <MudStack Spacing="2">
                 <MudText Typo="Typo.h5">@Title</MudText>
                 <MudText Typo="Typo.body2">@Subtitle</MudText>
-                <SwissOverviewView UseContainer="false" ShowPath="false" ShowRefresh="false" StateFileName="@StateFileName" FontSize="@FontSize" />
+                <SwissOverviewView UseContainer="false" ShowPath="false" ShowRefresh="false" StatePath="@StatePath" FontSize="@FontSize" />
             </MudStack>
         }
         else
         {
-            <SwissOverviewView UseContainer="false" ShowPath="false" ShowRefresh="false" StateFileName="@StateFileName" FontSize="@FontSize" />
+            <SwissOverviewView UseContainer="false" ShowPath="false" ShowRefresh="false" StatePath="@StatePath" FontSize="@FontSize" />
         }
     </DialogContent>
     <DialogActions>
@@ -32,11 +32,6 @@
     [Parameter] public bool SwissInvalid { get; set; }
     [Parameter] public bool ShowActions { get; set; }
     [Parameter] public int FontSize { get; set; }
-
-    private string StateFileName =>
-        string.IsNullOrWhiteSpace(StatePath)
-            ? "swiss_state.json"
-            : Path.GetFileName(StatePath);
 
     private string Title =>
         SwissInvalid ? "Swiss state is unreadable" :

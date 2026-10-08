@@ -70,7 +70,8 @@
     [Parameter] public int Height { get; set; }
     [Parameter] public int CycleSeconds { get; set; } = 20;
     [Parameter] public bool ShouldCycle { get; set; }
-    [Parameter] public string StateFileName { get; set; } = "ladder_state.json";
+    /// <summary>The state file; empty = the one tournament.json configures.</summary>
+    [Parameter] public string StatePath { get; set; } = "";
     [Parameter] public string WhitePlayer { get; set; } = "";
     [Parameter] public string BlackPlayer { get; set; } = "";
 
@@ -133,7 +134,7 @@
 
     private async Task LoadProgress()
     {
-        var statePath = Path.Combine(Environment.ContentRootPath, "wwwroot", StateFileName);
+        var statePath = string.IsNullOrWhiteSpace(StatePath) ? ModeStatePaths.Ladder(Environment.ContentRootPath, ModeStatePaths.Configured(Environment.ContentRootPath)) : StatePath;
         if (!File.Exists(statePath))
         {
             progressEntries = new List<LadderProgressEntry>();

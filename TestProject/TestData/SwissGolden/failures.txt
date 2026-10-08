@@ -1,0 +1,43 @@
+total 12
+pairings 1.1:e3-e4#1 1.2:e4-e3#2 1.3:e1-e2#3 1.4:e2-e1#4
+play #1 1.1 e3-e4 o1
+play #2 1.2 e4-e3 o1
+play #2 1.2 e4-e3 o1
+pairings 1.3:e1-e2#3 1.4:e2-e1#4
+play #3 1.3 e1-e2 o2
+play #4 1.4 e2-e1 o2
+play #4 1.4 e2-e1 o2
+play #4 1.4 e2-e1 o2
+pairings 2.1:e1-e3#4 2.2:e3-e1#5 2.3:e2-e4#6 2.4:e4-e2#7
+play #4 2.1 e1-e3 o3
+play #5 2.2 e3-e1 o3
+pairings 2.3:e2-e4#6 2.4:e4-e2#7
+play #6 2.3 e2-e4 o4
+play #6 2.3 e4-e2 o4
+play #7 2.4 e2-e4 o4
+pairings 
+pairings 3.1:e3-e2#8 3.2:e2-e3#9 3.3:e1-e4#10 3.4:e4-e1#11
+play #8 3.1 e3-e2 o5
+play #9 3.2 e2-e3 o5
+pairings 3.3:e1-e4#10 3.4:e4-e1#11
+play #10 3.3 e1-e4 o6
+play #11 3.4 e4-e1 o6
+pairings 
+state next=6 order=
+  r1 #1 e3-e4 0.0-2.0 true order=
+    g1 e3-e4 o1 0-1
+    g2 e4-e3 o1 1-0
+  r1 #2 e1-e2 0.0-1.0 false order=
+    g3 e1-e2 o2 0-1
+  r2 #3 e1-e3 1.0-1.0 true order=
+    g4 e1-e3 o3 1-0
+    g5 e3-e1 o3 1-0
+  r2 #4 e2-e4 0.5-1.5 true order=
+    g6 e4-e2 o4 1/2-1/2
+    g7 e2-e4 o4 0-1
+  r3 #5 e2-e3 1.0-1.0 true order=
+    g8 e3-e2 o5 1-0
+    g9 e2-e3 o5 1-0
+  r3 #6 e4-e1 0.0-2.0 true order=
+    g10 e1-e4 o6 1-0
+    g11 e4-e1 o6 0-1

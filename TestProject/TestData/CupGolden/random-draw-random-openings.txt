@@ -1,0 +1,93 @@
+total 14
+pairings 
+pairings 1.1:e8-e1#0 1.2:e1-e8#0
+play #1 1.1 e8-e1 o8
+play #2 1.2 e1-e8 o8
+total 16
+pairings 1.3:e8-e1#0 1.4:e1-e8#0
+play #3 1.3 e8-e1 o6
+play #4 1.4 e1-e8 o6
+total 18
+pairings 1.5:e8-e1#0 1.6:e1-e8#0
+play #5 1.5 e8-e1 o7
+play #6 1.6 e1-e8 o7
+total 20
+pairings 1.7:e8-e1#0 1.8:e1-e8#0
+play #7 1.7 e8-e1 o3
+play #8 1.8 e1-e8 o3
+total 22
+pairings 1.9:e8-e1#0 1.10:e1-e8#0
+play #9 1.9 e8-e1 o12
+play #10 1.10 e1-e8 o12
+pairings 1.11:e5-e7#0 1.12:e7-e5#0
+play #11 1.11 e5-e7 o8
+play #12 1.12 e7-e5 o8
+total 24
+pairings 1.13:e5-e7#0 1.14:e7-e5#0
+play #13 1.13 e5-e7 o6
+play #14 1.14 e7-e5 o6
+total 26
+pairings 1.15:e5-e7#0 1.16:e7-e5#0
+play #15 1.15 e5-e7 o7
+play #16 1.16 e7-e5 o7
+total 28
+pairings 1.17:e5-e7#0 1.18:e7-e5#0
+play #17 1.17 e5-e7 o3
+play #18 1.18 e7-e5 o3
+total 30
+pairings 1.19:e5-e7#0 1.20:e7-e5#0
+play #19 1.19 e5-e7 o12
+play #20 1.20 e7-e5 o12
+pairings 1.21:e6-e3#0 1.22:e3-e6#0
+play #21 1.21 e6-e3 o8
+play #22 1.22 e3-e6 o8
+pairings 1.23:e4-e2#0 1.24:e2-e4#0
+play #23 1.23 e4-e2 o8
+play #24 1.24 e2-e4 o8
+pairings 2.1:e8-e5#0 2.2:e5-e8#0
+play #25 2.1 e8-e5 o8
+play #26 2.2 e5-e8 o8
+pairings 2.3:e3-e4#0 2.4:e4-e3#0
+play #27 2.3 e3-e4 o8
+play #28 2.4 e4-e3 o8
+pairings 3.1:e5-e3#0 3.2:e3-e5#0
+play #29 3.1 e5-e3 o8
+play #30 3.2 e3-e5 o8
+bracket next=0 order=7,5,6,2,11,9,8,10,3,1,0,4
+  r1 #1 e8-e1 5.5-4.5 winner=e8 true order=
+    g1 e8-e1 o8 1-0
+    g2 e1-e8 o8 1-0
+    g3 e8-e1 o6 1/2-1/2
+    g4 e1-e8 o6 1/2-1/2
+    g5 e8-e1 o7 0-1
+    g6 e1-e8 o7 0-1
+    g7 e8-e1 o3 1-0
+    g8 e1-e8 o3 1-0
+    g9 e8-e1 o12 1/2-1/2
+    g10 e1-e8 o12 0-1
+  r1 #2 e5-e7 5.5-4.5 winner=e5 true order=
+    g11 e5-e7 o8 1-0
+    g12 e7-e5 o8 1-0
+    g13 e5-e7 o6 1/2-1/2
+    g14 e7-e5 o6 1/2-1/2
+    g15 e5-e7 o7 0-1
+    g16 e7-e5 o7 0-1
+    g17 e5-e7 o3 1-0
+    g18 e7-e5 o3 1-0
+    g19 e5-e7 o12 1/2-1/2
+    g20 e7-e5 o12 0-1
+  r1 #3 e6-e3 0.5-1.5 winner=e3 true order=
+    g21 e6-e3 o8 0-1
+    g22 e3-e6 o8 1/2-1/2
+  r1 #4 e4-e2 1.5-0.5 winner=e4 true order=
+    g23 e4-e2 o8 1/2-1/2
+    g24 e2-e4 o8 0-1
+  r2 #5 e8-e5 0.5-1.5 winner=e5 true order=
+    g25 e8-e5 o8 0-1
+    g26 e5-e8 o8 1/2-1/2
+  r2 #6 e3-e4 1.5-0.5 winner=e3 true order=
+    g27 e3-e4 o8 1/2-1/2
+    g28 e4-e3 o8 0-1
+  r3 #7 e5-e3 1.5-0.5 winner=e5 true order=
+    g29 e5-e3 o8 1/2-1/2
+    g30 e3-e5 o8 0-1

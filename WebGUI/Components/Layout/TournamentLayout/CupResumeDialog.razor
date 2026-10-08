@@ -5,7 +5,7 @@
         <MudStack Spacing="2">
             <MudText Typo="Typo.h5">@Title</MudText>
             <MudText Typo="Typo.body2">@Subtitle</MudText>
-            <CupBracketView FontSize="FontSize" UseContainer="false" ShowPath="false" ShowRefresh="false" BracketFileName="@BracketFileName" />
+            <CupBracketView FontSize="FontSize" UseContainer="false" ShowPath="false" ShowRefresh="false" BracketPath="@BracketPath" />
         </MudStack>
     </DialogContent>
     <DialogActions>
@@ -21,11 +21,6 @@
     [Parameter] public bool CupCompleted { get; set; }
     [Parameter] public bool CupInvalid { get; set; }
     [Parameter] public int FontSize { get; set; }
-
-    private string BracketFileName =>
-        string.IsNullOrWhiteSpace(BracketPath)
-            ? "cup_bracket.json"
-            : Path.GetFileName(BracketPath);
 
     private string Title =>
         CupInvalid ? "Cup bracket is unreadable" :

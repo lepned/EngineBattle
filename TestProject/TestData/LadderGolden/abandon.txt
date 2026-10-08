@@ -1,0 +1,17 @@
+total 6
+pairings 
+pairings 1.1:e4-e3#0:o1 1.2:e3-e4#0:o1
+play #1 1.1 e4-e3 o1
+play #2 1.2 e3-e4 o1
+total 8
+pairings 1.3:e4-e3#0:o2 1.4:e3-e4#0:o2
+play #3 1.3 e4-e3 o2
+play #3 1.3 e3-e4 o2
+pairings 1.3:e4-e3#0:o3 1.4:e3-e4#0:o3
+play #3 1.3 e4-e3 o3
+ladder next=1 order= climb=1 climber=3
+  rankings=e1,e2,e3,e4 surviving=e1,e2,e3,e4 eliminated=
+  #1 climb1 e4-e3 1.0-1.0 winner=- false
+    g1 e4-e3 o1 1/2-1/2
+    g2 e3-e4 o1 1/2-1/2
+cancelled

@@ -124,6 +124,7 @@ public partial class Tournaments
 
 		var parameters = new DialogParameters
 		{
+			{ "BracketPath", GetCupBracketPath() },
 			{ "FontSize", FontCeiling(FontKey.Brackets) }
 		};
 		bracketDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupBracketDialog>("", parameters, options);

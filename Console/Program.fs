@@ -2291,7 +2291,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     let updateProcessor = createUpdateProcessor tourny.VerboseLogging
     let printUpdate update = updateProcessor.Post(update)
 
-    let runner = Manager.Runner(logger, printUpdate, false, true)
+    let runner = Manager.Runner(logger, printUpdate, false)
     runner.AddTournament tourny
     let start = Stopwatch.GetTimestamp()
     let formatHms (ts: TimeSpan) = 

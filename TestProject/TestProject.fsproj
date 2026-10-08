@@ -95,6 +95,12 @@
 		<Compile Include="UpdateAgentTests.fs" />
 		<Compile Include="RecordAgentTests.fs" />
 		<Compile Include="PgnAgentTests.fs" />
+		<Compile Include="GoldenBook.fs" />
+		<Compile Include="SwissMachineTests.fs" />
+		<Compile Include="CupMachineTests.fs" />
+		<Compile Include="LadderMachineTests.fs" />
+		<Compile Include="StatePathsTests.fs" />
+		<Compile Include="ResumeAnywhereTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

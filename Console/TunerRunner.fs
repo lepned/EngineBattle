@@ -694,7 +694,7 @@ module TunerRunner =
                     ) |> ignore
               | None -> ()
         | _ -> ())
-    let runner = Manager.Runner(logger, callback, false, true)
+    let runner = Manager.Runner(logger, callback, false)
     runner.SuppressDashboard <- true
     runnerOpt <- Some runner
     runner.AddTournament tournament

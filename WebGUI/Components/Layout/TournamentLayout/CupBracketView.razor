@@ -115,7 +115,8 @@ else
     [Parameter] public bool ShowPath { get; set; } = true;
     [Parameter] public bool ShowRefresh { get; set; } = true;
     [Parameter] public bool UseContainer { get; set; } = true;
-    [Parameter] public string BracketFileName { get; set; } = "cup_bracket.json";
+    /// <summary>The bracket file; empty = the one tournament.json configures.</summary>
+    [Parameter] public string BracketPath { get; set; } = "";
     [Parameter] public int FontSize { get; set; }
 
     private CupBracketModel bracket;
@@ -151,7 +152,7 @@ else
     private async Task LoadBracket()
     {
         loadError = null;
-        bracketPath = Path.Combine(Environment.ContentRootPath, "wwwroot", BracketFileName);
+        bracketPath = string.IsNullOrWhiteSpace(BracketPath) ? ModeStatePaths.Cup(Environment.ContentRootPath, ModeStatePaths.Configured(Environment.ContentRootPath)) : BracketPath;
         if (!File.Exists(bracketPath))
         {
             bracket = null;

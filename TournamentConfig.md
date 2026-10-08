@@ -87,7 +87,7 @@ See `LiveFeedContract.md` for the wire protocol and the README section *Watching
 - **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). If empty, defaults to one pair (2 games).
 - **SeedingStrategy**: "ByRating" or "Random".
 - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
-- **BracketPath**: Path for the generated cup bracket JSON file.
+- **BracketPath**: Optional. The cup bracket file; by default next to the PGN, named after it (`MyCup_cup_bracket.json`).
 - **RandomOpenings**: True to randomize openings instead of using the list order.
 
 ### Swiss Options
@@ -98,13 +98,13 @@ See `LiveFeedContract.md` for the wire protocol and the README section *Watching
 - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
 - **RandomOpenings**: True to randomize openings instead of using the list order.
 - **AllowExtraPairsOnTie**: True to play extra pairs if the top score is tied after scheduled rounds.
-- **StatePath**: Path for the generated swiss state JSON file.
+- **StatePath**: Optional. The Swiss state file; by default next to the PGN, named after it (`MySwiss_swiss_state.json`).
 
 ### Ladder Options
 
 - **GamePairsPerMatch**: Number of game pairs per mini-match (each pair is 2 games with reversed colors). Default: 4.
 - **RandomOpenings**: True to randomize openings instead of using the list order.
-- **StatePath**: Path for the generated ladder state JSON file.
+- **StatePath**: Optional. The ladder state file; by default next to the PGN, named after it (`MyLadder_ladder_state.json`).
 
 Ladder mode is an elimination-style climbing tournament. Engines are ranked by rating (highest = rank 1). The lowest-ranked surviving engine challenges the one above it. The loser is eliminated, the winner continues climbing. When a climber loses, a new climb starts from the new bottom engine. Tied matches play extra game pairs until one engine leads. The tournament ends when only 1 engine remains.
 
@@ -316,7 +316,6 @@ setting.
     "RoundPairIncrements": [1,2,3],
     "SeedingStrategy": "ByRating",
     "UniquePerMatchOnly": true,
-    "BracketPath": "wwwroot/cup_bracket.json",
     "RandomOpenings": true
   },
   "SwissOptions": {
@@ -325,13 +324,11 @@ setting.
     "SeedGroupCount": 1,
     "UniquePerMatchOnly": true,
     "RandomOpenings": true,
-    "AllowExtraPairsOnTie": true,
-    "StatePath": "wwwroot/swiss_state.json"
+    "AllowExtraPairsOnTie": true
   },
   "LadderOptions": {
     "GamePairsPerMatch": 4,
-    "RandomOpenings": true,
-    "StatePath": "wwwroot/ladder_state.json"
+    "RandomOpenings": true
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

@@ -479,7 +479,7 @@ public partial class Tournaments
 					}
 					if (IsSwissMode)
 					{
-						var path = Path.Combine(Environment.ContentRootPath, "wwwroot", "swiss_state.json");
+						var path = GetSwissStatePath();
 						if (File.Exists(path))						
 							ChessLibrary.Configuration.ConsoleHelper.writeSwissPairingsPerRoundFromFile(path);
 					}

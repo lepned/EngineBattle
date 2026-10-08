@@ -60,7 +60,8 @@
     [Parameter] public int Height { get; set; }
     [Parameter] public int CycleSeconds { get; set; } = 20;
     [Parameter] public bool ShouldCycle { get; set; }
-    [Parameter] public string BracketFileName { get; set; } = "cup_bracket.json";
+    /// <summary>The bracket file; empty = the one tournament.json configures.</summary>
+    [Parameter] public string BracketPath { get; set; } = "";
     [Parameter] public string WhitePlayer { get; set; } = "";
     [Parameter] public string BlackPlayer { get; set; } = "";
 
@@ -125,7 +126,7 @@
 
     private async Task LoadProgress()
     {
-        var bracketPath = Path.Combine(Environment.ContentRootPath, "wwwroot", BracketFileName);
+        var bracketPath = string.IsNullOrWhiteSpace(BracketPath) ? ModeStatePaths.Cup(Environment.ContentRootPath, ModeStatePaths.Configured(Environment.ContentRootPath)) : BracketPath;
         if (!File.Exists(bracketPath))
         {
             progressEntries = new List<CupProgressEntry>();

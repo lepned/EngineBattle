@@ -127,7 +127,7 @@ module Manager =
                   for engine in engineList do
                     engine.IsChallenger <- false
                 let engineSetup = {tourny.EngineSetup with Engines = engineList}
-                let cupDefaults = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+                let cupDefaults = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = ""; RandomOpenings = false }
                 let cupOptions = if obj.ReferenceEquals(tourny.CupOptions, null) then cupDefaults else tourny.CupOptions
                 let tournamentMode =
                   if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR" else tourny.TournamentMode
@@ -135,12 +135,12 @@ module Manager =
                   match consumeCupBracketPathOverride () with
                   | Some overridePath -> { cupOptions with BracketPath = overridePath }
                   | None -> cupOptions
-                let swissDefaults = { GamesPerMatch = 2; Rounds = tourny.Rounds; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
+                let swissDefaults = { GamesPerMatch = 2; Rounds = tourny.Rounds; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "" }
                 let swissOptions =
                   let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
                   let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
                   { baseOptions with Rounds = rounds }
-                let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }
+                let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
                 let ladderOptions = if obj.ReferenceEquals(tourny.LadderOptions, null) then ladderDefaults else tourny.LadderOptions
                 // Challengers is only used for Gauntlet mode; reset to 0 for other modes
                 let challengers = if isGauntlet then tourny.Challengers else 0
@@ -148,7 +148,7 @@ module Manager =
                 Validation.validateTournamentInput updatedTourny
                 updatedTourny
               else 
-                let cupDefaults = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+                let cupDefaults = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = ""; RandomOpenings = false }
                 let cupOptions = if obj.ReferenceEquals(tourny.CupOptions, null) then cupDefaults else tourny.CupOptions
                 let tournamentMode =
                   if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR" else tourny.TournamentMode
@@ -156,12 +156,12 @@ module Manager =
                   match consumeCupBracketPathOverride () with
                   | Some overridePath -> { cupOptions with BracketPath = overridePath }
                   | None -> cupOptions
-                let swissDefaults = { GamesPerMatch = 2; Rounds = tourny.Rounds; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
+                let swissDefaults = { GamesPerMatch = 2; Rounds = tourny.Rounds; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "" }
                 let swissOptions =
                   let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
                   let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
                   { baseOptions with Rounds = rounds }
-                let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }
+                let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
                 let ladderOptions = if obj.ReferenceEquals(tourny.LadderOptions, null) then ladderDefaults else tourny.LadderOptions
                 // Challengers is only used for Gauntlet mode; reset to 0 for other modes
                 let isGauntlet = tournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
@@ -193,15 +193,8 @@ module Manager =
   
   /// RR and Gauntlet (and unknown modes, which fall back to RR) run on the worker-based
   /// runner at ANY parallelism - one worker is the sequential case, and it keeps user
-  /// adjudication. Cup, Swiss and Ladder have their own stateful runners and stay sequential:
-  /// routing them through parallelTournamentRun would drop cup resume.
-  let isParallelCapableMode (tournament: Tournament) =
-    let mode =
-      if String.IsNullOrWhiteSpace tournament.TournamentMode then ""
-      else tournament.TournamentMode.Trim().ToLowerInvariant()
-    match mode with
-    | "ladder" | "cup" | "swiss" -> false
-    | _ -> true
+  /// adjudication. Cup, Swiss and Ladder play one game at a time from their state files.
+  let isParallelCapableMode (tournament: Tournament) = not (TournamentRunners.keepsItsOwnState tournament)
 
   let startTournament
     (cts:CancellationTokenSource)
@@ -209,7 +202,6 @@ module Manager =
     (logger:ILogger)
     sendResponse
     (taggedSink: (string -> Update -> unit) option)
-    consoleMode
     (tryGetUserAdjudication: unit -> UserAdjudication option)
     (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
       // EngineBattle sets every UCI engine's Ponder option to whether it will be asked to ponder;
@@ -218,38 +210,18 @@ module Manager =
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()
-      // RR/Gauntlet always take the worker runner (one worker when NumberOfGamesInParallel is
-      // 1); it used to have a sequential twin, and a fix applied to one of them missed the
-      // other. The stateful modes keep their own runners.
-      let useParallel = consoleMode || isParallelCapableMode tournament
+      // a fresh run: engine options print again, the tablebase prober reports again (the WebGUI
+      // runs many tournaments in one process) and opens the tables in the background
+      ChessLibrary.Engine.resetPrintedEngines()
+      let tb = tournament.Adjudication.TBAdj
+      TablebaseProbe.startRun tb.UseTBAdjudication tb.TBMen tb.TablebaseDirectory
+      // cup, swiss and ladder play from their state files; RR/Gauntlet take the worker runner
+      // (one worker when NumberOfGamesInParallel is 1)
       let tourny =
-        if useParallel then
-          ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
-        else
-          // parallelTournamentRun starts its run itself; cup, swiss and ladder here start theirs
-          let tb = tournament.Adjudication.TBAdj
-          TablebaseProbe.startRun tb.UseTBAdjudication tb.TBMen tb.TablebaseDirectory
-          let mode =
-            if String.IsNullOrWhiteSpace tournament.TournamentMode then "RR"
-            else tournament.TournamentMode
-          let modeNormalized = mode.Trim().ToLowerInvariant()
-          let seeding =
-            match tournament.CupOptions.SeedingStrategy with
-            | null -> PairingHelper.CupSeedingStrategy.ByRating
-            | s when s.Equals("random", StringComparison.OrdinalIgnoreCase) -> PairingHelper.CupSeedingStrategy.Random
-            | _ -> PairingHelper.CupSeedingStrategy.ByRating
-          match modeNormalized with
-          | "cup" ->
-              let resumeRequested = consumeCupResumeRequested ()
-              TournamentRunners.cup seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
-          | "swiss" ->
-              TournamentRunners.swiss logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
-          | "ladder" ->
-              TournamentRunners.ladder logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
-          | _ ->
-              // Not reachable: every other mode is parallel-capable and took the branch above.
-              ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
-      
+        match TournamentRunners.tryRun consumeCupResumeRequested logger tournament sendResponse cts tryGetUserAdjudication pgnAgent with
+        | Some run -> run
+        | None -> ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
+
       let mutable validationPassed = true
       //check for value head tests
       if tournament.TestOptions.ValueTest then
@@ -290,18 +262,22 @@ module Manager =
         logger.LogInformation("Tournament validation failed, please make sure that all engines in the tournament supports value head tests.")
         []
   
-  type Runner (logger: ILogger, callback: Action<Update>, reloadTournament:bool, consoleOnly : bool) =
+  type Runner (logger: ILogger, callback: Action<Update>, reloadTournament:bool) =
     let cts = new CancellationTokenSource()
     let userAdjudicationChannel = Channel.CreateUnbounded<UserAdjudication>()
     let mutable tournamentLoaded = reloadTournament
     let mutable tournament = if reloadTournament then loadTournament() else Tournament.Empty
     let mutable resultsFromPGN = ResizeArray<Result>()
     let mutable pgnReader = None
-    let mutable consoleMode = consoleOnly
     let mutable taggedSink : (string -> Update -> unit) option = None
+    // 0 idle, 1 running, 2 retired while running (close the PGN when the run ends), 3 retired
+    let mutable lifecycle = 0
     // each engine's CPU and memory over the tournament, for the console's closing table
     let resources = Game.ResourceMonitor.Totals()
-    let executablePath() = tournament.OrdoExePath
+    // no Ordo for a cup: a knockout's games say who went through, not how strong anyone is
+    let executablePath() =
+      if String.Equals((if isNull tournament.TournamentMode then "" else tournament.TournamentMode.Trim()), "cup", StringComparison.OrdinalIgnoreCase) then ""
+      else tournament.OrdoExePath
 
     // Serializes Ordo calls on a background thread with "latest wins" draining
     let ordoAgent = MailboxProcessor<PlayerResult[] * string * string>.Start(fun inbox ->
@@ -357,6 +333,17 @@ module Manager =
             ChessLibrary.FullPGNParser.closePgnAgent reader
             pgnReader <- None
         | None -> ()
+
+    /// A new runner takes this one's place (the WebGUI makes one per tournament): its PGN file
+    /// is closed now, or when its run ends - the run writes through it until then.
+    member x.Retire() =
+        // retried: a run can end between reading the state and swapping it
+        let rec retire () =
+            match Volatile.Read &lifecycle with
+            | 0 -> if Interlocked.CompareExchange(&lifecycle, 3, 0) = 0 then x.DisposePgnReader() else retire ()
+            | 1 -> if Interlocked.CompareExchange(&lifecycle, 2, 1) <> 1 then retire ()
+            | _ -> ()
+        retire ()
 
     member x.SendResponse (update: Update) =
       // Raise the callback with a proper Update response
@@ -439,6 +426,19 @@ module Manager =
         logger.LogWarning("Invalid user adjudication result string: {Result}", result)
 
     member x.Run() =
+      // a retired runner is not run: nobody would close the file its run opens
+      if Interlocked.CompareExchange(&lifecycle, 1, 0) <> 0 then
+        logger.LogWarning("A replaced tournament runner was asked to run - ignored")
+        []
+      else
+      try x.RunOnce()
+      finally
+        // retired while it ran: nobody reads this runner's PGN any more
+        if Interlocked.CompareExchange(&lifecycle, 0, 1) = 2 then
+          lifecycle <- 3
+          x.DisposePgnReader()
+
+    member private x.RunOnce() =
       try
         // Ensure external shutdowns are translated to our CTS cancellation
         Console.CancelKeyPress.Add(fun args ->
@@ -452,6 +452,8 @@ module Manager =
         // GetPGNGames() uses the same agent workers write to.
         // Must be created BEFORE GetResults() so PgnReader returns this
         // agent instead of lazily creating a separate one that gets leaked.
+        // a reader opened before the run (the page reads results first) would be orphaned
+        x.DisposePgnReader()
         let agent =
             if String.IsNullOrWhiteSpace tournament.PgnOutPath |> not then
                 let a = FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
@@ -459,7 +461,7 @@ module Manager =
                 Some a
             else None
         resultsFromPGN <- x.GetResults()
-        startTournament cts tournament logger x.SendResponse taggedSink consoleMode tryDequeueUserAdjudication agent
+        startTournament cts tournament logger x.SendResponse taggedSink tryDequeueUserAdjudication agent
       with
       | :? OperationCanceledException ->
         logger.LogInformation("Tournament cancelled.")

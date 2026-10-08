@@ -1,0 +1,160 @@
+total 14
+pairings 
+pairings 1.1:e1-e6#0 1.2:e6-e1#0
+play #1 1.1 e1-e6 o8
+play #2 1.2 e6-e1 o8
+total 16
+pairings 1.3:e1-e6#0 1.4:e6-e1#0
+play #3 1.3 e1-e6 o6
+play #4 1.4 e6-e1 o6
+total 18
+pairings 1.5:e1-e6#0 1.6:e6-e1#0
+play #5 1.5 e1-e6 o7
+play #6 1.6 e6-e1 o7
+bracket next=0 order=7,5,6,2,11,9,8,10,3,1,0,4
+  r1 #1 e1-e6 3.0-2.0 winner=- false order=
+    g1 e1-e6 o8 1/2-1/2
+    g2 e6-e1 o8 1/2-1/2
+    g3 e1-e6 o6 0-1
+    g4 e6-e1 o6 0-1
+    g5 e1-e6 o7 1-0
+  r1 #2 e3-e8 0.0-0.0 winner=- false order=
+  r1 #3 e2-e5 0.0-0.0 winner=- false order=
+  r1 #4 e4-e7 0.0-0.0 winner=- false order=
+  r2 #5 TBD-TBD 0.0-0.0 winner=- false order=
+  r2 #6 TBD-TBD 0.0-0.0 winner=- false order=
+  r3 #7 TBD-TBD 0.0-0.0 winner=- false order=
+cancelled
+--- resume
+total 18
+pairings 
+pairings 1.6:e6-e1#0
+play #6 1.6 e6-e1 o7
+total 20
+pairings 1.7:e1-e6#0 1.8:e6-e1#0
+play #7 1.7 e1-e6 o3
+play #8 1.8 e6-e1 o3
+total 22
+pairings 1.9:e1-e6#0 1.10:e6-e1#0
+play #9 1.9 e1-e6 o12
+play #10 1.10 e6-e1 o12
+pairings 1.11:e3-e8#0 1.12:e8-e3#0
+play #11 1.11 e3-e8 o8
+play #12 1.12 e8-e3 o8
+total 24
+pairings 1.13:e3-e8#0 1.14:e8-e3#0
+play #13 1.13 e3-e8 o6
+play #14 1.14 e8-e3 o6
+total 26
+pairings 1.15:e3-e8#0 1.16:e8-e3#0
+play #15 1.15 e3-e8 o7
+play #16 1.16 e8-e3 o7
+total 28
+pairings 1.17:e3-e8#0 1.18:e8-e3#0
+play #17 1.17 e3-e8 o3
+play #18 1.18 e8-e3 o3
+total 30
+pairings 1.19:e3-e8#0 1.20:e8-e3#0
+play #19 1.19 e3-e8 o12
+play #20 1.20 e8-e3 o12
+pairings 1.21:e2-e5#0 1.22:e5-e2#0
+play #21 1.21 e2-e5 o8
+play #22 1.22 e5-e2 o8
+pairings 1.23:e4-e7#0 1.24:e7-e4#0
+play #23 1.23 e4-e7 o8
+play #24 1.24 e7-e4 o8
+pairings 2.1:e6-e3#0 2.2:e3-e6#0
+play #25 2.1 e6-e3 o8
+play #26 2.2 e3-e6 o8
+pairings 2.3:e2-e7#0 2.4:e7-e2#0
+play #27 2.3 e2-e7 o8
+play #28 2.4 e7-e2 o8
+total 32
+pairings 2.5:e2-e7#0 2.6:e7-e2#0
+play #29 2.5 e2-e7 o6
+play #30 2.6 e7-e2 o6
+total 34
+pairings 2.7:e2-e7#0 2.8:e7-e2#0
+play #31 2.7 e2-e7 o7
+play #32 2.8 e7-e2 o7
+total 36
+pairings 2.9:e2-e7#0 2.10:e7-e2#0
+play #33 2.9 e2-e7 o3
+play #34 2.10 e7-e2 o3
+total 38
+pairings 2.11:e2-e7#0 2.12:e7-e2#0
+play #35 2.11 e2-e7 o12
+play #36 2.12 e7-e2 o12
+pairings 3.1:e3-e2#0 3.2:e2-e3#0
+play #37 3.1 e3-e2 o8
+play #38 3.2 e2-e3 o8
+total 40
+pairings 3.3:e3-e2#0 3.4:e2-e3#0
+play #39 3.3 e3-e2 o6
+play #40 3.4 e2-e3 o6
+total 42
+pairings 3.5:e3-e2#0 3.6:e2-e3#0
+play #41 3.5 e3-e2 o7
+play #42 3.6 e2-e3 o7
+total 44
+pairings 3.7:e3-e2#0 3.8:e2-e3#0
+play #43 3.7 e3-e2 o3
+play #44 3.8 e2-e3 o3
+total 46
+pairings 3.9:e3-e2#0 3.10:e2-e3#0
+play #45 3.9 e3-e2 o12
+play #46 3.10 e2-e3 o12
+bracket next=0 order=7,5,6,2,11,9,8,10,3,1,0,4
+  r1 #1 e1-e6 4.0-6.0 winner=e6 true order=
+    g1 e1-e6 o8 1/2-1/2
+    g2 e6-e1 o8 1/2-1/2
+    g3 e1-e6 o6 0-1
+    g4 e6-e1 o6 0-1
+    g5 e1-e6 o7 1-0
+    g6 e6-e1 o7 1-0
+    g7 e1-e6 o3 1/2-1/2
+    g8 e6-e1 o3 1/2-1/2
+    g9 e1-e6 o12 0-1
+    g10 e6-e1 o12 1-0
+  r1 #2 e3-e8 5.5-4.5 winner=e3 true order=
+    g11 e3-e8 o8 0-1
+    g12 e8-e3 o8 0-1
+    g13 e3-e8 o6 1-0
+    g14 e8-e3 o6 1-0
+    g15 e3-e8 o7 1/2-1/2
+    g16 e8-e3 o7 1/2-1/2
+    g17 e3-e8 o3 0-1
+    g18 e8-e3 o3 0-1
+    g19 e3-e8 o12 1-0
+    g20 e8-e3 o12 1/2-1/2
+  r1 #3 e2-e5 2.0-0.0 winner=e2 true order=
+    g21 e2-e5 o8 1-0
+    g22 e5-e2 o8 0-1
+  r1 #4 e4-e7 0.5-1.5 winner=e7 true order=
+    g23 e4-e7 o8 1/2-1/2
+    g24 e7-e4 o8 1-0
+  r2 #5 e6-e3 0.5-1.5 winner=e3 true order=
+    g25 e6-e3 o8 1/2-1/2
+    g26 e3-e6 o8 1-0
+  r2 #6 e2-e7 5.5-4.5 winner=e2 true order=
+    g27 e2-e7 o8 0-1
+    g28 e7-e2 o8 0-1
+    g29 e2-e7 o6 1-0
+    g30 e7-e2 o6 1-0
+    g31 e2-e7 o7 1/2-1/2
+    g32 e7-e2 o7 1/2-1/2
+    g33 e2-e7 o3 0-1
+    g34 e7-e2 o3 0-1
+    g35 e2-e7 o12 1-0
+    g36 e7-e2 o12 1/2-1/2
+  r3 #7 e3-e2 4.5-5.5 winner=e2 true order=
+    g37 e3-e2 o8 1-0
+    g38 e2-e3 o8 1-0
+    g39 e3-e2 o6 1/2-1/2
+    g40 e2-e3 o6 1/2-1/2
+    g41 e3-e2 o7 0-1
+    g42 e2-e3 o7 0-1
+    g43 e3-e2 o3 1-0
+    g44 e2-e3 o3 1-0
+    g45 e3-e2 o12 1/2-1/2
+    g46 e2-e3 o12 1-0

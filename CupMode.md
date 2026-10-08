@@ -15,7 +15,6 @@ Cup mode is a single-elimination knockout tournament where players advance by wi
   "RoundPairIncrements": [1, 2, 3],
   "SeedingStrategy": "ByRating",
   "UniquePerMatchOnly": true,
-  "BracketPath": "wwwroot/cup_bracket.json",
   "RandomOpenings": true
 }
 ```
@@ -27,7 +26,7 @@ Cup mode is a single-elimination knockout tournament where players advance by wi
 | `RoundPairIncrements` | Pairs per round. Each pair = 2 games. Example: `[1,2,3]` means Round 1 has 2 games, Round 2 has 4, Round 3 has 6. Rounds beyond the list reuse its last value, and an entry below 1 counts as 1. Defaults to `[1]` if empty. |
 | `SeedingStrategy` | `ByRating` (seeded bracket) or `Random` (shuffled bracket). The shuffle comes from `Opening.Seed`, so the same config gives the same draw. |
 | `UniquePerMatchOnly` | When true, openings can repeat across matches but not within a match. |
-| `BracketPath` | JSON file for bracket state persistence and GUI updates. |
+| `BracketPath` | The bracket state file (resume and GUI). Optional; leave it out. By default the file sits next to the tournament's PGN, named after it (`MyCup.pgn` → `MyCup_cup_bracket.json`), so every tournament keeps its own. Set it only to keep the file somewhere else. The old shared default `wwwroot/cup_bracket.json` counts as not set. A tournament without a PGN keeps its state in `wwwroot/cup_bracket.json`. |
 | `RandomOpenings` | Randomize opening order; the shuffled order is persisted for resume. |
 
 ## Bracket Structure
@@ -98,7 +97,7 @@ When a match is tied after scheduled pairs, additional tiebreak pairs are played
 
 ## State Persistence
 
-Bracket state is saved to `BracketPath` (JSON) after each game, including:
+Bracket state is saved to the bracket file (next to the PGN unless `BracketPath` is set) after each game, including:
 - Tournament name and settings
 - All rounds with match details
 - Per-match scores, winner, and game results
@@ -107,16 +106,18 @@ Bracket state is saved to `BracketPath` (JSON) after each game, including:
 ### Resume Behavior
 
 To resume a cup tournament:
-1. Ensure the bracket file exists at `BracketPath`
+1. Run the same tournament again: its bracket file (next to the PGN unless `BracketPath` is set) is found
 2. The bracket state is the source of truth
 3. Completed matches are skipped; in-progress matches continue from where they left off
+
+Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines).
 
 ## Files Written
 
 | File | Content |
 |------|---------|
-| `cup_bracket.json` | Current bracket state, scores, and match results |
-| PGN file | Game records (configured separately) |
+| `<PGN name>_cup_bracket.json` | Current bracket state, scores, and match results |
+| PGN file | Game records (configured separately). Each game's `Round` is `round.n`, numbered in the order played across the round's matches, tiebreak games included: if match 1 takes games 1.1-1.4, match 2 starts at 1.5. |
 
 ## UI Integration
 

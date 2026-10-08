@@ -160,6 +160,7 @@
 		<Compile Include="Tournament\LiveFeedRecorder.fs" />
 		<Compile Include="Tournament\LiveFeedHttpSink.fs" />
 		<Compile Include="Tournament\TournamentState.fs" />
+		<Compile Include="Tournament\StatePaths.fs" />
 		<Compile Include="Tournament\TablebaseProbe.fs" />
 		<Compile Include="Tournament\GameReplay.fs" />
 		<Compile Include="Tournament\GameAdjudication.fs" />
@@ -181,6 +182,10 @@
 		<Compile Include="Tournament\MatchScore.fs" />
 		<Compile Include="Tournament\LadderProgress.fs" />
 		<Compile Include="Tournament\SwissProgress.fs" />
+		<Compile Include="Tournament\ModeRunner.fs" />
+		<Compile Include="Tournament\SwissMachine.fs" />
+		<Compile Include="Tournament\CupMachine.fs" />
+		<Compile Include="Tournament\LadderMachine.fs" />
 		<Compile Include="Tournament\TournamentRunners.fs" />
 		<Compile Include="Tournament\ReplayGate.fs" />
 		<Compile Include="Tournament\ParallelExecution.fs" />

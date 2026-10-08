@@ -11,13 +11,13 @@
             <MudStack Spacing="2">
                 <MudText Typo="Typo.h5">@Title</MudText>
                 <MudText Typo="Typo.body2">@Subtitle</MudText>
-                <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="0"
+                <LadderProgressTable StatePath="@StatePath" FontSize="@FontSize" Height="0"
                                      ElementId="ladderDialogDiv" />
             </MudStack>
         }
         else
         {
-            <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="0"
+            <LadderProgressTable StatePath="@StatePath" FontSize="@FontSize" Height="0"
                                      ElementId="ladderDialogDiv" />
         }
     </DialogContent>
@@ -40,11 +40,6 @@
     [Parameter] public bool LadderInvalid { get; set; }
     [Parameter] public bool ShowActions { get; set; }
     [Parameter] public int FontSize { get; set; }
-
-    private string StateFileName =>
-        string.IsNullOrWhiteSpace(StatePath)
-            ? "ladder_state.json"
-            : Path.GetFileName(StatePath);
 
     private string Title =>
         LadderInvalid ? "Ladder state is unreadable" :

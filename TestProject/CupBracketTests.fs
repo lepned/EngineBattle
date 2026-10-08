@@ -147,7 +147,7 @@ let ``cup planned pairings include remaining games in match`` () =
     let playOrder = [ (playerA, playerB); (playerB, playerA) ]
 
     let planned =
-        buildRemainingCupPairings matchInfo playerA playerB openings openings.[0] playOrder 6 0
+        buildRemainingCupPairings matchInfo playerA playerB openings openings.[0] playOrder 6 0 matchInfo.Games.Count
 
     Assert.Equal(6, planned.Count)
     let openingRaws = planned |> Seq.map (fun p -> p.Opening.Raw) |> Seq.toList
@@ -171,7 +171,7 @@ let ``cup planned pairings continue after odd game`` () =
           Result = "1-0" }
 
     let planned =
-        buildRemainingCupPairings matchInfo playerA playerB openings openings.[0] [ (playerB, playerA) ] 3 1
+        buildRemainingCupPairings matchInfo playerA playerB openings openings.[0] [ (playerB, playerA) ] 3 1 matchInfo.Games.Count
 
     Assert.Equal(3, planned.Count)
     let openingRaws = planned |> Seq.map (fun p -> p.Opening.Raw) |> Seq.toList

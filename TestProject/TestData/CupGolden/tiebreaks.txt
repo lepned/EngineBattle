@@ -1,0 +1,93 @@
+total 6
+pairings 
+pairings 1.1:e1-e3#0 1.2:e3-e1#0
+play #1 1.1 e1-e3 o1
+play #2 1.2 e3-e1 o1
+total 8
+pairings 1.3:e1-e3#0 1.4:e3-e1#0
+play #3 1.3 e1-e3 o2
+play #4 1.4 e3-e1 o2
+total 10
+pairings 1.5:e1-e3#0 1.6:e3-e1#0
+play #5 1.5 e1-e3 o3
+play #6 1.6 e3-e1 o3
+total 12
+pairings 1.7:e1-e3#0 1.8:e3-e1#0
+play #7 1.7 e1-e3 o4
+play #8 1.8 e3-e1 o4
+total 14
+pairings 1.9:e1-e3#0 1.10:e3-e1#0
+play #9 1.9 e1-e3 o5
+play #10 1.10 e3-e1 o5
+pairings 1.11:e2-e4#0 1.12:e4-e2#0
+play #11 1.11 e2-e4 o1
+play #12 1.12 e4-e2 o1
+total 16
+pairings 1.13:e2-e4#0 1.14:e4-e2#0
+play #13 1.13 e2-e4 o2
+play #14 1.14 e4-e2 o2
+total 18
+pairings 1.15:e2-e4#0 1.16:e4-e2#0
+play #15 1.15 e2-e4 o3
+play #16 1.16 e4-e2 o3
+total 20
+pairings 1.17:e2-e4#0 1.18:e4-e2#0
+play #17 1.17 e2-e4 o4
+play #18 1.18 e4-e2 o4
+total 22
+pairings 1.19:e2-e4#0 1.20:e4-e2#0
+play #19 1.19 e2-e4 o5
+play #20 1.20 e4-e2 o5
+pairings 2.1:e3-e2#0 2.2:e2-e3#0
+play #21 2.1 e3-e2 o1
+play #22 2.2 e2-e3 o1
+total 24
+pairings 2.3:e3-e2#0 2.4:e2-e3#0
+play #23 2.3 e3-e2 o2
+play #24 2.4 e2-e3 o2
+total 26
+pairings 2.5:e3-e2#0 2.6:e2-e3#0
+play #25 2.5 e3-e2 o3
+play #26 2.6 e2-e3 o3
+total 28
+pairings 2.7:e3-e2#0 2.8:e2-e3#0
+play #27 2.7 e3-e2 o4
+play #28 2.8 e2-e3 o4
+total 30
+pairings 2.9:e3-e2#0 2.10:e2-e3#0
+play #29 2.9 e3-e2 o5
+play #30 2.10 e2-e3 o5
+bracket next=0 order=
+  r1 #1 e1-e3 4.0-6.0 winner=e3 true order=
+    g1 e1-e3 o1 1/2-1/2
+    g2 e3-e1 o1 1/2-1/2
+    g3 e1-e3 o2 0-1
+    g4 e3-e1 o2 0-1
+    g5 e1-e3 o3 1-0
+    g6 e3-e1 o3 1-0
+    g7 e1-e3 o4 1/2-1/2
+    g8 e3-e1 o4 1/2-1/2
+    g9 e1-e3 o5 0-1
+    g10 e3-e1 o5 1-0
+  r1 #2 e2-e4 5.5-4.5 winner=e2 true order=
+    g11 e2-e4 o1 1/2-1/2
+    g12 e4-e2 o1 1/2-1/2
+    g13 e2-e4 o2 1/2-1/2
+    g14 e4-e2 o2 1/2-1/2
+    g15 e2-e4 o3 0-1
+    g16 e4-e2 o3 0-1
+    g17 e2-e4 o4 1-0
+    g18 e4-e2 o4 1-0
+    g19 e2-e4 o5 1/2-1/2
+    g20 e4-e2 o5 0-1
+  r2 #3 e3-e2 4.0-6.0 winner=e2 true order=
+    g21 e3-e2 o1 1/2-1/2
+    g22 e2-e3 o1 1/2-1/2
+    g23 e3-e2 o2 0-1
+    g24 e2-e3 o2 0-1
+    g25 e3-e2 o3 1-0
+    g26 e2-e3 o3 1-0
+    g27 e3-e2 o4 1/2-1/2
+    g28 e2-e3 o4 1/2-1/2
+    g29 e3-e2 o5 0-1
+    g30 e2-e3 o5 1-0

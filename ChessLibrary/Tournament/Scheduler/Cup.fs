@@ -211,9 +211,11 @@ let buildRemainingCupPairings
     (currentPlayOrder: (EngineConfig * EngineConfig) list)
     (gamesRemaining: int)
     (localOpeningIndex: int)
+    (gamesBeforeInRound: int)
     : ResizeArray<Pairing>
     =
-    let baseIndex = matchInfo.Games.Count
+    // the round's games are numbered in the order played, across its matches (round.n)
+    let baseIndex = gamesBeforeInRound
     let mutable remaining = gamesRemaining
     let mutable nextIndex = localOpeningIndex
     let planned = ResizeArray<Pairing>()

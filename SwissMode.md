@@ -17,8 +17,7 @@ Swiss mode runs a fixed number of rounds where players with similar scores are p
   "SeedGroupCount": 1,
   "UniquePerMatchOnly": true,
   "RandomOpenings": true,
-  "AllowExtraPairsOnTie": true,
-  "StatePath": "wwwroot/swiss_state.json"
+  "AllowExtraPairsOnTie": true
 }
 ```
 
@@ -32,7 +31,7 @@ Swiss mode runs a fixed number of rounds where players with similar scores are p
 | `UniquePerMatchOnly` | When true, openings can repeat across matches but not within a match. |
 | `RandomOpenings` | Randomize opening order; the shuffled order is persisted for resume. |
 | `AllowExtraPairsOnTie` | Play extra pairs to break ties at the top after scheduled rounds. |
-| `StatePath` | JSON file for state persistence and GUI updates. |
+| `StatePath` | The state file (resume and GUI). Optional; leave it out. By default the file sits next to the tournament's PGN, named after it (`MySwiss.pgn` → `MySwiss_swiss_state.json`), so every tournament keeps its own. Set it only to keep the file somewhere else. The old shared default `wwwroot/swiss_state.json` counts as not set. A tournament without a PGN keeps its state in `wwwroot/swiss_state.json`. |
 
 ## Seeding
 
@@ -115,7 +114,9 @@ A tie for first between three or more players at the end is broken by Sonneborn-
 
 ## State Persistence
 
-Swiss state is saved to `StatePath` (JSON) after each game, including:
+Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines).
+
+Swiss state is saved to the state file (next to the PGN unless `StatePath` is set) after each game, including:
 - Current round number and global opening index
 - All pairings per round with results
 - Opening order (for resume consistency)

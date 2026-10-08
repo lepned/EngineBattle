@@ -234,26 +234,6 @@ let parallelTournamentRun
   (tryGetUserAdjudication: unit -> UserAdjudication option)
   (cts: CancellationTokenSource)
   (externalPgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
-  // Ladder, Cup, and Swiss manage their own pairings — dispatch directly
-  let mode = if String.IsNullOrWhiteSpace tourny.TournamentMode then "" else tourny.TournamentMode.Trim().ToLowerInvariant()
-  ChessLibrary.Engine.resetPrintedEngines()
-  // Same reason, and this sits above the mode dispatch so it covers cup, swiss and ladder too:
-  // the WebGUI runs many tournaments in one process, and a prober failure reported during the
-  // first must not leave every run after it silent. It also opens the tables in the background.
-  ChessLibrary.TablebaseProbe.startRun tourny.Adjudication.TBAdj.UseTBAdjudication tourny.Adjudication.TBAdj.TBMen tourny.Adjudication.TBAdj.TablebaseDirectory
-  match mode with
-  | "ladder" ->
-      TournamentRunners.ladder logger tourny callback cts tryGetUserAdjudication externalPgnAgent
-  | "cup" ->
-      let seeding =
-        match tourny.CupOptions.SeedingStrategy with
-        | null -> TournamentPairing.PairingHelper.CupSeedingStrategy.ByRating
-        | s when s.Equals("random", StringComparison.OrdinalIgnoreCase) -> TournamentPairing.PairingHelper.CupSeedingStrategy.Random
-        | _ -> TournamentPairing.PairingHelper.CupSeedingStrategy.ByRating
-      TournamentRunners.cup seeding tourny.CupOptions.UniquePerMatchOnly false logger tourny callback cts tryGetUserAdjudication externalPgnAgent
-  | "swiss" ->
-      TournamentRunners.swiss logger tourny callback cts tryGetUserAdjudication externalPgnAgent
-  | _ ->
   async {
 
       logger.LogInformation("Tournament in parallel run about to start")

@@ -23,6 +23,16 @@ let decide (scoreA: float) (scoreB: float) (gamesLeft: int) =
   elif scoreB > scoreA + float gamesLeft then Some SideB
   else None
 
+/// The games a match still has to play (cup and ladder): what is left of the scheduled games, then -
+/// tied, in tiebreak pairs - the second game of a half-played pair. A finished pair leaves none:
+/// the next pair is added when the tie stands.
+let gamesLeft (scheduled: int) (played: int) =
+  if played < scheduled then scheduled - played else played % 2
+
+/// The games an undecided match counts in the tournament's total: the scheduled ones, or every
+/// tiebreak pair it has begun.
+let gamesCounted (scheduled: int) (played: int) = max scheduled (played + played % 2)
+
 /// Where a cup match's winner plays next: the match index in the next round, and whether as
 /// player A (even matches) or B.
 let nextSlot (matchIndex: int) = matchIndex / 2, matchIndex % 2 = 0

@@ -1,0 +1,88 @@
+total 8
+pairings 
+pairings 1.1:e5-e4#0:o11 1.2:e4-e5#0:o11
+play #1 1.1 e5-e4 o11
+play #2 1.2 e4-e5 o11
+total 10
+pairings 1.3:e5-e4#0:o4 1.4:e4-e5#0:o4
+play #3 1.3 e5-e4 o4
+play #4 1.4 e4-e5 o4
+ladder next=2 order=10,3,5,7,6,0,8,2,9,11,1,4 climb=1 climber=4
+  rankings=e1,e2,e3,e4,e5 surviving=e1,e2,e3,e4,e5 eliminated=
+  #1 climb1 e5-e4 1.5-1.5 winner=- false
+    g1 e5-e4 o11 1-0
+    g2 e4-e5 o11 1-0
+    g3 e5-e4 o4 1/2-1/2
+cancelled
+--- resume
+total 10
+pairings 
+pairings 1.4:e4-e5#0:o4
+play #4 1.4 e4-e5 o4
+total 12
+pairings 1.5:e5-e4#0:o6 1.6:e4-e5#0:o6
+play #5 1.5 e5-e4 o6
+play #6 1.6 e4-e5 o6
+total 14
+pairings 1.7:e5-e4#0:o8 1.8:e4-e5#0:o8
+play #7 1.7 e5-e4 o8
+play #8 1.8 e4-e5 o8
+total 16
+pairings 1.9:e5-e4#0:o7 1.10:e4-e5#0:o7
+play #9 1.9 e5-e4 o7
+play #10 1.10 e4-e5 o7
+pairings 1.11:e5-e3#0:o1 1.12:e3-e5#0:o1
+play #11 1.11 e5-e3 o1
+play #12 1.12 e3-e5 o1
+pairings 1.13:e5-e2#0:o9 1.14:e2-e5#0:o9
+play #13 1.13 e5-e2 o9
+play #14 1.14 e2-e5 o9
+pairings 1.15:e5-e1#0:o3 1.16:e1-e5#0:o3
+play #15 1.15 e5-e1 o3
+play #16 1.16 e1-e5 o3
+total 18
+pairings 1.17:e5-e1#0:o10 1.18:e1-e5#0:o10
+play #17 1.17 e5-e1 o10
+play #18 1.18 e1-e5 o10
+total 20
+pairings 1.19:e5-e1#0:o12 1.20:e1-e5#0:o12
+play #19 1.19 e5-e1 o12
+play #20 1.20 e1-e5 o12
+total 22
+pairings 1.21:e5-e1#0:o2 1.22:e1-e5#0:o2
+play #21 1.21 e5-e1 o2
+play #22 1.22 e1-e5 o2
+total 24
+pairings 1.23:e5-e1#0:o5 1.24:e1-e5#0:o5
+play #23 1.23 e5-e1 o5
+play #24 1.24 e1-e5 o5
+ladder next=12 order=10,3,5,7,6,0,8,2,9,11,1,4 climb=2 climber=0
+  rankings=e1,e2,e3,e4,e5 surviving=e5 eliminated=e4,e3,e2,e1
+  #1 climb1 e5-e4 5.5-4.5 winner=e5 true
+    g1 e5-e4 o11 1-0
+    g2 e4-e5 o11 1-0
+    g3 e5-e4 o4 1/2-1/2
+    g4 e4-e5 o4 1/2-1/2
+    g5 e5-e4 o6 0-1
+    g6 e4-e5 o6 0-1
+    g7 e5-e4 o8 1-0
+    g8 e4-e5 o8 1-0
+    g9 e5-e4 o7 1/2-1/2
+    g10 e4-e5 o7 0-1
+  #2 climb1 e5-e3 1.5-0.5 winner=e5 true
+    g11 e5-e3 o1 1-0
+    g12 e3-e5 o1 1/2-1/2
+  #3 climb1 e5-e2 2.0-0.0 winner=e5 true
+    g13 e5-e2 o9 1-0
+    g14 e2-e5 o9 0-1
+  #4 climb1 e5-e1 5.5-4.5 winner=e5 true
+    g15 e5-e1 o3 1-0
+    g16 e1-e5 o3 1-0
+    g17 e5-e1 o10 1/2-1/2
+    g18 e1-e5 o10 1/2-1/2
+    g19 e5-e1 o12 0-1
+    g20 e1-e5 o12 0-1
+    g21 e5-e1 o2 1-0
+    g22 e1-e5 o2 1-0
+    g23 e5-e1 o5 1/2-1/2
+    g24 e1-e5 o5 0-1

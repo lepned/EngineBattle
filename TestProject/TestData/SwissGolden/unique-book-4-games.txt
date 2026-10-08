@@ -1,0 +1,65 @@
+total 24
+pairings 1.1:e3-e4#1 1.2:e4-e3#2 1.3:e3-e4#3 1.4:e4-e3#4 1.5:e1-e2#5 1.6:e2-e1#6 1.7:e1-e2#7 1.8:e2-e1#8
+play #1 1.1 e3-e4 o1
+play #2 1.2 e4-e3 o1
+play #3 1.3 e3-e4 o2
+play #4 1.4 e4-e3 o2
+pairings 1.5:e1-e2#5 1.6:e2-e1#6 1.7:e1-e2#7 1.8:e2-e1#8
+play #5 1.5 e1-e2 o1
+play #6 1.6 e2-e1 o1
+play #7 1.7 e1-e2 o2
+play #8 1.8 e2-e1 o2
+pairings 
+pairings 2.1:e3-e2#9 2.2:e2-e3#10 2.3:e3-e2#11 2.4:e2-e3#12 2.5:e1-e4#13 2.6:e4-e1#14 2.7:e1-e4#15 2.8:e4-e1#16
+play #9 2.1 e3-e2 o1
+play #10 2.2 e2-e3 o1
+play #11 2.3 e3-e2 o2
+play #12 2.4 e2-e3 o2
+pairings 2.5:e1-e4#13 2.6:e4-e1#14 2.7:e1-e4#15 2.8:e4-e1#16
+play #13 2.5 e1-e4 o1
+play #14 2.6 e4-e1 o1
+play #15 2.7 e1-e4 o2
+play #16 2.8 e4-e1 o2
+pairings 
+pairings 3.1:e2-e4#17 3.2:e4-e2#18 3.3:e2-e4#19 3.4:e4-e2#20 3.5:e1-e3#21 3.6:e3-e1#22 3.7:e1-e3#23 3.8:e3-e1#24
+play #17 3.1 e2-e4 o1
+play #18 3.2 e4-e2 o1
+play #19 3.3 e2-e4 o2
+play #20 3.4 e4-e2 o2
+pairings 3.5:e1-e3#21 3.6:e3-e1#22 3.7:e1-e3#23 3.8:e3-e1#24
+play #21 3.5 e1-e3 o1
+play #22 3.6 e3-e1 o1
+play #23 3.7 e1-e3 o2
+play #24 3.8 e3-e1 o2
+pairings 
+state next=0 order=
+  r1 #1 e3-e4 1.5-2.5 true order=
+    g1 e3-e4 o1 0-1
+    g2 e4-e3 o1 1-0
+    g3 e3-e4 o2 1-0
+    g4 e4-e3 o2 1/2-1/2
+  r1 #2 e1-e2 3.0-1.0 true order=
+    g5 e1-e2 o1 1-0
+    g6 e2-e1 o1 1/2-1/2
+    g7 e1-e2 o2 1/2-1/2
+    g8 e2-e1 o2 0-1
+  r2 #3 e3-e2 2.0-2.0 true order=
+    g9 e3-e2 o1 1/2-1/2
+    g10 e2-e3 o1 1/2-1/2
+    g11 e3-e2 o2 0-1
+    g12 e2-e3 o2 0-1
+  r2 #4 e1-e4 2.5-1.5 true order=
+    g13 e1-e4 o1 0-1
+    g14 e4-e1 o1 1/2-1/2
+    g15 e1-e4 o2 1-0
+    g16 e4-e1 o2 0-1
+  r3 #5 e4-e2 2.0-2.0 true order=
+    g17 e2-e4 o1 1/2-1/2
+    g18 e4-e2 o1 1/2-1/2
+    g19 e2-e4 o2 0-1
+    g20 e4-e2 o2 0-1
+  r3 #6 e1-e3 2.0-2.0 true order=
+    g21 e1-e3 o1 1/2-1/2
+    g22 e3-e1 o1 1/2-1/2
+    g23 e1-e3 o2 0-1
+    g24 e3-e1 o2 0-1

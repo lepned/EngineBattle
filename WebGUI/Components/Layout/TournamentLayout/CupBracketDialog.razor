@@ -1,10 +1,11 @@
 <MudDialog>
     <DialogContent>
-        <CupBracketView UseContainer="false" ShowPath="false" ShowRefresh="false" FontSize="@FontSize" />
+        <CupBracketView UseContainer="false" ShowPath="false" ShowRefresh="false" FontSize="@FontSize" BracketPath="@BracketPath" />
     </DialogContent>
 </MudDialog>
 
 @code {
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
     [Parameter] public int FontSize { get; set; }
+    [Parameter] public string BracketPath { get; set; } = "";
 }

@@ -13,8 +13,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
 ```json
 "LadderOptions": {
   "GamePairsPerMatch": 4,
-  "RandomOpenings": true,
-  "StatePath": "wwwroot/ladder_state.json"
+  "RandomOpenings": true
 }
 ```
 
@@ -24,7 +23,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
 |-------|------|---------|-------------|
 | `GamePairsPerMatch` | int | 4 | Game pairs per mini-match. Each pair is 2 games with reversed colors, so total games per match = value x 2. Minimum 1. |
 | `RandomOpenings` | bool | false | Randomize opening order. The shuffled order is created once and persisted for resume consistency. |
-| `StatePath` | string | `wwwroot/ladder_state.json` | Path for state persistence. Relative or absolute. Parent directories are created if missing. |
+| `StatePath` | string | next to the PGN | The state file (resume and GUI). Optional; leave it out. By default the file sits next to the tournament's PGN, named after it (`MyLadder.pgn` → `MyLadder_ladder_state.json`), so every tournament keeps its own. Set it only to keep the file somewhere else. The old shared default `wwwroot/ladder_state.json` counts as not set. A tournament without a PGN keeps its state in `wwwroot/ladder_state.json`. Relative or absolute; parent directories are created if missing. |
 
 ## How It Works
 
@@ -75,7 +74,7 @@ The climb number increments with each new attempt. Match identifiers include the
 
 ## State Persistence
 
-Ladder state is saved to `StatePath` (JSON) after every game, including:
+Ladder state is saved to the state file (next to the PGN unless `StatePath` is set) after every game, including:
 
 - Initial rankings and current surviving/eliminated engines
 - Current climb number and climber position
@@ -133,7 +132,11 @@ Climb 2: surviving = [A, B, C], new climber = C (bottom)
       → A is champion (1st place)
 ```
 
-## State File Format (ladder_state.json)
+Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines).
+
+In the PGN each game's `Round` is `climb.n`, numbered in the order played across the climb's matches, tiebreak games included.
+
+## State File Format (`<PGN name>_ladder_state.json`)
 
 Note that the state file's `GamePairsPerMatch` holds the number of **games** per match (the config's pairs x 2), so a config of 4 pairs is written as 8.
 

@@ -127,7 +127,8 @@ else
     [Parameter] public bool ShowPath { get; set; } = true;
     [Parameter] public bool ShowRefresh { get; set; } = true;
     [Parameter] public bool UseContainer { get; set; } = true;
-    [Parameter] public string StateFileName { get; set; } = "swiss_state.json";
+    /// <summary>The state file; empty = the one tournament.json configures.</summary>
+    [Parameter] public string StatePath { get; set; } = "";
     [Parameter] public int FontSize { get; set; }
 
     private SwissStateModel state;
@@ -145,7 +146,7 @@ else
     private async Task LoadState()
     {
         loadError = null;
-        statePath = Path.Combine(Environment.ContentRootPath, "wwwroot", StateFileName);
+        statePath = string.IsNullOrWhiteSpace(StatePath) ? ModeStatePaths.Swiss(Environment.ContentRootPath, ModeStatePaths.Configured(Environment.ContentRootPath)) : StatePath;
         if (!File.Exists(statePath))
         {
             state = null;

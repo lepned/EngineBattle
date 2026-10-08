@@ -100,6 +100,8 @@ namespace WebGUI.Services
         {
             if (IsRunning)
                 throw new InvalidOperationException("Tournament already running. Cancel first.");
+            // the replaced runner's PGN file is closed (after its run, if a cancelled one is still ending)
+            _runner?.Retire();
             _runner = NewRunner(logger);
             _runner.LinkCancellation(shutdown.Token);
             return _runner;
@@ -107,7 +109,7 @@ namespace WebGUI.Services
 
         private Tournament.Manager.Runner NewRunner(ILogger logger)
         {
-            var runner = new Tournament.Manager.Runner(logger, HandleUpdate, true, false);
+            var runner = new Tournament.Manager.Runner(logger, HandleUpdate, true);
             // In-process tagged tee for the multi-board grid: gameId-stamped wire lines go straight
             // into JsonFeedService (no HTTP loopback, no file). Only the parallel runner invokes the
             // sink; sequential runs never see it. JsonFeedService caches per-game snapshots even with
