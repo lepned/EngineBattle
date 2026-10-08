@@ -59,23 +59,28 @@ let findAllDeviationsForPlayersAlt (pgnGames: PgnGame seq) (refPlayer: string op
       for game in games do
         let gameMoveStore = ResizeArray<MoveStore>()
         let replayBoard = new Chess.Board()
-        let mutable pos = replayBoard.Position
-        if game.Fen <> "" then
-          replayBoard.LoadFen game.Fen
+        // a game whose FEN cannot be set up is left out: one bad game must not end the analysis
+        let setUp = game.Fen = "" || (try replayBoard.LoadFen game.Fen; true with _ -> false)
+        if setUp then
+          let mutable idx = 0
+          let mutable diverged = false
+          for m in movesFromPgn game do
+            if not diverged then
+              idx <- idx + 1
+              // a move PlaySanMove cannot resolve leaves the board where it was: the rest of the game
+              // no longer matches it (reading the last UCI would give the previous move)
+              let movesBefore = replayBoard.UciMovesPlayed.Count
+              replayBoard.PlaySanMove m
+              if replayBoard.UciMovesPlayed.Count = movesBefore then diverged <- true
+              else
+                let hash = replayBoard.DeviationHash()
+                let fen = replayBoard.FEN()
+                let longMove = replayBoard.UciMovesPlayed.[replayBoard.UciMovesPlayed.Count - 1]
+                let moveStore = createMoveStore longMove idx fen game.GameMetaData.White game.GameMetaData.Black hash
+                gameMoveStore.Add moveStore
 
-        let mutable idx = 0
-        let moves = movesFromPgn game
-        for m in moves do
-          idx <- idx + 1
-          replayBoard.PlaySanMove m
-          let hash = replayBoard.DeviationHash()
-          let fen = replayBoard.FEN()
-          let longMove = replayBoard.UciMovesPlayed.[replayBoard.UciMovesPlayed.Count - 1]
-          let moveStore = createMoveStore longMove idx fen game.GameMetaData.White game.GameMetaData.Black hash
-          gameMoveStore.Add moveStore
-
-        let moveStore = gameMoveStore |> Seq.toList
-        gameStore.Add (createGameStore moveStore game replayBoard openingHash)
+          let moveStore = gameMoveStore |> Seq.toList
+          gameStore.Add (createGameStore moveStore game replayBoard openingHash)
   gameStore
 
 
@@ -294,8 +299,10 @@ type OpeningCoverage =
   { FromSearchData: int
     FromBookMarker: int
     Unknown: int
-    Empty: int }
-  member this.Total = this.FromSearchData + this.FromBookMarker + this.Unknown + this.Empty
+    Empty: int
+    /// games left out: their FEN cannot be set up
+    BadStart: int }
+  member this.Total = this.FromSearchData + this.FromBookMarker + this.Unknown + this.Empty + this.BadStart
   /// True when some games had no way to tell opening moves from choices.
   member this.HasUnverifiedOpenings = this.Unknown > 0
 
@@ -339,72 +346,75 @@ module private PositionScan =
     let mutable fromMarker = 0
     let mutable unknown = 0
     let mutable empty = 0
+    let mutable badStart = 0
     for game in games do
       let board = Chess.Board()
-      if game.Fen <> "" then board.LoadFen game.Fen
-      let mutable abandoned = false
-      let isChoice, source = choicePlies game
-      match source with
-      | Opening.FromSearchData -> fromSearch <- fromSearch + 1
-      | Opening.FromBookMarker -> fromMarker <- fromMarker + 1
-      | Opening.Unknown -> unknown <- unknown + 1
-      | Opening.NoMoves -> empty <- empty + 1
-      let mutable plyIndex = -1
-      for san in movesFromPgn game do
-        plyIndex <- plyIndex + 1
-        let searched = plyIndex < isChoice.Length && isChoice.[plyIndex]
-        let fenBefore = board.FEN()
-        let parts = fenBefore.Split(' ')
-        let color = if parts.Length > 1 && parts.[1] = "b" then "b" else "w"
-        let moveNumber =
-          if parts.Length > 5 then
-            match System.Int32.TryParse parts.[5] with
-            | true, n -> n
-            | _ -> 0
-          else 0
-        let engine =
-          if color = "w" then game.GameMetaData.White else game.GameMetaData.Black
-        // Key = Zobrist position + halfmove clock.
-        //
-        // The Zobrist hash alone covers the board, side to move, castling and en passant, but
-        // not how the position was arrived at. Two games can show the same board while one is
-        // far closer to a fifty-move draw than the other, and an engine may rightly choose
-        // differently there. Measured on a 955-game file, keying on the position alone produced
-        // 129 self-deviations of which 48 had a different clock.
-        //
-        // The obvious guard is the ply number (what Board.DeviationHash adds), but ply is only a
-        // proxy: it also rejects transpositions whose context is genuinely identical. Keying on
-        // the clock instead kept all 48 out and recovered 8 of those, for 81.
-        let hashBefore = board.PositionHash() ^^^ (uint64 (halfmoveClock fenBefore) * 0x9E3779B97F4A7C15UL)
-        // PlaySanMove ignores input it cannot resolve - a null move, an ambiguous or illegal
-        // SAN - without throwing and without advancing the board. Reading the last UCI blindly
-        // would attribute the PREVIOUS ply's move to this position, inventing a deviation, and
-        // every later ply would be replayed from a board that no longer matches the PGN.
-        let movesBefore = board.UciMovesPlayed.Count
-        board.PlaySanMove san
-        let advanced = board.UciMovesPlayed.Count > movesBefore
-        let uci = if advanced then board.UciMovesPlayed.[board.UciMovesPlayed.Count - 1] else ""
-        let entry =
-          { Engine = engine
-            Uci = uci
-            San = san
-            GameNumber = game.GameNumber
-            Result = game.GameMetaData.Result
-            MoveNumber = moveNumber
-            Color = color
-            Fen = fenBefore }
-        if not advanced then
-          // Board and PGN have diverged; nothing later in this game can be trusted.
-          abandoned <- true
+      // a game whose FEN cannot be set up is left out and counted: one bad game must not end the scan
+      if game.Fen <> "" && not (try board.LoadFen game.Fen; true with _ -> false) then badStart <- badStart + 1
+      else
+        let mutable abandoned = false
+        let isChoice, source = choicePlies game
+        match source with
+        | Opening.FromSearchData -> fromSearch <- fromSearch + 1
+        | Opening.FromBookMarker -> fromMarker <- fromMarker + 1
+        | Opening.Unknown -> unknown <- unknown + 1
+        | Opening.NoMoves -> empty <- empty + 1
+        let mutable plyIndex = -1
+        for san in movesFromPgn game do
+          plyIndex <- plyIndex + 1
+          let searched = plyIndex < isChoice.Length && isChoice.[plyIndex]
+          let fenBefore = board.FEN()
+          let parts = fenBefore.Split(' ')
+          let color = if parts.Length > 1 && parts.[1] = "b" then "b" else "w"
+          let moveNumber =
+            if parts.Length > 5 then
+              match System.Int32.TryParse parts.[5] with
+              | true, n -> n
+              | _ -> 0
+            else 0
+          let engine =
+            if color = "w" then game.GameMetaData.White else game.GameMetaData.Black
+          // Key = Zobrist position + halfmove clock.
+          //
+          // The Zobrist hash alone covers the board, side to move, castling and en passant, but
+          // not how the position was arrived at. Two games can show the same board while one is
+          // far closer to a fifty-move draw than the other, and an engine may rightly choose
+          // differently there. Measured on a 955-game file, keying on the position alone produced
+          // 129 self-deviations of which 48 had a different clock.
+          //
+          // The obvious guard is the ply number (what Board.DeviationHash adds), but ply is only a
+          // proxy: it also rejects transpositions whose context is genuinely identical. Keying on
+          // the clock instead kept all 48 out and recovered 8 of those, for 81.
+          let hashBefore = board.PositionHash() ^^^ (uint64 (halfmoveClock fenBefore) * 0x9E3779B97F4A7C15UL)
+          // PlaySanMove ignores input it cannot resolve - a null move, an ambiguous or illegal
+          // SAN - without throwing and without advancing the board. Reading the last UCI blindly
+          // would attribute the PREVIOUS ply's move to this position, inventing a deviation, and
+          // every later ply would be replayed from a board that no longer matches the PGN.
+          let movesBefore = board.UciMovesPlayed.Count
+          board.PlaySanMove san
+          let advanced = board.UciMovesPlayed.Count > movesBefore
+          let uci = if advanced then board.UciMovesPlayed.[board.UciMovesPlayed.Count - 1] else ""
+          let entry =
+            { Engine = engine
+              Uci = uci
+              San = san
+              GameNumber = game.GameNumber
+              Result = game.GameMetaData.Result
+              MoveNumber = moveNumber
+              Color = color
+              Fen = fenBefore }
+          if not advanced then
+            // Board and PGN have diverged; nothing later in this game can be trusted.
+            abandoned <- true
 
-        if searched && not abandoned then
-          match table.TryGetValue hashBefore with
-          | true, list -> list.Add entry
-          | _ ->
-            let list = ResizeArray<Entry>()
-            list.Add entry
-            table.[hashBefore] <- list
-    table, ({ FromSearchData = fromSearch; FromBookMarker = fromMarker; Unknown = unknown; Empty = empty } : OpeningCoverage)
+          if searched && not abandoned then
+            match table.TryGetValue hashBefore with
+            | true, list -> list.Add entry
+            | _ ->
+              let list = ResizeArray<Entry>()
+              list.Add entry
+              table.[hashBefore] <- list
+    table, ({ FromSearchData = fromSearch; FromBookMarker = fromMarker; Unknown = unknown; Empty = empty; BadStart = badStart } : OpeningCoverage)
 
 let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : PositionDeviation list =
   [ for kv in table do
@@ -513,8 +523,9 @@ let printPositionDeviationsToConsole (devs: PositionDeviation list) (summary: En
   let sb = System.Text.StringBuilder()
   let line (s: string) = sb.AppendLine s |> ignore
   line ""
-  line (sprintf "Opening detection: %d games - search data %d, book marker %d, unknown %d, no moves %d"
-          coverage.Total coverage.FromSearchData coverage.FromBookMarker coverage.Unknown coverage.Empty)
+  line (sprintf "Opening detection: %d games - search data %d, book marker %d, unknown %d, no moves %d%s"
+          coverage.Total coverage.FromSearchData coverage.FromBookMarker coverage.Unknown coverage.Empty
+          (if coverage.BadStart > 0 then sprintf ", bad start FEN %d (left out)" coverage.BadStart else ""))
   if coverage.HasUnverifiedOpenings then
     line (sprintf "  WARNING: %d game(s) carry neither search data nor a book marker - self-deviations there may be book artefacts"
             coverage.Unknown)

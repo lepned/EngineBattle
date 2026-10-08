@@ -43,3 +43,27 @@ let ``the report on no games says so instead of throwing`` () =
 
   Assert.Contains("Position deviations: 0 (0 self, 0 cross)", report)
   Assert.Contains("not measurable", report)
+
+let private game number (tags: string) moves =
+  let text = sprintf "[Event \"t\"]\n[White \"A\"]\n[Black \"B\"]\n%s[Result \"*\"]\n\n%s *\n" tags moves
+  { FullPGNParser.parseFullPgnGame text with GameNumber = number }
+
+let private badFen = game 3 "[SetUp \"1\"]\n[FEN \"rnbqkbnr/pppp/8 w\"]\n" "1. e4 e5"
+
+[<Fact>]
+let ``a game whose FEN cannot be set up is left out of the scan and counted, not a crash`` () =
+  let devs, summary, coverage = DeviationAnalysis.analyzePositionDeviations (twoGames () @ [ badFen ])
+  let report = DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage
+  Assert.Single devs |> ignore                 // the two good games still give their deviation
+  Assert.Equal(1, coverage.BadStart)
+  Assert.Equal(3, coverage.Total)
+  Assert.Contains("bad start FEN 1 (left out)", report)
+
+[<Fact>]
+let ``the move-difference finder leaves out a game whose FEN cannot be set up`` () =
+  DeviationAnalysis.findMoveDifferencesInPGN (twoGames () @ [ badFen ]) "" [ "A" ] |> ignore
+
+[<Fact>]
+let ``the move-difference finder stops a game at a move that cannot be played`` () =
+  // the first move cannot be played: there was no previous move to read
+  DeviationAnalysis.findMoveDifferencesInPGN (twoGames () @ [ game 4 "" "1. Ke3 e5 2. Nf3" ]) "" [ "A" ] |> ignore
