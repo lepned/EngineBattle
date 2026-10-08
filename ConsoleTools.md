@@ -69,6 +69,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `redash` | | Regenerate BO dashboard from saved state |
 | `pgnsummary` | `pgn`, `ps` | Analyze PGN game terminations |
 | `pgncheck` | `pc` | Parser health check on a PGN file (no analysis) |
+| `pgnvalidate` | `pgnv` | Replay every game of a PGN: illegal or ambiguous moves, non-standard SAN |
 | `bookeval` | `be` | Keep the openings of a PGN/EPD book that every engine scores in an eval window (see BookEvaluation.md) |
 | `deviations` | `dev` | Engine self-consistency and position deviations from a PGN |
 | `elo` | `e` | Show Elo ratings and results from PGN |
@@ -455,6 +456,36 @@ check after changes to the PGN parser.
 **Syntax:**
 ```bash
 dotnet run -c Release -- pgncheck <path-to-pgn-file>
+```
+
+---
+
+### pgnvalidate
+
+Replays every game of a PGN on a board and checks each move against the legal moves of its
+position. Streams the file one game at a time, so memory stays flat however large it is (the
+whole TCEC archive, 54,000 games and 7.6 million plies, in about 11 seconds). Results and comments are not
+looked at - only whether the moves can be played.
+
+- **Errors** (the rest of that game is not checked): a move that fits no legal move, a move that
+  fits more than one (`Nd2` when two knights can go there), a FEN tag that cannot be set up.
+- **Warnings** (the game goes on): a legal move written otherwise than standard SAN - a missing
+  `x`, needless disambiguation (`Ngf3`), coordinates (`e2e4`). The standard form is given.
+
+Check and annotation marks, `O-O` versus `0-0` and `=` in promotions are not counted as
+differences. Every finding names the game, round, players, ply, move and the FEN it was played
+in; the first 20 are printed, `--csv` writes them all. Exits with code 1 if there is an error.
+
+The summary also counts games without moves (an abandoned game, say) and records the parser
+skipped - `[Event` lines it made no game of, such as an `[Event]` tag with nothing after it. Neither
+is an error. A game without an `[Event]` tag is not counted as a line, so skipped records are a
+lower bound.
+
+**Aliases:** `pgnv`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- pgnvalidate <path-to-pgn-file> [--csv findings.csv]
 ```
 
 ---

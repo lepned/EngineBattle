@@ -101,6 +101,7 @@
 		<Compile Include="LadderMachineTests.fs" />
 		<Compile Include="StatePathsTests.fs" />
 		<Compile Include="ResumeAnywhereTests.fs" />
+		<Compile Include="PgnValidationTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

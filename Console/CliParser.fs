@@ -100,6 +100,8 @@ type VerbResult =
     | GUI of page: string * port: int option
     | PgnSummary of path:string
     | PgnCheck of path:string
+    // every game replayed: each move against the legal moves of its position; findings to a CSV
+    | PgnValidate of path:string * csvOut:string option
     | BookEval of BookEvalParams
     | Deviations of path:string
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
@@ -681,6 +683,14 @@ module CustomParser =
                     let path = args.[index + 1]
                     parseArgs args (index + 2) (Verb (PgnCheck path) :: acc)
                 else failwith "Missing parameter for pgncheck"
+            | "pgnvalidate" | "pgnv" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    if index + 3 < args.Length && args.[index + 2] = "--csv" then
+                        parseArgs args (index + 4) (Verb (PgnValidate (path, Some args.[index + 3])) :: acc)
+                    else
+                        parseArgs args (index + 2) (Verb (PgnValidate (path, None)) :: acc)
+                else failwith "Missing parameter for pgnvalidate"
             | "bookeval" | "be" ->
                 // A limit right after an --engine is that engine's; one before the first --engine
                 // is everyone's default.

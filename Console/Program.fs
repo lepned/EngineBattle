@@ -2550,6 +2550,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
     printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
+    printfn "  pgnvalidate, pgnv <pgnFile> [--csv F]   Replay every game: illegal/ambiguous moves (errors), non-standard SAN (warnings)"
     printfn "  bookeval, be <book.pgn|epd> --engine <def|exe> [--nodes N|--movetime MS] [--engine ...]"
     printfn "                                          Keep the openings every engine scores within --min/--max cp"
     printfn "                                          (default 80-100) and agree on within --maxdiff (40); a limit"
@@ -2990,6 +2991,85 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                 secs (sizeMb / secs) ((int64 (float plies / secs)).ToString("N0"))
                             printfn "Peak memory    : %.0f MB" peakMb
                             if failed > 0 then exit 1
+                        with ex ->
+                            printfn "PGN parsing failed after %s games: %s" (games.ToString("N0")) ex.Message
+                            exit 1
+                | Verb (PgnValidate (path, csvOut)) ->
+                    // Every game replayed on a board, streamed one at a time: a move that fits no
+                    // legal move (or more than one) is an error and ends that game's check; a legal
+                    // move written otherwise than standard SAN is a warning. Results are not checked.
+                    let normalizedPath = normalizePath path
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                    else
+                        let sizeMb = float (FileInfo(normalizedPath).Length) / 1048576.0
+                        let sw = Diagnostics.Stopwatch.StartNew()
+                        let field (s: string) = "\"" + (if isNull s then "" else s.Replace("\"", "\"\"")) + "\""
+                        let csv =
+                            csvOut |> Option.map (fun out ->
+                                let w = new StreamWriter(normalizePath out)
+                                w.WriteLine "game,round,white,black,ply,move,kind,expected,fen"
+                                w)
+                        let shown = ResizeArray<PgnValidation.Finding>()
+                        let counts = Collections.Generic.Dictionary<PgnValidation.Kind, int>()
+                        let mutable games = 0
+                        let mutable plies = 0L
+                        let mutable gamesWithErrors = 0
+                        let mutable gamesWithWarnings = 0
+                        let mutable noMoves = 0
+                        let board = ChessLibrary.Chess.Board()
+                        try
+                            try
+                                for game in FullPGNParser.parsePgnFile normalizedPath do
+                                    games <- games + 1
+                                    let findings, played = PgnValidation.validateGame board game
+                                    plies <- plies + int64 played
+                                    if game.Mainline.Count = 0 then noMoves <- noMoves + 1
+                                    if findings |> List.exists (fun f -> PgnValidation.isError f.Kind) then gamesWithErrors <- gamesWithErrors + 1
+                                    if findings |> List.exists (fun f -> not (PgnValidation.isError f.Kind)) then gamesWithWarnings <- gamesWithWarnings + 1
+                                    for f in findings do
+                                        counts.[f.Kind] <- (match counts.TryGetValue f.Kind with | true, n -> n + 1 | _ -> 1)
+                                        if shown.Count < 20 then shown.Add f
+                                        csv |> Option.iter (fun w ->
+                                            w.WriteLine(String.Join(",", [ string f.Game; field f.Round; field f.White; field f.Black; string f.Ply
+                                                                           field f.Move; field (PgnValidation.kindName f.Kind); field f.Expected; field f.Fen ])))
+                                    if games % 100_000 = 0 then
+                                        printfn "  %s games, %s plies, %.1f s..." (games.ToString("N0")) (plies.ToString("N0")) sw.Elapsed.TotalSeconds
+                            finally
+                                csv |> Option.iter (fun w -> w.Dispose())
+                            // records the parser skips (an [Event] line with nothing after it, say): the
+                            // file's [Event lines against the games it gave - a second pass, streamed too
+                            let eventLines =
+                                File.ReadLines normalizedPath |> Seq.sumBy (fun l -> if l.StartsWith("[Event ", StringComparison.Ordinal) then 1 else 0)
+                            sw.Stop()
+                            let count kind = match counts.TryGetValue kind with | true, n -> n | _ -> 0
+                            let errors = count PgnValidation.IllegalMove + count PgnValidation.AmbiguousMove + count PgnValidation.BadStart
+                            for f in shown do
+                                printfn "  game %d (round %s, %s - %s) ply %d %s: %s%s"
+                                    f.Game f.Round f.White f.Black f.Ply f.Move (PgnValidation.kindName f.Kind)
+                                    (if String.IsNullOrEmpty f.Expected then ""
+                                     elif f.Kind = PgnValidation.BadStart then " - " + f.Expected
+                                     else " - expected " + f.Expected)
+                                printfn "    %s" f.Fen
+                            let total = counts.Values |> Seq.sum
+                            if total > shown.Count then
+                                printfn "  ... and %s more%s" ((total - shown.Count).ToString("N0")) (if csv.IsSome then " (all in the CSV)" else " (--csv <file> lists them all)")
+                            let secs = max sw.Elapsed.TotalSeconds 0.001
+                            printfn ""
+                            printfn "File            : %s (%.1f MB)" normalizedPath sizeMb
+                            printfn "Games           : %s" (games.ToString("N0"))
+                            printfn "Plies replayed  : %s" (plies.ToString("N0"))
+                            printfn "Games without moves : %s" (noMoves.ToString("N0"))
+                            printfn "Records skipped     : %s ([Event lines the parser made no game of)" ((max 0 (eventLines - games)).ToString("N0"))
+                            printfn "Games with errors   : %s (illegal %s, ambiguous %s, bad start FEN %s)"
+                                (gamesWithErrors.ToString("N0")) ((count PgnValidation.IllegalMove).ToString("N0"))
+                                ((count PgnValidation.AmbiguousMove).ToString("N0")) ((count PgnValidation.BadStart).ToString("N0"))
+                            printfn "Games with warnings : %s (non-standard SAN %s)"
+                                (gamesWithWarnings.ToString("N0")) ((count PgnValidation.NonStandardSan).ToString("N0"))
+                            csvOut |> Option.iter (fun out -> printfn "CSV             : %s" (normalizePath out))
+                            printfn "Time            : %.1f s (%.1f MB/s)" secs (sizeMb / secs)
+                            printfn "Peak memory     : %.0f MB" (float (Diagnostics.Process.GetCurrentProcess().PeakWorkingSet64) / 1048576.0)
+                            if errors > 0 then exit 1
                         with ex ->
                             printfn "PGN parsing failed after %s games: %s" (games.ToString("N0")) ex.Message
                             exit 1
