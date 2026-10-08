@@ -2550,7 +2550,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
     printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
-    printfn "  pgnvalidate, pgnv <pgnFile> [--csv F]   Replay every game: illegal/ambiguous moves (errors), non-standard SAN (warnings)"
+    printfn "  pgnvalidate, pgnv <pgnFile> [--csv F] [--threads N]  Replay every game: illegal/ambiguous moves (errors), non-standard SAN (warnings)"
     printfn "  bookeval, be <book.pgn|epd> --engine <def|exe> [--nodes N|--movetime MS] [--engine ...]"
     printfn "                                          Keep the openings every engine scores within --min/--max cp"
     printfn "                                          (default 80-100) and agree on within --maxdiff (40); a limit"
@@ -2994,7 +2994,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         with ex ->
                             printfn "PGN parsing failed after %s games: %s" (games.ToString("N0")) ex.Message
                             exit 1
-                | Verb (PgnValidate (path, csvOut)) ->
+                | Verb (PgnValidate (path, csvOut, threadsOpt)) ->
                     // Every game replayed on a board, streamed one at a time: a move that fits no
                     // legal move (or more than one) is an error and ends that game's check; a legal
                     // move written otherwise than standard SAN is a warning. Results are not checked.
@@ -3017,14 +3017,25 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         let mutable gamesWithErrors = 0
                         let mutable gamesWithWarnings = 0
                         let mutable noMoves = 0
-                        let board = ChessLibrary.Chess.Board()
+                        // games are checked on one thread unless --threads asks for more, each with its
+                        // own board; the file is parsed in order and the findings come out in file order,
+                        // so the CSV and the summary do not depend on it. More threads help compact files
+                        // most: on comment-heavy ones the parser's allocations keep the GC busy
+                        let threads = defaultArg threadsOpt 1 |> min Environment.ProcessorCount
+                        let boards = new Threading.ThreadLocal<ChessLibrary.Chess.Board>(fun () -> ChessLibrary.Chess.Board())
+                        let check (game: PGNTypes.PgnGame) =
+                            let findings, played = PgnValidation.validateGame boards.Value game
+                            findings, played, game.Mainline.Count = 0
+                        let checkedGames =
+                            let source = FullPGNParser.parsePgnFile normalizedPath
+                            if threads = 1 then Seq.map check source
+                            else source.AsParallel().AsOrdered().WithDegreeOfParallelism(threads).Select(check) :> seq<_>
                         try
                             try
-                                for game in FullPGNParser.parsePgnFile normalizedPath do
+                                for findings, played, empty in checkedGames do
                                     games <- games + 1
-                                    let findings, played = PgnValidation.validateGame board game
                                     plies <- plies + int64 played
-                                    if game.Mainline.Count = 0 then noMoves <- noMoves + 1
+                                    if empty then noMoves <- noMoves + 1
                                     if findings |> List.exists (fun f -> PgnValidation.isError f.Kind) then gamesWithErrors <- gamesWithErrors + 1
                                     if findings |> List.exists (fun f -> not (PgnValidation.isError f.Kind)) then gamesWithWarnings <- gamesWithWarnings + 1
                                     for f in findings do
@@ -3038,9 +3049,29 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                             finally
                                 csv |> Option.iter (fun w -> w.Dispose())
                             // records the parser skips (an [Event] line with nothing after it, say): the
-                            // file's [Event lines against the games it gave - a second pass, streamed too
+                            // file's [Event lines against the games it gave - a second pass over the
+                            // bytes, a vectorised search for a newline and "[Event " in 1 MB blocks
                             let eventLines =
-                                File.ReadLines normalizedPath |> Seq.sumBy (fun l -> if l.StartsWith("[Event ", StringComparison.Ordinal) then 1 else 0)
+                                let pattern = "\n[Event "B
+                                use fs = new FileStream(normalizedPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 <<< 20, FileOptions.SequentialScan)
+                                let buffer = Array.zeroCreate<byte> (1 <<< 20)
+                                buffer.[0] <- byte '\n'   // the first line counts as one after a newline
+                                let mutable kept = 1
+                                let mutable count = 0
+                                let mutable read = fs.Read(buffer, kept, buffer.Length - kept)
+                                while read > 0 do
+                                    let filled = kept + read
+                                    let mutable rest = ReadOnlySpan<byte>(buffer, 0, filled)
+                                    let mutable at = rest.IndexOf(ReadOnlySpan<byte>(pattern))
+                                    while at >= 0 do
+                                        count <- count + 1
+                                        rest <- rest.Slice(at + 1)
+                                        at <- rest.IndexOf(ReadOnlySpan<byte>(pattern))
+                                    // the tail a match could still start in moves to the front
+                                    kept <- min filled (pattern.Length - 1)
+                                    Buffer.BlockCopy(buffer, filled - kept, buffer, 0, kept)
+                                    read <- fs.Read(buffer, kept, buffer.Length - kept)
+                                count
                             sw.Stop()
                             let count kind = match counts.TryGetValue kind with | true, n -> n | _ -> 0
                             let errors = count PgnValidation.IllegalMove + count PgnValidation.AmbiguousMove + count PgnValidation.BadStart
@@ -3067,10 +3098,12 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                             printfn "Games with warnings : %s (non-standard SAN %s)"
                                 (gamesWithWarnings.ToString("N0")) ((count PgnValidation.NonStandardSan).ToString("N0"))
                             csvOut |> Option.iter (fun out -> printfn "CSV             : %s" (normalizePath out))
+                            printfn "Threads         : %d (of %d cores)" threads Environment.ProcessorCount
                             printfn "Time            : %.1f s (%.1f MB/s)" secs (sizeMb / secs)
                             printfn "Peak memory     : %.0f MB" (float (Diagnostics.Process.GetCurrentProcess().PeakWorkingSet64) / 1048576.0)
                             if errors > 0 then exit 1
                         with ex ->
+                            let ex = match ex with :? AggregateException as a when not (isNull a.InnerException) -> a.InnerException | _ -> ex
                             printfn "PGN parsing failed after %s games: %s" (games.ToString("N0")) ex.Message
                             exit 1
                 | Verb (Elo path) ->

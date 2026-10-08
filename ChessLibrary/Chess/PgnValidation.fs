@@ -56,6 +56,54 @@ let private bare (san: string) =
   let m = pieceMove.Match n
   if m.Success then m.Groups.[1].Value + m.Groups.[2].Value else n
 
+// A move-list buffer per thread: the usual move needs no new array
+let private buffers = new System.Threading.ThreadLocal<TMove[]>(fun () -> Array.zeroCreate 256)
+
+let private markEnd (s: string) =
+  let mutable e = s.Length
+  while e > 0 && (let c = s.[e - 1] in c = '+' || c = '#' || c = '!' || c = '?' || c = ' ') do e <- e - 1
+  e
+
+let private textStart (s: string) =
+  let mutable i = 0
+  while i < s.Length && s.[i] = ' ' do i <- i + 1
+  i
+
+/// normalize a = normalize b, compared in place: marks at the end, '=' and O for 0 do not count
+let private sameSan (a: string) (b: string) =
+  let ea = markEnd a
+  let eb = markEnd b
+  let mutable i = textStart a
+  let mutable j = textStart b
+  let mutable same = true
+  while same && (i < ea || j < eb) do
+    if i < ea && a.[i] = '=' then i <- i + 1
+    elif j < eb && b.[j] = '=' then j <- j + 1
+    elif i < ea && j < eb then
+      let ca = if a.[i] = 'O' then '0' else a.[i]
+      let cb = if b.[j] = 'O' then '0' else b.[j]
+      if ca <> cb then same <- false
+      i <- i + 1
+      j <- j + 1
+    else same <- false
+  same
+
+/// The square a SAN names last - where the move goes - as the board numbers it for the side to
+/// move; -1 for castling and for text with no square.
+let private targetSquare (san: string) (stm: byte) =
+  let mutable k = markEnd san - 1
+  while k > 0 && not (san.[k] >= '1' && san.[k] <= '8' && san.[k - 1] >= 'a' && san.[k - 1] <= 'h') do k <- k - 1
+  if k <= 0 then -1
+  else
+    let mutable side = stm
+    match (TMoveOps.dictNameToNumber &side).TryGetValue(san.Substring(k - 1, 2)) with
+    | true, sq -> int sq
+    | _ -> -1
+
+let private isCastlingText (san: string) =
+  let i = textStart san
+  i + 2 < san.Length && (san.[i] = 'O' || san.[i] = '0') && san.[i + 1] = '-'
+
 /// One game's findings and the half-moves played before the first error (all of them when none).
 /// `board` is reused from game to game.
 let validateGame (board: Board) (game: PgnGame) : Finding list * int =
@@ -71,44 +119,54 @@ let validateGame (board: Board) (game: PgnGame) : Finding list * int =
   | Some why -> [ finding 0 None BadStart $"cannot be set up ({why})" fen ], 0
   | None ->
       let findings = ResizeArray<Finding>()
-      let rec play (moves: PlyMove list) ply =
-        match moves with
-        | [] -> ply
-        | pm :: rest ->
-            let legal = board.GenerateMoves()
-            let position = board.Position
-            let written = normalize pm.San
-            let ply = ply + 1
-            let playOn (m: TMove) =
-              let mutable move = m
-              board.MakeMove(&move)
-              play rest ply
-            // the usual case first: the move the matcher finds, written exactly as standard SAN. No
-            // two legal moves share a standard SAN, so that is the move - unambiguous, nothing more to
-            // ask - and only its SAN is made (making all of them took three quarters of the time)
-            let quick =
-              match TMoveOps.tryFindMoveBySanOrUci legal position.STM (fun _ -> true) pm.San with
-              | Some m when normalize (TMoveOps.getShortSanMoveFromTmoveN legal legal.Length m position) = written -> Some m
-              | _ -> None
-            match quick with
-            | Some m -> playOn m
-            | None ->
-            let standard = legal |> Array.map (fun m -> m, TMoveOps.getShortSanMoveFromTmoveN legal legal.Length m position)
-            match standard |> Array.filter (fun (_, san) -> normalize san = written) with
-            | [| m, _ |] -> playOn m
-            | _ ->
-                let fits = standard |> Array.filter (fun (_, san) -> bare san = bare pm.San)
-                if fits.Length > 1 then
-                  findings.Add(finding ply (Some pm) AmbiguousMove (fits |> Array.map snd |> String.concat " or ") (board.FEN()))
-                  ply - 1
-                else
-                  match TMoveOps.tryFindMoveBySanOrUci legal position.STM (fun _ -> true) pm.San with
-                  | Some m ->
-                      let san = standard |> Array.find (fun (c, _) -> c = m) |> snd
-                      findings.Add(finding ply (Some pm) NonStandardSan san (board.FEN()))
-                      playOn m
-                  | None ->
-                      findings.Add(finding ply (Some pm) IllegalMove "" (board.FEN()))
-                      ply - 1
-      let played = play (List.ofSeq game.Mainline) 0
-      List.ofSeq findings, played
+      let buffer = buffers.Value
+      let moves = game.Mainline
+      let mutable ply = 0
+      let mutable stopped = false
+      while not stopped && ply < moves.Count do
+        let pm = moves.[ply]
+        let position = board.Position
+        // the usual case: exactly one legal move to the written square whose standard SAN is what
+        // is written. A SAN ends with the move's square, so no other move could be written so; only
+        // these few get their SAN made, compared in place, the move list in the thread's buffer
+        let count = board.GenerateMovesToBuffer(buffer.AsSpan())
+        let castling = isCastlingText pm.San
+        let target = if castling then -1 else targetSquare pm.San position.STM
+        let mutable found = -1
+        let mutable matches = 0
+        for i in 0 .. count - 1 do
+          let m = buffer.[i]
+          if (castling && TMoveOps.isCastlingMove m) || (not castling && int m.To = target) then
+            if sameSan (TMoveOps.getShortSanMoveFromTmoveN buffer count m position) pm.San then
+              matches <- matches + 1
+              found <- i
+        if matches = 1 then
+          let mutable move = buffer.[found]
+          board.MakeMove(&move)
+          ply <- ply + 1
+        else
+          // anything else is classified against every legal move
+          let legal = board.GenerateMoves()
+          let standard = legal |> Array.map (fun m -> m, TMoveOps.getShortSanMoveFromTmoveN legal legal.Length m position)
+          let written = normalize pm.San
+          let playOn (m: TMove) =
+            let mutable move = m
+            board.MakeMove(&move)
+            ply <- ply + 1
+          match standard |> Array.filter (fun (_, san) -> normalize san = written) with
+          | [| m, _ |] -> playOn m
+          | _ ->
+              let fits = standard |> Array.filter (fun (_, san) -> bare san = bare pm.San)
+              if fits.Length > 1 then
+                findings.Add(finding (ply + 1) (Some pm) AmbiguousMove (fits |> Array.map snd |> String.concat " or ") (board.FEN()))
+                stopped <- true
+              else
+                match TMoveOps.tryFindMoveBySanOrUci legal position.STM (fun _ -> true) pm.San with
+                | Some m ->
+                    let san = standard |> Array.find (fun (c, _) -> c = m) |> snd
+                    findings.Add(finding (ply + 1) (Some pm) NonStandardSan san (board.FEN()))
+                    playOn m
+                | None ->
+                    findings.Add(finding (ply + 1) (Some pm) IllegalMove "" (board.FEN()))
+                    stopped <- true
+      List.ofSeq findings, ply

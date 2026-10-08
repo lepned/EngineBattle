@@ -55,7 +55,8 @@ type private ParserState =
     // Saved WhiteSan/BlackSan across '(' ')' so a variation gets the parent
     // move's color and the mainline color toggle survives odd-length variations
     SanStack: Stack<string * string>
-    mutable LastParsedSan: string option
+    // SAN strings already made in this run: a file repeats a few hundred of them millions of times
+    SanCache: string[]
     // NAG state
     PendingNags: ResizeArray<int> }
 
@@ -91,7 +92,7 @@ type private ParserState =
       LineStack = Stack<PlyLine>()
       PlyStack = Stack<int>()
       SanStack = Stack<string * string>()
-      LastParsedSan = None
+      SanCache = Array.zeroCreate 1024
       PendingNags = ResizeArray<int>() }
 
 // ============================================================================
@@ -103,6 +104,20 @@ let inline private isFile c = c >= 'a' && c <= 'h'
 let inline private isRank c = c >= '1' && c <= '8'
 let inline private isPiece c = c = 'K' || c = 'Q' || c = 'R' || c = 'B' || c = 'N'
 let inline private isPromoPiece c = isPiece c || c = 'k' || c = 'q' || c = 'r' || c = 'b' || c = 'n'
+
+/// The SAN token as a string: the one this run already made for it when there is one. Slots are
+/// picked by a hash of the characters and compared in full, so a collision only costs a new string.
+let private sanString (st: ParserState) (token: ReadOnlySpan<char>) =
+  let mutable h = 2166136261u
+  for i in 0 .. token.Length - 1 do
+    h <- (h ^^^ uint32 token.[i]) * 16777619u
+  let slot = int (h &&& uint32 (st.SanCache.Length - 1))
+  let cached = st.SanCache.[slot]
+  if not (isNull cached) && token.SequenceEqual(cached.AsSpan()) then cached
+  else
+    let made = String(token)
+    st.SanCache.[slot] <- made
+    made
 
 // ============================================================================
 // State management
@@ -139,7 +154,6 @@ let private resetState (st: ParserState) =
   st.LineStack.Clear()
   st.PlyStack.Clear()
   st.SanStack.Clear()
-  st.LastParsedSan <- None
   st.PendingNags.Clear()
 
 let private hasGame (st: ParserState) =
@@ -163,7 +177,6 @@ let private appendPlyMove (st: ParserState) (san: string) (color: string) =
       Variations = ResizeArray() }
   st.CurrentLine.Add node
   st.CurrentPly <- st.CurrentPly + 1
-  st.LastParsedSan <- Some san
   st.PendingNags.Clear()
   if color = "b" then
       st.WhiteSan <- ""
@@ -296,8 +309,8 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
   // Continuation of a { comment } opened on a previous line: everything up to the
   // closing '}' is comment text, not movetext.
   if st.InComment then
-    let mutable q = p
-    while q < len && spanLine[q] <> '}' do q <- q + 1
+    let close = spanLine.IndexOf('}')
+    let q = if close < 0 then len else close
     if q >= len then
       // The whole line is still inside the comment
       let piece = line.Trim()
@@ -342,7 +355,8 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
         elif c0 = '{' then
           p <- p + 1
           let startComment = p
-          while p < len && spanLine[p] <> '}' do p <- p + 1
+          let close = spanLine.Slice(p).IndexOf('}')
+          p <- if close < 0 then len else p + close
           let comment =
             if p > startComment then new string(spanLine.Slice(startComment, p - startComment).Trim())
             else ""
@@ -439,7 +453,7 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
             if c0 = 'O' || (c0 = '0' && (p + 2) < len && spanLine[p + 2] = '0') then
               while p < len && (spanLine[p] = 'O' || spanLine[p] = '0' || spanLine[p] = 'o' || spanLine[p] = '-') do p <- p + 1
             if p > start then
-              let san = new string(spanLine.Slice(start, p - start))
+              let san = sanString st (spanLine.Slice(start, p - start))
               // Check/checkmate suffix
               if p < len && (spanLine[p] = '+' || spanLine[p] = '#') then p <- p + 1
               // Annotation symbols
@@ -477,7 +491,7 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
             while p < len && (spanLine[p] = '!' || spanLine[p] = '?') do p <- p + 1
 
           if p > start then
-            let san = new string(spanLine.Slice(start, p - start))
+            let san = sanString st (spanLine.Slice(start, p - start))
             if san <> "" then
               recordSanMove st san
           else
@@ -611,7 +625,9 @@ let parsePgnFileHelper (pgnFilePath: string) withRaw : seq<PgnGame> =
         else
           game
 
-      let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)
+      let options =
+        FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open,
+                          Options = FileOptions.SequentialScan, BufferSize = 65536)
       use reader = new StreamReader(pgnFilePath, options)
 
       while not reader.EndOfStream do

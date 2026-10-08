@@ -485,8 +485,13 @@ lower bound.
 
 **Syntax:**
 ```bash
-dotnet run -c Release -- pgnvalidate <path-to-pgn-file> [--csv findings.csv]
+dotnet run -c Release -- pgnvalidate <path-to-pgn-file> [--csv findings.csv] [--threads N]
 ```
+
+`--threads N` checks the games on N threads (one by default) - the findings, the CSV and the
+summary are the same however many. It helps compact files most (TCEC: 2 threads -30%, 4 threads
+-40%); on comment-heavy files like CCC's the parser's allocations keep the garbage collector busy
+and more threads gain little.
 
 ---
 
