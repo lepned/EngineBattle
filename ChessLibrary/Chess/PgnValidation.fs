@@ -48,13 +48,24 @@ type Finding =
 let private normalize (san: string) =
   san.Trim().TrimEnd('+', '#', '!', '?').Replace('O', '0').Replace("=", "")
 
-let private pieceMove = Regex(@"^([KQRBN])[a-h]?[1-8]?x?([a-h][1-8])$", RegexOptions.Compiled)
+let private pieceMove = Regex(@"^([KQRBN])([a-h]?)([1-8]?)x?([a-h][1-8])$", RegexOptions.Compiled)
 
 // what a piece move says without its disambiguation and capture mark: the piece and its square
 let private bare (san: string) =
   let n = normalize san
   let m = pieceMove.Match n
-  if m.Success then m.Groups.[1].Value + m.Groups.[2].Value else n
+  if m.Success then m.Groups.[1].Value + m.Groups.[4].Value else n
+
+// whether a move starts where a written piece move says it does: its file, its rank, both or neither
+let private startsAsWritten (san: string) (move: TMove) (stm: byte) =
+  let m = pieceMove.Match(normalize san)
+  if not m.Success then true
+  else
+    let mutable side = stm
+    let from : string = (TMoveOps.dictNumberToName &side).[int move.From]
+    let file = m.Groups.[2].Value
+    let rank = m.Groups.[3].Value
+    (file = "" || from.[0] = file.[0]) && (rank = "" || from.[1] = rank.[0])
 
 // A move-list buffer per thread: the usual move needs no new array
 let private buffers = new System.Threading.ThreadLocal<TMove[]>(fun () -> Array.zeroCreate 256)
@@ -156,9 +167,18 @@ let validateGame (board: Board) (game: PgnGame) : Finding list * int =
           match standard |> Array.filter (fun (_, san) -> normalize san = written) with
           | [| m, _ |] -> playOn m
           | _ ->
+              // the moves of that piece to that square, then those starting where the text says (Qh6f6
+              // names one of three queens: over-specified, a warning; Qhf6 two of them: ambiguous)
               let fits = standard |> Array.filter (fun (_, san) -> bare san = bare pm.San)
-              if fits.Length > 1 then
-                findings.Add(finding (ply + 1) (Some pm) AmbiguousMove (fits |> Array.map snd |> String.concat " or ") (board.FEN()))
+              let named = fits |> Array.filter (fun (m, _) -> startsAsWritten pm.San m position.STM)
+              if fits.Length > 1 && named.Length = 1 then
+                findings.Add(finding (ply + 1) (Some pm) NonStandardSan (snd named.[0]) (board.FEN()))
+                playOn (fst named.[0])
+              elif fits.Length > 1 && named.Length > 1 then
+                findings.Add(finding (ply + 1) (Some pm) AmbiguousMove (named |> Array.map snd |> String.concat " or ") (board.FEN()))
+                stopped <- true
+              elif fits.Length > 1 then
+                findings.Add(finding (ply + 1) (Some pm) IllegalMove "" (board.FEN()))
                 stopped <- true
               else
                 match TMoveOps.tryFindMoveBySanOrUci legal position.STM (fun _ -> true) pm.San with

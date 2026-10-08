@@ -64,3 +64,24 @@ let ``a FEN that cannot be set up is an error`` () =
   let f = Assert.Single(findings)
   Assert.Equal(BadStart, f.Kind)
   Assert.Equal(0, played)
+
+// three queens can reach f6 (h6, e7, h8) - the TCEC S30 position that showed the case
+let private threeQueens = Some "1K5Q/4Q3/Bp1R3Q/1PpP2p1/2b3Pb/1qn1Rn2/6k1/q4r2 w - - 5 103"
+
+[<Fact>]
+let ``a move written with more disambiguation than needed is a warning, not ambiguous`` () =
+  let findings, played = validate "103. Qh6f6" threeQueens
+  let f = Assert.Single(findings)
+  Assert.Equal((NonStandardSan, "Q6f6"), (f.Kind, f.Expected))
+  Assert.Equal(1, played)
+
+[<Fact>]
+let ``disambiguation that still leaves two pieces is ambiguous`` () =
+  let findings, _ = validate "103. Qhf6" threeQueens
+  let f = Assert.Single(findings)
+  Assert.Equal((AmbiguousMove, "Q6f6 or Q8f6"), (f.Kind, f.Expected))
+
+[<Fact>]
+let ``disambiguation that names no piece able to move there is illegal`` () =
+  let findings, _ = validate "103. Qaf6" threeQueens
+  Assert.Equal(IllegalMove, (Assert.Single(findings)).Kind)
