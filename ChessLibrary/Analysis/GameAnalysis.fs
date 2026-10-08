@@ -15,8 +15,8 @@ module Formatting =
 
   /// Formats a metric value with SI prefixes (G, M, K)
   let inline private formatMetric (unit: string) (value: double) =
-    if value > 1_000_000_000.0 then sprintf "%.1fG%s" (value / 1_000_000_000.0) unit
-    elif value > 1_000_000.0 then sprintf "%.1fM%s" (value / 1_000_000.0) unit
+    if value >= 1_000_000_000.0 then sprintf "%.1fG%s" (value / 1_000_000_000.0) unit
+    elif value >= 1_000_000.0 then sprintf "%.1fM%s" (value / 1_000_000.0) unit
     elif value >= 1_000.0 then sprintf "%.1fK%s" (value / 1_000.0) unit
     else sprintf "%.1f %s" value unit
 
@@ -26,8 +26,8 @@ module Formatting =
     if eps = 0.0 then "NA" else formatMetric "eps" eps
 
   let inline formatNPM (npm: double) =
-    if npm > 1_000_000_000.0 then sprintf "%.1fGnpm" (npm / 1_000_000_000.0)
-    elif npm > 1_000_000.0 then sprintf "%.1fMnpm" (npm / 1_000_000.0)
+    if npm >= 1_000_000_000.0 then sprintf "%.1fGnpm" (npm / 1_000_000_000.0)
+    elif npm >= 1_000_000.0 then sprintf "%.1fMnpm" (npm / 1_000_000.0)
     elif npm >= 1_000.0 then sprintf "%.1fKnpm" (npm / 1_000.0)
     else sprintf "%.0f npm" npm
 

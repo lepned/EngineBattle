@@ -145,29 +145,33 @@ module ConsoleHelper =
 
   let writeEngineStatsPerGame (engineStat: EngineStatsPerGame) n includeEps =
       let speed nps = Formatting.formatNPS nps
+      // nodes per move, not per second
+      let nodes npm = Formatting.formatNPM npm
       let eps = Formatting.formatEPS engineStat.AvgEPS
       let line =
         if includeEps then
             sprintf "%-*s : %-5d %-10s %-10s %-10s %-10s %-8.0f %-8.0f %-8.0f %-8.0f %-9s"
-                      n engineStat.Player engineStat.GameNr (speed engineStat.AvgNodes) (speed engineStat.MedianNodes) (speed engineStat.AvgNps)
+                      n engineStat.Player engineStat.GameNr (nodes engineStat.AvgNodes) (nodes engineStat.MedianNodes) (speed engineStat.AvgNps)
                       (speed engineStat.MedianNps) engineStat.AvgDepth engineStat.MedianDepth engineStat.AvgSD engineStat.MedianSD eps
         else
             sprintf "%-*s : %-5d %-10s %-10s %-10s %-10s %-8.0f %-8.0f %-8.0f %-8.0f"
-                    n engineStat.Player engineStat.GameNr (speed engineStat.AvgNodes) (speed engineStat.MedianNodes) (speed engineStat.AvgNps)
+                    n engineStat.Player engineStat.GameNr (nodes engineStat.AvgNodes) (nodes engineStat.MedianNodes) (speed engineStat.AvgNps)
                     (speed engineStat.MedianNps) engineStat.AvgDepth engineStat.MedianDepth engineStat.AvgSD engineStat.MedianSD
       line
 
   let writeSummaryEngineStats (stat: SummaryEngineStat) n includeEps =
       let speed nps = Formatting.formatNPS nps
+      // nodes per move, not per second
+      let nodes npm = Formatting.formatNPM npm
       let eps = Formatting.formatEPS stat.EPS
       let time = Formatting.formatMoveTime stat.Time
       let line =
           if includeEps then
             sprintf "%-*s : %-7d %-11s %-11s %-11s %-8.0f %-7.0f %-7s"
-                        n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) eps stat.AvgDepth stat.AvgSelfDepth time
+                        n stat.Player stat.Games (nodes stat.AvgNodes) (speed stat.AvgNPS) eps stat.AvgDepth stat.AvgSelfDepth time
           else
             sprintf "%-*s : %-7d %-11s %-11s %-8.0f %-7.0f %-7s"
-                        n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) stat.AvgDepth stat.AvgSelfDepth time
+                        n stat.Player stat.Games (nodes stat.AvgNodes) (speed stat.AvgNPS) stat.AvgDepth stat.AvgSelfDepth time
       line
 
   let writeEngineStatHeader (n:int) includeEps : string =
@@ -208,6 +212,11 @@ module ConsoleHelper =
       let longestName =
         if Seq.isEmpty engineStats then 10
         else engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
+      // what the numbers are: easy to compare medians with averages by mistake otherwise
+      match engineStats |> Seq.tryHead with
+      | Some s when s.Median -> appendLine "Medians per move, over all of each engine's moves (nodes per move, NPS, depth, selective depth, move time)"
+      | Some _ -> appendLine "Averages per move, outliers left out (nodes per move, NPS, depth, selective depth, move time)"
+      | None -> ()
       writeSummaryEngineStatHeader longestName includeEps |> appendLine
       for engineStat in engineStats do
         writeSummaryEngineStats engineStat longestName includeEps |> appendLine

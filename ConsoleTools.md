@@ -551,7 +551,11 @@ dotnet run -c Release -- elo <path-to-pgn-file>
 
 ### speed
 
-Shows speed statistics (NPS, nodes per move) from a PGN file.
+Shows each engine's speed from a PGN file's move comments: **medians per move** over all of the
+engine's moves - nodes per move (`npm`), nodes per second (`nps`), depth, selective depth and move
+time. The table says so on its first line. Medians, not averages: a few very long or very short
+searches move an average a long way. The GUI's speed calculator shows the averages beside them
+(outliers outside 1.5 x the interquartile range left out).
 
 **Aliases:** `sp`
 

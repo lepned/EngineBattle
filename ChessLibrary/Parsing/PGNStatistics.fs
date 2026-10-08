@@ -133,6 +133,7 @@ let npsMap (stat : EngineMoveStat) = stat.s
 let nodeMap (stat : EngineMoveStat) = stat.n
 let depthMap (stat : EngineMoveStat) = int64 stat.d
 let sdMap (stat : EngineMoveStat) = int64 stat.sd
+let mtMap (stat : EngineMoveStat) = stat.mt
 
 /// Calculates the average NPS without outliers.
 /// <param name="moves">The array of engine move statistics.</param>
@@ -630,7 +631,8 @@ let calculateMedianAndAvgSpeedSummaryInPgnFile (games:PgnGame seq, timeInSecs:in
       let games = gamesOf p
       [|
         {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
-        {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}
+        // the average row's time is an average too (it was the median), outliers left out like the rest
+        {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = avg mtMap |> int64}
       |]) |> Array.concat
 
 /// Calculates the median and average book exit speed summary in a PGN file.
@@ -661,5 +663,6 @@ let calculateMedianAndAvgBookExitSpeedSummaryInPgnFile (games:PgnGame seq) =
       let games = gamesOf p
       [|
         {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
-        {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}
+        // the average row's time is an average too (it was the median), outliers left out like the rest
+        {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = avg mtMap |> int64}
       |]) |> Array.concat
