@@ -62,3 +62,13 @@ let ``FirstDeviationIndex takes O-O and 0-0 as one castle`` () =
   let referenceSans = [| "e4"; "e5"; "Nf3"; "Nc6"; "Bc4"; "Bc5"; "O-O"; "Nf6"; "c3" |]
   let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory [||] referenceSans
   Assert.Equal(System.Nullable 8, idx)
+
+[<Fact>]
+let ``the final Ordo table calibrates the draw rate only from enough games at a rate it can calibrate`` () =
+  let ok r = match r with Ok () -> true | Error _ -> false
+  Assert.True(ok (GameAnalysis.OrdoHelper.drawCalibration 200 (Some 62.0)))
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 49 (Some 62.0)))
+  // 0 and 100 %: Ordo's error simulations never finish
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 200 (Some 100.0)))
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 200 (Some 0.0)))
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 200 None))

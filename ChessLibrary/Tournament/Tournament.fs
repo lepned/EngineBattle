@@ -386,11 +386,25 @@ module Manager =
                   let pgnGames = x.GetPGNGames()
                   if pgnGames.Count > 0 then
                       let _, data, _, _ = PGNCalculator.getEngineDataResults pgnGames
-                      let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" true
-                      Console.WriteLine($"\n Final Ordo pass (draw-rate calibrated, may take a while): {cmd.Arguments} \n")
+                      // -D only where it can calibrate: a quick pass without simulations reads the
+                      // rate first, since at 0 or 100 % the simulations never finish
+                      let rate =
+                          if pgnGames.Count < 50 then None
+                          else
+                              OrdoHelper.calibratedDrawRate ordoPath tournament.PgnOutPath 30.0 cts.Token
+                              |> Async.AwaitTask |> Async.RunSynchronously
                       let ordo =
-                          OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 300.0 cts.Token
-                          |> Async.AwaitTask |> Async.RunSynchronously
+                          match OrdoHelper.drawCalibration pgnGames.Count rate with
+                          | Ok () ->
+                              let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" true
+                              Console.WriteLine($"\n Final Ordo pass (draw-rate calibrated, may take a while): {cmd.Arguments} \n")
+                              OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 300.0 cts.Token
+                              |> Async.AwaitTask |> Async.RunSynchronously
+                          | Error why ->
+                              let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" false
+                              Console.WriteLine($"\n Final Ordo pass without draw-rate calibration ({why}): {cmd.Arguments} \n")
+                              OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 60.0 cts.Token
+                              |> Async.AwaitTask |> Async.RunSynchronously
                       callback.Invoke (Update.GameSummary ordo)
           with e ->
               Console.WriteLine($"Final Ordo error: {e.Message}")

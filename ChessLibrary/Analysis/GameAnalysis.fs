@@ -164,6 +164,37 @@ module OrdoHelper =
       }
 
 
+  /// The draw rate Ordo calibrates from a PGN (-D without error simulations: fast), in percent;
+  /// None when Ordo fails, prints none, or does not answer in time.
+  let calibratedDrawRate (executablePath: string) (fileName: string) (timeoutSeconds: float) (cancellationToken: System.Threading.CancellationToken) =
+      task {
+          try
+              use cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+              cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds))
+              let cmd =
+                  Cli.Wrap(executablePath)
+                      .WithWorkingDirectory(Path.GetDirectoryName(executablePath))
+                      .WithArguments([ "-Q"; "-a"; "0"; "-D"; "-N"; "0"; "-z"; defaultZValue; "--"; fileName ])
+                      .WithValidation(CommandResultValidation.None)
+              let! result = cmd.ExecuteBufferedAsync(cts.Token)
+              let m = System.Text.RegularExpressions.Regex.Match(result.StandardOutput, @"Draw rate \(equal opponents\) = ([0-9.]+) %")
+              return
+                  if m.Success then Some (Double.Parse(m.Groups.[1].Value, Globalization.CultureInfo.InvariantCulture))
+                  else None
+          with _ -> return None
+      }
+
+  /// Whether the final table may calibrate the draw rate (-D): it needs enough games, and a rate
+  /// the games can calibrate. At 0 or 100 % Ordo's error simulations do not converge (an 8-game
+  /// Swiss ran past 300 s), and below 50 games the rate is noise. Error carries why not.
+  let drawCalibration (games: int) (drawRate: float option) : Result<unit, string> =
+      if games < 50 then Error $"{games} games - draw-rate calibration needs at least 50"
+      else
+          match drawRate with
+          | Some rate when rate > 0.5 && rate < 99.5 -> Ok ()
+          | Some rate -> Error $"the games give a draw rate of {rate:F0}%%, which cannot be calibrated"
+          | None -> Error "Ordo could not calibrate the draw rate from these games"
+
   let lossCombinations = [ "00"; "01/2"; "1/20" ]
   let winCombinations = [ "11"; "11/2"; "1/21" ]
 
