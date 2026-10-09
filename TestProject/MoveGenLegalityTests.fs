@@ -183,7 +183,7 @@ let ``PV conversion handles castling, captures and numbering`` () =
 [<Fact>]
 let ``PV conversion starting with a black move uses ellipsis numbering`` () =
     let sanPv = convertPv "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" "e7e5 g1f3 b8c6"
-    Assert.Equal("1.... e5 2.Nf3 Nc6", sanPv)
+    Assert.Equal("1... e5 2.Nf3 Nc6", sanPv)
 
 [<Fact>]
 let ``PV conversion handles capture promotion`` () =

@@ -134,3 +134,17 @@ let ``the minimal PGN writes a quote in a tag value escaped, as it was read`` ()
   let text = PGNWriter.strippedGameText game
   Assert.Contains("[Site \"a\\\"b\"]", text)
   Assert.Contains("[Annotator \"x\\\"y\"]", text)
+
+[<Fact>]
+let ``a game's closing comment says who did what`` () =
+  let ending result reason = { TypesDef.CoreTypes.Result.Empty with Player1 = "A"; Player2 = "B"; Result = result; Reason = reason }
+  let closing (r: TypesDef.CoreTypes.Result) =
+    let path = Path.Combine(Path.GetTempPath(), "eb-pgnout-" + Guid.NewGuid().ToString "N" + ".pgn")
+    do
+      use writer = new StreamWriter(path)
+      PGNWriter.writeEndOfGameSection writer r
+    File.ReadAllText(path).Trim()
+  Assert.Equal("{Black loses on time} 1-0", closing (ending "1-0" MiscTypes.ResultReason.ForfeitLimits))
+  Assert.Equal("{Draw by fifty moves rule} 1/2-1/2", closing (ending "1/2-1/2" MiscTypes.ResultReason.ExcessiveMoves))
+  Assert.Equal("{White mates} 1-0", closing (ending "1-0" MiscTypes.ResultReason.Checkmate))
+  Assert.Equal("{Black disconnects} 1-0", closing (ending "1-0" (MiscTypes.ResultReason.Disconnected "B")))

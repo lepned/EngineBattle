@@ -452,6 +452,30 @@ module TypesDef =
         override x.ToString() =
           let time = float x.GameTime / 1000.0
           sprintf "%s vs %s: %s (%s), %d moves, %.1f seconds" x.Player1 x.Player2 x.Result (x.Reason.Explanation) x.Moves time
+        /// How the game ended, as cutechess and fastchess say it - who did what: "White mates",
+        /// "Draw by fifty moves rule", "Black loses on time". The PGN's closing comment, the GUI's
+        /// result line and `match` (which adds a time loss's overrun) all use it. Player1 is White.
+        member x.Ending =
+          let whiteWon = x.Result = "1-0"
+          let decisive = x.Result = "1-0" || x.Result = "0-1"
+          let colour white = if white then "White" else "Black"
+          let winner, loser = colour whiteWon, colour (not whiteWon)
+          match x.Reason with
+          | Checkmate -> $"{winner} mates"
+          | Stalemate -> "Draw by stalemate"
+          | AdjudicateMaterial -> "Draw by insufficient mating material"
+          | Repetition -> "Draw by 3-fold repetition"
+          | ExcessiveMoves -> "Draw by fifty moves rule"
+          | AdjudicateTB -> if decisive then $"{winner} wins by adjudication: SyzygyTB" else "Draw by adjudication: SyzygyTB"
+          | AdjudicatedEvaluation
+          | AdjudicatedByUser -> if decisive then $"{winner} wins by adjudication" else "Draw by adjudication"
+          | ForfeitLimits -> $"{loser} loses on time"
+          | Illegal -> $"{loser} makes an illegal move"
+          | Resignation -> $"{loser} resigns"
+          | Disconnected name -> $"{colour (name = x.Player1)} disconnects"
+          | Stalled name -> $"{colour (name = x.Player1)}'s connection stalls"
+          | Cancel
+          | NotStarted -> "Game interrupted"
         static member Empty =
           { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = []; TimeOverrunMs = 0L; GameDeviations = 0 }
     let createResult p1 p2 (moves: ResizeArray<string>) result reason gameTime =

@@ -100,7 +100,7 @@ let getShortSanPVFromLongSanPVFast (moveList: TMove[]) (board: Board inref) (pv:
         if plyCount % 2 = 1 then
           // black move
           if plyCount = start then
-            ret.Add(string moveNr + ".... " + san)
+            ret.Add(string moveNr + "... " + san)
           else
             ret.Add(san)
         else

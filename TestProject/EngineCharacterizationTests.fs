@@ -238,7 +238,7 @@ let ``Analysis search reports each info line as Status and Info, then Done befor
             Assert.Equal(150000.0, st.[2].NPS)
             Assert.Equal(1, st.[2].MultiPV)
             Assert.Equal("e7e5 g1f3 b8c6", st.[2].PVLongSAN)
-            Assert.Equal("1.... e5 2.Nf3 Nc6", st.[2].PV)
+            Assert.Equal("1... e5 2.Nf3 Nc6", st.[2].PV)
             Assert.Equal(WDLType.HasValue { Win = 400.0; Draw = 450.0; Loss = 150.0 }, st.[2].WDL)
             // The raw line travels alongside each parsed status.
             let infos = updates.ToArray() |> Array.choose (function Info (_, l) -> Some l | _ -> None)
@@ -254,7 +254,7 @@ let ``Analysis search reports each info line as Status and Info, then Done befor
             Assert.Equal(bm.FEN, bm.MoveAndFen.FenAfterMove)
             Assert.Equal(MiscTypes.EvalType.CP -0.22, bm.Eval)
             Assert.Equal(3000L, bm.Nodes)
-            Assert.Equal("1.... e5 2.Nf3 Nc6", bm.PV)
+            Assert.Equal("1... e5 2.Nf3 Nc6", bm.PV)
             Assert.Equal(32, bm.PiecesLeft)
             Assert.Contains("go nodes 100", commands log)
         | other -> failwithf "%A" other
@@ -269,7 +269,7 @@ let ``Analysis understands a startpos position command`` () =
         | Completed (Some bm) ->
             Assert.Contains("position startpos moves e2e4", commands log)
             Assert.Equal(MiscTypes.EvalType.CP -0.20, (statuses updates).[0].Eval)
-            Assert.Equal("1.... e5 2.Nf3 Nc6", (statuses updates).[2].PV)
+            Assert.Equal("1... e5 2.Nf3 Nc6", (statuses updates).[2].PV)
             Assert.Equal("e5", bm.MoveAndFen.ShortSan)
         | other -> failwithf "%A" other
     finally quitAnalysis eng

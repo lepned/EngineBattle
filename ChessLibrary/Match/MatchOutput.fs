@@ -43,26 +43,11 @@ module MatchOutput =
   /// The `{...}` text of `Finished game` for an EngineBattle result (§3). A time loss's overrun is
   /// how far below zero EngineBattle's clock went (Result.TimeOverrunMs).
   let annotation (white: string) (r: Result) =
-    let whiteWon = r.Result = "1-0"
-    let decisive = r.Result = "1-0" || r.Result = "0-1"
-    let winner = colour whiteWon
-    let loser = colour (not whiteWon)
+    // Result.Ending, with White named by the caller (the match's own record of who had White)
+    let r = { r with Player1 = white }
     match r.Reason with
-    | Checkmate -> $"{winner} mates"
-    | Stalemate -> "Draw by stalemate"
-    | AdjudicateMaterial -> "Draw by insufficient mating material"
-    | Repetition -> "Draw by 3-fold repetition"
-    | ExcessiveMoves -> "Draw by fifty moves rule"
-    | AdjudicateTB -> if decisive then $"{winner} wins by adjudication: SyzygyTB" else "Draw by adjudication: SyzygyTB"
-    | AdjudicatedEvaluation
-    | AdjudicatedByUser -> if decisive then $"{winner} wins by adjudication" else "Draw by adjudication"
-    | ForfeitLimits -> $"{loser} loses on time ({r.TimeOverrunMs}ms overrun)"
-    | Illegal -> $"{loser} makes an illegal move"
-    | Resignation -> $"{loser} resigns"
-    | Disconnected name -> $"{colour (name = white)} disconnects"
-    | Stalled name -> $"{colour (name = white)}'s connection stalls"
-    | Cancel
-    | NotStarted -> "Game interrupted"
+    | ForfeitLimits -> $"{r.Ending} ({r.TimeOverrunMs}ms overrun)"
+    | _ -> r.Ending
 
   /// formatStats: the white-view result.
   let resultText (r: string) =

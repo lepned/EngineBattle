@@ -356,7 +356,8 @@ let writePGNHeaderSection (writer: StreamWriter) (header: GameMetadata) =
 /// <param name="writer">The StreamWriter.</param>
 /// <param name="result">The game result.</param>
 let writeEndOfGameSection (writer: StreamWriter) (result:Result) =
-  writer.Write(sprintf " {%s}" result.Reason.Explanation)
+  // who did what ("Black loses on time"), not only what happened
+  writer.Write(sprintf " {%s}" result.Ending)
   // Write result *
   writer.Write (sprintf " %s " result.Result)
   //writer.Write("*")

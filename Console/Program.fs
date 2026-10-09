@@ -2225,22 +2225,22 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     
     /// Compact result-reason labels for console output.
     let shortReason (reason: ChessLibrary.MiscTypes.ResultReason) : string =
-        match reason.Explanation with
-        | "Checkmate" -> "mate"
-        | "Stalemate" -> "stale"
-        | "Tablebase known result" -> "tb-known"
-        | "Insufficient material" -> "insuf-mat"
-        | "Too many moves" -> "too-many"
-        | "Repetition draw" -> "rep-draw"
-        | "Evaluation agreement" -> "eval-agree"
-        | "Time/node limit forfeit" -> "time-limit"
-        | "Game was cancelled" -> "cancelled"
-        | "Illegal move" -> "illegal"
-        | "Not started" -> "not-started"
-        | "Adjudicated by user" -> "adj-user"
-        | s when s.EndsWith(" Disconnected") -> "disconn"
-        | s when s.EndsWith(" stalled") -> "stalled"
-        | other -> other
+        match reason with
+        | ChessLibrary.MiscTypes.Checkmate -> "mate"
+        | ChessLibrary.MiscTypes.Stalemate -> "stale"
+        | ChessLibrary.MiscTypes.AdjudicateTB -> "tb-known"
+        | ChessLibrary.MiscTypes.AdjudicateMaterial -> "insuf-mat"
+        | ChessLibrary.MiscTypes.ExcessiveMoves -> "50-moves"
+        | ChessLibrary.MiscTypes.Repetition -> "rep-draw"
+        | ChessLibrary.MiscTypes.AdjudicatedEvaluation -> "eval-agree"
+        | ChessLibrary.MiscTypes.ForfeitLimits -> "time-limit"
+        | ChessLibrary.MiscTypes.Cancel -> "cancelled"
+        | ChessLibrary.MiscTypes.Illegal -> "illegal"
+        | ChessLibrary.MiscTypes.NotStarted -> "not-started"
+        | ChessLibrary.MiscTypes.AdjudicatedByUser -> "adj-user"
+        | ChessLibrary.MiscTypes.Resignation -> "resigns"
+        | ChessLibrary.MiscTypes.Disconnected _ -> "disconn"
+        | ChessLibrary.MiscTypes.Stalled _ -> "stalled"
 
     /// Define the MailboxProcessor for handling updates asynchronously
     let createUpdateProcessor (verbose:bool) =
