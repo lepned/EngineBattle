@@ -60,15 +60,14 @@ public partial class Tournaments
 				if (tournament.VerboseLogging)
 					// Explanation, not ToString — the latter is the short PGN code ("XX").
 					logger.LogDebug($"Game over: {e.Result.Reason.Explanation} - deviation counter: {tournament.DeviationCounter}");
-				var explanation = e.Result.Reason.Explanation;
-				var gameTxtResult = e.Result.Result == "1/2-1/2" ? "Draw" : e.Result.Result == "1-0" ? "White wins" : "Black wins";
-				gameResult = $"{gameTxtResult} by {explanation}";
+				// who did what, as the PGN says it ("Black loses on time", "Draw by 3-fold repetition")
+				gameResult = e.Result.Ending;
 				// U+2011, not a plain hyphen: the move list renders each space-separated token
 				// in its own span, and a browser will split "1-0" after the hyphen when the
 				// line runs out. nowrap is no use here — the trailing space lives inside the
 				// span, so it would stop the list wrapping at all.
 				var resultToken = e.Result.Result.Replace('-', '‑');
-				var mh = $"{moveHistory}  ({resultToken} : {explanation})";
+				var mh = $"{moveHistory}  ({resultToken} : {e.Result.Ending})";
 				moveHistory = mh;
 				if (JsonFeedService.IsScored(e.Result))
 				{
