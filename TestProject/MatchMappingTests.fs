@@ -196,3 +196,10 @@ let ``ponder, as cutechess-cli writes it, lets every engine ponder - all or none
     match MatchArgs.parse env (sf @ lc0 @ [ "-each"; "ponder=maybe" ]) with
     | MatchArgs.Run _ -> Assert.Fail "ponder=maybe was accepted"
     | _ -> ()
+
+[<Fact>]
+let ``the adjudication text says off for a part that is off, scores in pawns`` () =
+    let t = (mapped (sf @ lc0)).Tournament
+    Assert.Equal("Adjudication: -draw off -resign off ", t.AdjudicationText())
+    let on = { t with Adjudication = { t.Adjudication with DrawOption = { MinDrawMove = 30; DrawMoveLength = 5; MaxDrawScore = 0.3 }; WinOption = { MinWinMove = 0; WinMoveLength = 5; MinWinScore = 5.0 } } }
+    Assert.Equal("Adjudication: -draw movenumber=30 movecount=5 score=0.3 -resign movecount=5 score=5.0 ", on.AdjudicationText())

@@ -830,11 +830,19 @@ module TypesDef =
             Path.GetFileName (x.Opening.OpeningsPath.Value)
           else "no opening book"
 
-        member x.AdjudicationText() = //"-draw movenumber=50 movecount=5 score=8 -resign movecount=5 score=1000"
-          let t = sprintf "Adjudication: -draw movenumber=%d movecount=%d score=%.1f cp -resign movecount=%d score=%.1f cp "
-                    x.Adjudication.DrawOption.MinDrawMove x.Adjudication.DrawOption.DrawMoveLength
-                    x.Adjudication.DrawOption.MaxDrawScore x.Adjudication.WinOption.WinMoveLength x.Adjudication.WinOption.MinWinScore
-          t
+        /// "Adjudication: -draw movenumber=30 movecount=5 score=0.3 -resign movecount=5 score=5.0",
+        /// scores in pawns; a part that is off (a move number never reached, as `match` sets
+        /// without -draw or -resign) says off
+        member x.AdjudicationText() =
+          let d, w = x.Adjudication.DrawOption, x.Adjudication.WinOption
+          let invariant = System.Globalization.CultureInfo.InvariantCulture
+          let draw =
+            if d.MinDrawMove >= 6000 then "-draw off"
+            else String.Format(invariant, "-draw movenumber={0} movecount={1} score={2:0.0##}", d.MinDrawMove, d.DrawMoveLength, d.MaxDrawScore)
+          let resign =
+            if w.MinWinMove >= 6000 then "-resign off"
+            else String.Format(invariant, "-resign movecount={0} score={1:0.0##}", w.WinMoveLength, w.MinWinScore)
+          $"Adjudication: {draw} {resign} "
 
         member x.Summary() =
           let sb = new StringBuilder()
