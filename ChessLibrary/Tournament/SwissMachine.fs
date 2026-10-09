@@ -242,7 +242,7 @@ let private openRound (st: State) n (pairs: (EngineConfig * EngineConfig) list) 
   let mutable st = st
   let mutable acc = acc
   round.Pairs |> List.iteri (fun pairIndex p0 ->
-    if not (p0.Decided || p0.B = "BYE") then
+    if not (p0.Decided || p0.B = "BYE") && hasEngines cfg p0 then
       let p =
         if cfg.UniquePerMatchOnly && cfg.RandomOpenings && cfg.Openings.Length > 1 && p0.Order.Length < cfg.Openings.Length then
           let p = { p0 with Order = shuffled cfg $"swiss-pair|{p0.Round}|{p0.Id}" }
@@ -262,8 +262,16 @@ let private openRound (st: State) n (pairs: (EngineConfig * EngineConfig) list) 
         PairingHelper.addPlannedPairings planned (engine cfg firstWhite) (engine cfg firstBlack) openings cfg.GamesPerMatch start
           n (pairIndex * cfg.GamesPerMatch) p.Games.Length st.Played halfPairOpening
       if not cfg.UniquePerMatchOnly then previewIndex <- next)
-  let st = { st with Planned = List.ofSeq planned; Current = Some (n, { Index = 0; Entered = false; Remaining = 0; Local = 0; Failures = 0; Unit = None; FirstWhite = None; FirstBlack = None }) }
-  st, acc @ [ Notify (Update.PairingList (ResizeArray planned)) ]
+  // a pair still to play whose engine has left the config (a resume after an edit): skipped, the
+  // rounds after it would be paired from standings without it - so the Swiss stops and says why
+  match round.Pairs |> List.tryFind (fun p -> not p.Decided && p.B <> "BYE" && not (hasEngines cfg p)) with
+  | Some p ->
+      let gone = [ p.A; p.B ] |> List.filter (fun name -> not (cfg.Players |> List.exists (fun e -> e.Name = name))) |> String.concat " and "
+      let text = $"Stopping the Swiss: {gone} is no longer in the tournament but still has to play {p.A} vs {p.B} in round {n} - add the engine back to resume, or start a new Swiss"
+      { st with Stopped = true; Current = None }, acc @ [ Critical text; StopRun ]
+  | None ->
+      let st = { st with Planned = List.ofSeq planned; Current = Some (n, { Index = 0; Entered = false; Remaining = 0; Local = 0; Failures = 0; Unit = None; FirstWhite = None; FirstBlack = None }) }
+      st, acc @ [ Notify (Update.PairingList (ResizeArray planned)) ]
 
 /// The next unit of a pair's match: an opening and the colours to play it with.
 let private nextUnit (st: State) (p: Pair) (pc: PairCursor) (acc: Effect<SwissState> list) =

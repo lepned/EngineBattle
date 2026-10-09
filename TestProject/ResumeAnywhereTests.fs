@@ -256,3 +256,23 @@ let ``a Swiss playoff drawn round after round ends after three by Sonneborn-Berg
   Assert.DoesNotContain(o.Games, fun g -> g.StartsWith "STILL PLAYING")
   Assert.Equal(3, o.Saved.Value.Rounds |> Seq.filter (fun r -> r.RoundNumber > 3) |> Seq.length)
   Assert.Contains(o.Notes, fun n -> n.Contains "after 3 playoff rounds" && n.Contains "Sonneborn-Berger")
+
+[<Fact>]
+let ``a Swiss resumed without an engine that still has a pair to play stops and says so`` () =
+  let dir = freshDir ()
+  let t =
+    { baseTournament dir "Swiss" 6 with
+        SwissOptions = { Tournament.Empty.SwissOptions with GamesPerMatch = 2; Rounds = 3; StatePath = Path.Combine(dir, "s.json") } }
+  let cfg = SwissMachine.configOf t (openingsOf t)
+  // stopped after the round's first game: its other pairs are still to play
+  let first = run resultOf SwissMachine.step (SwissMachine.create cfg None 0) 0 0 (Some 1)
+  let round1 = first.Saved.Value.Rounds.[0].Pairings |> List.ofSeq
+  let open' = round1 |> List.find (fun p -> p.Games.Count = 0)
+  // one of that pair's engines has left the config since
+  let cfg = SwissMachine.configOf { t with EngineSetup = { t.EngineSetup with Engines = t.EngineSetup.Engines |> List.filter (fun e -> e.Name <> open'.PlayerB) } } (openingsOf t)
+  let m = SwissMachine.create cfg first.Saved 1
+  let second = run resultOf SwissMachine.step m (SwissMachine.totalGamesOf m) 1 None
+  Assert.Contains(second.Notes, fun n -> n.StartsWith "Stopping the Swiss" && n.Contains open'.PlayerB && n.Contains "no longer in the tournament")
+  // nothing played around the missing engine, nothing paired past it
+  Assert.DoesNotContain(second.Games, fun g -> g.Contains open'.PlayerB)
+  Assert.Equal(1, second.Saved |> Option.map (fun s -> s.Rounds.Count) |> Option.defaultValue 1)

@@ -131,7 +131,7 @@ To resume a tournament, ensure the state file exists at the configured path.
 
 ### Unplayable games
 
-Three games in a row of one pairing that cannot be played (an engine that crashes or does not start) stop the tournament, as in a cup or a ladder. Fix the engine and resume: the pairing is played on in its round, before the next round is paired. A pairing is never skipped - played later, it would change the standings the following rounds were paired from. The same holds for a playoff round.
+Three games in a row of one pairing that cannot be played (an engine that crashes or does not start) stop the tournament, as in a cup or a ladder. Fix the engine and resume: the pairing is played on in its round, before the next round is paired. A pairing is never skipped - played later, it would change the standings the following rounds were paired from. The same holds for a playoff round. Likewise, a Swiss resumed without an engine that still has a pairing to play in its round stops and names it: add the engine back to resume. An engine left out of the config only drops out of the rounds that are not yet paired.
 
 ## UI Integration
 
