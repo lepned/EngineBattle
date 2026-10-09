@@ -55,6 +55,9 @@ let writeOpeningPGNMoves (moves: string seq) =
   loop 1 (moves |> Seq.toList) 0
   sb.ToString()
 
+/// A tag value as the PGN standard writes it: backslashes and quotes escaped.
+let escapeTagValue (s: string) = if isNull s then "" else s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+
 /// A game without comments, variations or NAGs: its tags, then the main line in export form -
 /// numbered ("12..." when Black moves first), lines of at most 80 characters, the result last.
 /// Tags come from the game's own text when it was parsed with it (every tag, in its order),
@@ -73,12 +76,13 @@ let strippedGameText (g: PgnGame) =
   else
     for key, value in [ "Event", meta.Event; "Site", meta.Site; "Date", meta.Date; "Round", meta.Round
                         "White", meta.White; "Black", meta.Black; "Result", meta.Result ] do
-      sb.Append($"[{key} \"{value}\"]\n") |> ignore
+      sb.Append($"[{key} \"{escapeTagValue value}\"]\n") |> ignore
     if not (String.IsNullOrEmpty meta.Fen) then
       if not (meta.OtherTags |> List.exists (fun t -> t.Key = "SetUp")) then sb.Append("[SetUp \"1\"]\n") |> ignore
-      sb.Append($"[FEN \"{meta.Fen}\"]\n") |> ignore
+      sb.Append($"[FEN \"{escapeTagValue meta.Fen}\"]\n") |> ignore
+    // the parser unescaped them: written back escaped
     for t in meta.OtherTags do
-      sb.Append($"[{t.Key} \"{t.Value}\"]\n") |> ignore
+      sb.Append($"[{t.Key} \"{escapeTagValue t.Value}\"]\n") |> ignore
   sb.Append('\n') |> ignore
   let result = if String.IsNullOrWhiteSpace meta.Result then "*" else meta.Result.Trim()
   // a move's annotation glyphs (!, ?, !?) are NAGs too
@@ -301,7 +305,7 @@ let writePGNHeaderSection (writer: StreamWriter) (header: GameMetadata) =
       |[x] -> true, sprintf "%s" x.ValueStr
       |x::y::_ -> true, sprintf "%s, %s" x.ValueStr y.ValueStr
   // a tag value escapes its backslashes and quotes, as the PGN standard says
-  let esc (s: string) = if isNull s then "" else s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+  let esc = escapeTagValue
   // Write header data as tags using brackets [ ]
   writer.WriteLine(sprintf "[Event \"%s\"]" (esc header.Event))
   writer.WriteLine(sprintf "[Site \"%s\"]" (esc header.Site))

@@ -285,7 +285,10 @@ module Hash =
       let sanMoves = Opening.openingPrefix game
       for m in sanMoves do
           if m.Color = "w" then
-            sb.Append(sprintf "%d.%s " m.MoveNumber m.San) |> ignore
+            // numbered from the book's first move, not the FEN's move number: the hash is the
+            // opening's identity in state files and PGNs, and it was made this way before the
+            // parser numbered moves from the FEN
+            sb.Append(sprintf "%d.%s " (m.Ply / 2 + 1) m.San) |> ignore
           elif m.Color = "b" then
             sb.Append(sprintf "%s " m.San) |> ignore
       sb.AppendLine() |> ignore

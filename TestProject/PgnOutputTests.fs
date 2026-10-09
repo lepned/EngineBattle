@@ -112,3 +112,25 @@ let ``a castle already on the board is followed, not branched, however it was sp
   let tokens = board.InlineTokensFromGraph()
   Assert.DoesNotContain(tokens, fun t -> t.IsBracket)
   Assert.Equal(1, tokens.Length)
+
+[<Fact>]
+let ``a book game's opening hash does not depend on the FEN's move number`` () =
+  // the hash is the opening's identity in state files and PGNs: it counts moves from the book's
+  // first move, as it did before the parser numbered moves from the FEN
+  let fen = "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 0 30"
+  let path = Path.Combine(Path.GetTempPath(), "eb-pgnout-" + Guid.NewGuid().ToString "N" + ".pgn")
+  File.WriteAllText(path, $"[Event \"b\"]\n[SetUp \"1\"]\n[FEN \"{fen}\"]\n[Result \"*\"]\n\n30... Nxe4 31. d4 b5 *\n")
+  let game = FullPGNParser.parsePgnFile path |> Seq.head
+  Assert.Equal(30, game.Mainline.[0].MoveNumber)
+  let expected = $"[Fen \"{fen}\"]{Environment.NewLine}Nxe4 1.d4 b5 {Environment.NewLine}"
+  Assert.Equal(ChessUtilities.Hash.computeOpeningHash expected, ChessUtilities.Hash.computeOpeningHashFromGame game)
+
+[<Fact>]
+let ``the minimal PGN writes a quote in a tag value escaped, as it was read`` () =
+  let path = Path.Combine(Path.GetTempPath(), "eb-pgnout-" + Guid.NewGuid().ToString "N" + ".pgn")
+  File.WriteAllText(path, "[Event \"e\"]\n[Site \"a\\\"b\"]\n[Annotator \"x\\\"y\"]\n[Result \"*\"]\n\n1. e4 *\n")
+  let game = FullPGNParser.parsePgnFile path |> Seq.head
+  Assert.Equal("a\"b", game.GameMetaData.Site)
+  let text = PGNWriter.strippedGameText game
+  Assert.Contains("[Site \"a\\\"b\"]", text)
+  Assert.Contains("[Annotator \"x\\\"y\"]", text)

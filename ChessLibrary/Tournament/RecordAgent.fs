@@ -88,8 +88,9 @@ type RecordAgent(setup: Setup, logger: ILogger) =
     let whiteTc, blackTc = tcOf pair.White, tcOf pair.Black
     let ownTags =
       [ if chess960 then "Variant", "Chess960"
-        if pair.White.Rating > 0 then "WhiteElo", string pair.White.Rating
-        if pair.Black.Rating > 0 then "BlackElo", string pair.Black.Rating
+        // a rating somebody gave: not 0 (unknown) and not the placeholder a new def gets
+        if pair.White.Rating > 0 && pair.White.Rating <> EngineConfig.PlaceholderRating then "WhiteElo", string pair.White.Rating
+        if pair.Black.Rating > 0 && pair.Black.Rating <> EngineConfig.PlaceholderRating then "BlackElo", string pair.Black.Rating
         if whiteTc = blackTc && whiteTc <> "" then "TimeControl", whiteTc
         if whiteTc <> blackTc && whiteTc <> "" then "WhiteTimeControl", whiteTc
         if whiteTc <> blackTc && blackTc <> "" then "BlackTimeControl", blackTc ]

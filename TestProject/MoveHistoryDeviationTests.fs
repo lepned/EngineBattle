@@ -54,3 +54,11 @@ let ``FirstDeviationIndex returns next-move index when current is longer but pre
   let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
   Assert.True(idx.HasValue)
   Assert.Equal(2, idx.Value)
+
+[<Fact>]
+let ``FirstDeviationIndex takes O-O and 0-0 as one castle`` () =
+  // the reference game read from EB's PGN castles with O, the live board with zeros
+  let moveHistory = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. 0-0 Nf6 5. d3"
+  let referenceSans = [| "e4"; "e5"; "Nf3"; "Nc6"; "Bc4"; "Bc5"; "O-O"; "Nf6"; "c3" |]
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory [||] referenceSans
+  Assert.Equal(System.Nullable 8, idx)

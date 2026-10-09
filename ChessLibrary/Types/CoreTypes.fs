@@ -237,12 +237,14 @@ module TypesDef =
               for opt in x.Options do
                 sb.Append(sprintf " %s=%s;" opt.Key (opt.Value.ToString())) |> ignore
               sb.ToString()
+            /// The rating a def gets when nobody gave one (Empty, mkdef, the Engine creator): not an Elo
+            static member PlaceholderRating = 3600
             static member Empty =
               { Name = ""
                 Alias = ""
                 TimeControlID = 0
                 Version = "Version"
-                Rating = 3600
+                Rating = EngineConfig.PlaceholderRating
                 Dev = ""
                 LogoPath = ""
                 IsChallenger = false
@@ -263,7 +265,7 @@ module TypesDef =
                 Alias = "Engine xx"
                 TimeControlID = 1
                 Version = "Version"
-                Rating = 3600
+                Rating = EngineConfig.PlaceholderRating
                 Dev = "from xxx"
                 LogoPath = "Img/lc0.png"
                 IsChallenger = false

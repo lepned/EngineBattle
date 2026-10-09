@@ -2981,7 +2981,9 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     if not (File.Exists normalizedPath) then
                         printfn "PGN file not found: %s" normalizedPath
                         exit 1
-                    elif String.Equals(Path.GetFullPath normalizedPath, outPath, StringComparison.OrdinalIgnoreCase) then
+                    elif String.Equals(Path.GetFullPath normalizedPath, outPath, StringComparison.OrdinalIgnoreCase)
+                         || String.Equals(Path.GetFullPath normalizedPath, outPath + ".tmp", StringComparison.OrdinalIgnoreCase) then
+                        // the output, or the temporary file it is written to first, would be the input
                         printfn "The output would overwrite the input: give another --out"
                         exit 1
                     elif File.Exists outPath && not force then
