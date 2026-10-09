@@ -640,6 +640,21 @@ public partial class Tournaments
 					logger.LogError(ex.Message);
 					throw;
 				}
+				finally
+				{
+					TournamentSvc.MarkEnded(r);
+				}
+				// the runner catches a run's error itself and returns: said here, or the page just stands still
+				var failure = r.Failure;
+				if (Microsoft.FSharp.Core.FSharpOption<string>.get_IsSome(failure))
+				{
+					var text = failure.Value;
+					_ = InvokeAsync(() =>
+					{
+						Snackbar.Add($"The tournament stopped: {text}", Severity.Error, o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+						StateHasChanged();
+					});
+				}
 			});
 
 		evalList = new LivePlot(chessModule, evalChart, whitePlayer, blackPlayer, "Eval in CP", "Centipawns");

@@ -124,6 +124,15 @@ namespace WebGUI.Services
 
         public void MarkRunning() => IsRunning = true;
 
+        /// <summary>A run has returned. One that stopped with an error never sent EndOfTournament,
+        /// so the page still thought it running and would not start another. Only for the current
+        /// runner: a run still ending after a Cancel must not mark the next one stopped.</summary>
+        public void MarkEnded(Tournament.Manager.Runner runner)
+        {
+            if (ReferenceEquals(runner, _runner))
+                IsRunning = false;
+        }
+
         public void Cancel()
         {
             _runner?.Cancel();
