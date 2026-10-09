@@ -29,7 +29,7 @@ namespace WebGUI.Services
         {
             if (string.IsNullOrWhiteSpace(path))
                 return (false, "No file given.");
-            if (tournaments.IsRunning)
+            if (tournaments.IsRunning || tournaments.IsStopping)
                 return (false, "A tournament is running. Stop it before you open another one.");
 
             string full;

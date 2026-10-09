@@ -729,6 +729,18 @@ public partial class Tournaments
 			Snackbar.Add("A tournament is already running.", Severity.Info);
 			return;
 		}
+		// a cancelled run still ends its game and stops its engines: the next starts after it,
+		// and only then are its state file and PGN looked at
+		if (TournamentSvc.IsStopping)
+		{
+			Snackbar.Add("Waiting for the previous tournament to stop...", Severity.Info);
+			if (!await TournamentSvc.WaitUntilStoppedAsync(TimeSpan.FromSeconds(30)))
+			{
+				Snackbar.Add("The previous tournament is still stopping (an engine is not responding). Try again shortly.",
+					Severity.Error, o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+				return;
+			}
+		}
 		await PrepareRun();
 		ShowOpeningWarnings();
 		if (!await CheckPonderingEngines())

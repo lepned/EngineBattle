@@ -13,7 +13,25 @@ namespace WebGUI.Services
 
         public TournamentService(JsonFeedService jsonFeed) => _jsonFeed = jsonFeed;
 
-        public bool IsRunning { get; private set; }
+        // Idle -> Running (MarkRunning) -> Stopping (Cancel, or the run's EndOfTournament) -> Idle
+        // when its Run() has returned (MarkEnded). A cancelled run still ends its game and stops
+        // its engines: until then no other may start, or both play at once.
+        private enum RunState { Idle, Running, Stopping }
+        private RunState _state = RunState.Idle;
+        private TaskCompletionSource _ended = CompletedEnd();
+
+        private static TaskCompletionSource CompletedEnd()
+        {
+            var t = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            t.SetResult();
+            return t;
+        }
+
+        /// A tournament is playing (not one that is stopping).
+        public bool IsRunning { get { lock (_lock) { return _state == RunState.Running; } } }
+
+        /// A cancelled or finished run is still ending: its engines may still be up.
+        public bool IsStopping { get { lock (_lock) { return _state == RunState.Stopping; } } }
         public Tournament.Manager.Runner? CurrentRunner => _runner;
 
         /// <summary>True when the loaded tournament will use the parallel runner with more than
@@ -51,10 +69,16 @@ namespace WebGUI.Services
             previous?.Dispose();
         }
 
-        private void HandleUpdate(TournamentTypes.Update update)
+        private void HandleUpdate(Tournament.Manager.Runner? from, TournamentTypes.Update update)
         {
-            if (update is TournamentTypes.Update.EndOfTournament)
-                IsRunning = false;
+            lock (_lock)
+            {
+                // a replaced run's late updates (a cancelled game, its standings, its end) are not this run's
+                if (!ReferenceEquals(from, _runner))
+                    return;
+                if (update is TournamentTypes.Update.EndOfTournament && _state == RunState.Running)
+                    _state = RunState.Stopping;
+            }
 
             LiveFeedRecorder? recorder;
             Action<TournamentTypes.Update>? handler;
@@ -98,18 +122,25 @@ namespace WebGUI.Services
 
         public Tournament.Manager.Runner CreateRunner(ILogger logger, ShutdownTokenProvider shutdown)
         {
-            if (IsRunning)
-                throw new InvalidOperationException("Tournament already running. Cancel first.");
-            // the replaced runner's PGN file is closed (after its run, if a cancelled one is still ending)
-            _runner?.Retire();
-            _runner = NewRunner(logger);
-            _runner.LinkCancellation(shutdown.Token);
-            return _runner;
+            lock (_lock)
+            {
+                if (_state == RunState.Running)
+                    throw new InvalidOperationException("Tournament already running. Cancel first.");
+                if (_state == RunState.Stopping)
+                    throw new InvalidOperationException("The previous tournament is still stopping.");
+                // the replaced runner's PGN file is closed now: its run has ended
+                _runner?.Retire();
+                _runner = NewRunner(logger);
+                _runner.LinkCancellation(shutdown.Token);
+                return _runner;
+            }
         }
 
         private Tournament.Manager.Runner NewRunner(ILogger logger)
         {
-            var runner = new Tournament.Manager.Runner(logger, HandleUpdate, true);
+            Tournament.Manager.Runner? self = null;
+            var runner = new Tournament.Manager.Runner(logger, u => HandleUpdate(self, u), true);
+            self = runner;
             // In-process tagged tee for the multi-board grid: gameId-stamped wire lines go straight
             // into JsonFeedService (no HTTP loopback, no file). Only the parallel runner invokes the
             // sink; sequential runs never see it. JsonFeedService caches per-game snapshots even with
@@ -122,32 +153,62 @@ namespace WebGUI.Services
             return runner;
         }
 
-        public void MarkRunning() => IsRunning = true;
+        public void MarkRunning()
+        {
+            lock (_lock)
+            {
+                _state = RunState.Running;
+                _ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+        }
 
-        /// <summary>A run has returned. One that stopped with an error never sent EndOfTournament,
-        /// so the page still thought it running and would not start another. Only for the current
-        /// runner: a run still ending after a Cancel must not mark the next one stopped.</summary>
+        /// <summary>A run has returned, ended, failed or cancelled: the next may start.</summary>
         public void MarkEnded(Tournament.Manager.Runner runner)
         {
-            if (ReferenceEquals(runner, _runner))
-                IsRunning = false;
+            TaskCompletionSource ended;
+            lock (_lock)
+            {
+                if (!ReferenceEquals(runner, _runner))
+                    return;
+                _state = RunState.Idle;
+                ended = _ended;
+            }
+            ended.TrySetResult();
         }
 
         public void Cancel()
         {
-            _runner?.Cancel();
-            IsRunning = false;
+            Tournament.Manager.Runner? runner;
+            lock (_lock)
+            {
+                runner = _runner;
+                if (_state == RunState.Running)
+                    _state = RunState.Stopping;
+            }
+            runner?.Cancel();
+        }
+
+        /// <summary>True once no run is ending any more; false when one is still stopping after the timeout.</summary>
+        public async Task<bool> WaitUntilStoppedAsync(TimeSpan timeout)
+        {
+            Task ended;
+            lock (_lock) { ended = _ended.Task; }
+            return await Task.WhenAny(ended, Task.Delay(timeout)) == ended;
         }
 
         public Tournament.Manager.Runner GetConfigRunner(ILogger logger)
         {
-            if (_runner != null)
+            // one runner, though two circuits ask at once
+            lock (_lock)
             {
-                if (!IsRunning) _runner.InvalidateTournament();
+                if (_runner != null)
+                {
+                    if (_state == RunState.Idle) _runner.InvalidateTournament();
+                    return _runner;
+                }
+                _runner = NewRunner(logger);
                 return _runner;
             }
-            _runner = NewRunner(logger);
-            return _runner;
         }
     }
 }
