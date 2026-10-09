@@ -157,6 +157,15 @@ let private runMode (mode: Mode<'S, 'M>) (play: (Pairing -> Async<Result option>
   prepared |> Option.iter (fun text ->
     logger.LogInformation("{Text}", text)
     RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow text)
+  // a new tournament in a PGN that has another's games mixes the two: only when asked for
+  let orphan = StatePaths.orphanGames Environment.CurrentDirectory tourny mode.Kind
+  if orphan > 0 && not tourny.AppendToPgn then
+    let text =
+      $"{tourny.PgnOutPath} already has {orphan} game(s) but there is no {mode.Name} state file to resume from ({statePath}). "
+      + "Starting would put a new tournament into the same PGN. Set another PgnOutPath, or start with --append to add to this file."
+    logger.LogError("{Text}", text)
+    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red text
+    failwith text
   let store = mode.Store statePath
   use _stateGuard = onRunnerExit store.Close
 

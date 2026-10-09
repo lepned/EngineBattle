@@ -72,6 +72,10 @@ When the main path fails due to complex prior-pairing constraints (common in lat
 2. Greedily pair each player with the closest-scoring available opponent.
 3. Backtrack if needed to avoid rematches.
 
+### Looking Ahead
+
+A round is only paired in a way that leaves the remaining rounds pairable without a rematch. Pairing one round at a time can otherwise run into a dead end: with 6 players, three rounds can leave two groups of three who have all met each other, and no fourth round exists. When the usual pairing would lead there, the closest-scoring pairing that keeps the remaining rounds possible is used instead. Any number of rounds up to one less than the number of players can be played without a rematch.
+
 Both paths produce pairings sorted so that **weakest score groups play first** and strongest last.
 
 ## Bye Selection
@@ -101,7 +105,7 @@ Each round executes pairings from weakest to strongest score groups. This follow
 
 Winner determination:
 - Points only. If tied after scheduled rounds, play extra pairs (if `AllowExtraPairsOnTie` is true).
-- For two tied engines: play additional pairs until one wins a pair.
+- For two tied engines: a playoff round, a match of `GamesPerMatch` games between them. Still tied, another one - at most three playoff rounds; still tied after the third, Sonneborn-Berger decides.
 - For three or more tied: use tie-break criteria.
 
 Tie-break order in the standings (every placement):
@@ -114,7 +118,9 @@ A tie for first between three or more players at the end is broken by Sonneborn-
 
 ## State Persistence
 
-Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines).
+Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines); the old file is then renamed `.migrated`, so a later Restart is not undone by it.
+
+A cup, Swiss or ladder with no state file to resume from will not start in a PGN that already has games, since that would put two tournaments into one file: the GUI asks first (add to the PGN, or cancel and set another PgnOutPath), the console stops and says so (`tournamentjson <file> --append` adds to the PGN anyway). A state file that cannot be read - cut short by a crash, say - is set aside as `.corrupt` rather than overwritten, and the same question follows.
 
 Swiss state is saved to the state file (next to the PGN unless `StatePath` is set) after each game, including:
 - Current round number and global opening index
@@ -122,6 +128,10 @@ Swiss state is saved to the state file (next to the PGN unless `StatePath` is se
 - Opening order (for resume consistency)
 
 To resume a tournament, ensure the state file exists at the configured path.
+
+### Unplayable games
+
+Three games in a row of one pairing that cannot be played (an engine that crashes or does not start) stop the tournament, as in a cup or a ladder. Fix the engine and resume: the pairing is played on in its round, before the next round is paired. A pairing is never skipped - played later, it would change the standings the following rounds were paired from. The same holds for a playoff round.
 
 ## UI Integration
 

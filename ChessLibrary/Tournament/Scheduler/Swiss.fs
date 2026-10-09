@@ -171,6 +171,58 @@ let private tryFallbackPairings
     findPairs ordered []
 
 // ---------------------------------------------------------------------------
+// Lookahead: a round is paired only in a way the rounds after it can follow without a rematch.
+// One round at a time can pair itself into a corner: with 6 players three rounds can leave two
+// triangles of unplayed pairs (A-B-C, D-E-F), from which no fourth round can be paired.
+// ---------------------------------------------------------------------------
+
+let private byeName = "BYE"
+
+/// Whether `rounds` more rounds can be paired among `names` without a pair in `used` (an odd
+/// field gets a BYE to pair with: a second bye counts as a rematch). A search that runs out of
+/// steps counts as yes - it only steers a round, it never blocks one.
+let private canPairRounds (names: string list) (used: Set<string>) (rounds: int) =
+  let names = if names.Length % 2 = 1 then names @ [ byeName ] else names
+  let steps = ref 100_000
+  let partnersLeft (used: Set<string>) p = names |> List.filter (fun q -> q <> p && not (used.Contains (pairKey p q))) |> List.length
+  let rec roundsLeft k (used: Set<string>) =
+    k = 0 || (names |> List.forall (fun p -> partnersLeft used p >= k) && pairUp names used [] k)
+  and pairUp left used added k =
+    steps.Value <- steps.Value - 1
+    if steps.Value < 0 then true
+    else
+      match left with
+      | [] -> roundsLeft (k - 1) (added |> List.fold (fun s key -> Set.add key s) used)
+      | p :: rest ->
+          rest |> List.exists (fun q ->
+            let key = pairKey p q
+            not (used.Contains key) && pairUp (rest |> List.filter (fun x -> x <> q)) used (key :: added) k)
+  roundsLeft rounds used
+
+/// Every pairing of a round without a rematch, the closest scores first (the fallback order).
+let private allPairings (players: EngineConfig list) (seedMap: Map<string, int>) (scoreFor: string -> float) (priorPairs: Set<string>) =
+  let rec from (remaining: EngineConfig list) acc =
+    seq {
+      match remaining with
+      | [] -> yield List.rev acc
+      | player :: rest ->
+          let candidates =
+            rest
+            |> List.filter (fun opp -> not (priorPairs.Contains (pairKey player.Name opp.Name)))
+            |> List.sortBy (fun opp -> abs (scoreFor player.Name - scoreFor opp.Name), seedMap.[opp.Name])
+          for opp in candidates do
+            yield! from (rest |> List.filter (fun p -> p.Name <> opp.Name)) ((player, opp, scoreFor player.Name) :: acc) }
+  from (players |> List.sortBy (fun p -> (-(scoreFor p.Name), seedMap.[p.Name]))) []
+
+/// The players who could sit out, in the order chooseByePlayer prefers: lowest score, weakest seed, no bye yet.
+let private byeOrder (players: EngineConfig list) (seedMap: Map<string, int>) (scoreFor: string -> float) (byeSet: Set<string>) =
+  if players.Length % 2 = 0 then [ None ]
+  else
+    let ordered = players |> List.sortBy (fun p -> scoreFor p.Name, -seedMap.[p.Name])
+    (ordered |> List.filter (fun p -> not (byeSet.Contains p.Name))) @ (ordered |> List.filter (fun p -> byeSet.Contains p.Name))
+    |> List.map Some
+
+// ---------------------------------------------------------------------------
 // Public entry point: pair the next Swiss round.
 // ---------------------------------------------------------------------------
 
@@ -216,11 +268,13 @@ let pairNextRoundGroupedOnly
 /// Compute Swiss pairings for a single round. Tries the score-group
 /// top-vs-bottom strategy first; falls back to a score-diff-minimizing
 /// relaxation if the primary strategy can't satisfy the no-rematch rule.
-/// Raises if no valid pairing exists.
+/// `roundsAfter`: the rounds still to come after this one - a pairing that would leave them no
+/// way without a rematch gives way to the closest one that does. Raises if no valid pairing exists.
 ///
 /// Returns a list of (White-first, Black-first) pairs, with the optional
 /// BYE pair appended at the end (opponent = `{ Empty with Name = "BYE" }`).
-let pairNextRound
+let pairRoundLeaving
+    (roundsAfter: int)
     (players: EngineConfig list)
     (seedOrder: EngineConfig list)
     (scores: Map<string, float>)
@@ -237,11 +291,30 @@ let pairNextRound
     let byeCandidate = chooseByePlayer players seedMap scoreFor byeSet
     let pairingPlayers, byePlayer = partitionBye players byeCandidate
 
-    let paired =
+    let usual =
         tryGroupedPairings pairingPlayers seedMap scoreFor priorPairs
         |> Option.orElseWith (fun () ->
             tryFallbackPairings pairingPlayers seedMap scoreFor priorPairs)
-        |> Option.defaultWith (fun () ->
+        |> Option.map (fun p -> p, byePlayer)
+    let names = players |> List.map _.Name
+    let leavesRounds (paired: (EngineConfig * EngineConfig * float) list, bye: EngineConfig option) =
+        roundsAfter <= 0
+        || (let used = byeSet |> Seq.fold (fun s b -> Set.add (pairKey b byeName) s) priorPairs
+            let used = paired |> List.fold (fun s (a, b, _) -> Set.add (pairKey a.Name b.Name) s) used
+            let used = match bye with Some b -> Set.add (pairKey b.Name byeName) used | None -> used
+            canPairRounds names used roundsAfter)
+    let chosen =
+        match usual with
+        | Some choice when leavesRounds choice -> Some choice
+        | _ ->
+            byeOrder players seedMap scoreFor byeSet
+            |> Seq.collect (fun bye ->
+                let rest = match bye with Some b -> players |> List.filter (fun p -> p.Name <> b.Name) | None -> players
+                allPairings rest seedMap scoreFor priorPairs |> Seq.truncate 2000 |> Seq.map (fun p -> p, bye))
+            |> Seq.tryFind leavesRounds
+            |> Option.orElse usual
+    let paired, byePlayer =
+        chosen |> Option.defaultWith (fun () ->
             failwith "Swiss pairing failed: no valid non-repeat pairings found for this round.")
 
     // Include the bye in the sort so it lands naturally by score rather than
@@ -316,3 +389,6 @@ let generateMatchGames
                       Key = key }
             index <- index + 1
         List.ofSeq games, index
+
+/// `pairRoundLeaving` for a round with none after it (a playoff, or a caller that does not look ahead).
+let pairNextRound players seedOrder scores priorPairs byeSet = pairRoundLeaving 0 players seedOrder scores priorPairs byeSet

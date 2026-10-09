@@ -8,8 +8,8 @@ pairings 1.3:e1-e3#0 1.4:e3-e1#0
 play #3 1.3 e1-e3 o2
 play #3 1.3 e3-e1 o2
 pairings 1.3:e1-e3#0 1.4:e3-e1#0
-play #3 1.3 e1-e3 o3
-bracket next=0 order=
+play #3 1.3 e1-e3 o2
+bracket next=1 order=
   r1 #1 e1-e3 1.0-1.0 winner=- false order=
     g1 e1-e3 o1 1/2-1/2
     g2 e3-e1 o1 1/2-1/2

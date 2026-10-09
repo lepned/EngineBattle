@@ -70,6 +70,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `pgnsummary` | `pgn`, `ps` | Analyze PGN game terminations |
 | `pgncheck` | `pc` | Parser health check on a PGN file (no analysis) |
 | `pgnvalidate` | `pgnv` | Replay every game of a PGN: illegal or ambiguous moves, non-standard SAN |
+| `pgnstrip` | `strip` | Write a PGN's games without comments, variations or NAGs |
 | `bookeval` | `be` | Keep the openings of a PGN/EPD book that every engine scores in an eval window (see BookEvaluation.md) |
 | `deviations` | `dev` | Engine self-consistency and position deviations from a PGN |
 | `elo` | `e` | Show Elo ratings and results from PGN |
@@ -117,8 +118,11 @@ Runs a chess engine tournament using a JSON configuration file.
 
 **Syntax:**
 ```bash
-dotnet run -c Release -- tournamentjson <path-to-tournament.json>
+dotnet run -c Release -- tournamentjson <path-to-tournament.json> [--append]
 ```
+
+`--append`: a cup, Swiss or ladder with no state file to resume from may start in a PGN that
+already has games. Without it the run stops and says so, so two tournaments are not mixed in one file.
 
 **Example:**
 ```bash
@@ -492,6 +496,33 @@ dotnet run -c Release -- pgnvalidate <path-to-pgn-file> [--csv findings.csv] [--
 summary are the same however many. It helps compact files most (TCEC: 2 threads -30%, 4 threads
 -40%); on comment-heavy files like CCC's the parser's allocations keep the garbage collector busy
 and more threads gain little.
+
+---
+
+### pgnstrip
+
+Writes every game of a PGN file again without comments, variations or NAGs (`$1` as well as `!`
+and `?`), streamed one game at a time, so a file of any size works. Each game keeps all its tags
+as written and in their order; the main line is numbered as the PGN standard wants it (`30...` when
+the game starts with Black to move from a FEN) and wrapped at 80 characters. The summary counts the
+games, plies, comments and variations removed, and any `[Event` record the parser made no game of
+(those are not in the output). The output is written to a temporary file and moved into place at
+the end, so a failed run leaves no half-written file.
+
+**Aliases:** `strip`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- pgnstrip <path-to-pgn-file> [--out stripped.pgn] [--force] [--skip-empty] [--skip-invalid]
+```
+
+`--skip-empty` leaves out games without moves. `--skip-invalid` leaves out games `pgnvalidate` finds
+an error in - an illegal or ambiguous move, or a FEN that cannot be set up; a move written in
+non-standard SAN is kept. The summary counts what was left out.
+
+Without `--out` the output is `<name>_stripped.pgn` next to the input. An existing output is only
+overwritten with `--force`, and the input never. The GUI's Minimal PGN (Tools, Create Opening Book)
+writes the same game text.
 
 ---
 

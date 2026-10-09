@@ -728,7 +728,9 @@
     private double MinPolicyThreshold { get; set; }
     private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
     private List<VariationDisplay> VariationLines { get; set; } = new();
-    private record InlineToken(string Text, string DisplayText, string Fen, string Comment, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply);
+    // Ply indexes the per-move evals and annotations (0 = the first move); MoveNumber and
+    // IsWhite are the move as the start position counts it (a game from a FEN at move 30...)
+    private record InlineToken(string Text, string DisplayText, string Fen, string Comment, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply, int MoveNumber, bool IsWhite);
     private List<InlineToken> InlineTokens { get; set; } = new();
     private bool showMoveActionDialog = false;
     private string selectedActionSan = string.Empty;
@@ -755,7 +757,7 @@
             else
             {
                 var isCurrent = string.Equals(tok.Fen, fen, StringComparison.Ordinal);
-                var isWhiteToMove = tok.Ply % 2 == 0;
+                var isWhiteToMove = tok.IsWhite;
                 <span id="@($"move-{tok.Hash}")"
                       title="@CommentTooltip(tok.Comment)"
                       @onclick="@(() => OnInlineMoveClick(tok))"
@@ -825,12 +827,12 @@
             if (tok.IsBracket) { i++; continue; }
             if (tok.IsFromVariation) { i++; continue; }
 
-            // Expect a white move (even ply)
+            // Expect a white move
             InlineToken white = null;
             InlineToken black = null;
             var variations = new List<InlineToken>();
 
-            if (tok.Ply % 2 == 0)
+            if (tok.IsWhite)
             {
                 white = tok;
                 i++;
@@ -840,7 +842,7 @@
                 // Game starts with black move (e.g., from a FEN)
                 black = tok;
                 i++;
-                movePairs.Add(new MovePair(tok.Ply / 2 + 1, null, black, new List<InlineToken>()));
+                movePairs.Add(new MovePair(tok.MoveNumber, null, black, new List<InlineToken>()));
                 // Collect any variations after this move
                 CollectVariations(tokens, ref i, movePairs[movePairs.Count - 1].VariationTokens);
                 continue;
@@ -850,7 +852,7 @@
             CollectVariations(tokens, ref i, variations);
 
             // Look for black's move
-            if (i < tokens.Count && !tokens[i].IsBracket && !tokens[i].IsFromVariation && tokens[i].Ply % 2 == 1)
+            if (i < tokens.Count && !tokens[i].IsBracket && !tokens[i].IsFromVariation && !tokens[i].IsWhite)
             {
                 black = tokens[i];
                 i++;
@@ -858,7 +860,7 @@
                 CollectVariations(tokens, ref i, variations);
             }
 
-            int moveNumber = white != null ? white.Ply / 2 + 1 : (black != null ? black.Ply / 2 + 1 : 1);
+            int moveNumber = white != null ? white.MoveNumber : (black != null ? black.MoveNumber : 1);
             movePairs.Add(new MovePair(moveNumber, white, black, variations));
         }
     }
@@ -1624,7 +1626,7 @@
         InlineMoveHistory = string.Empty;
         InlineTokens.Clear();
         var tokens = ChessBoard.InlineTokensFromGraph();
-        InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.Evaluation, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation, t.Ply)));
+        InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.Evaluation, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation, t.Ply, t.MoveNumber, t.IsWhite)));
         InlineMoveHistory = string.Join(" ", tokens.Where(t => !t.IsBracket).Select(t => t.DisplayText));
 
         if (MoveListPosition == MoveListPosition.Right)
@@ -1673,8 +1675,7 @@
     private string FormatMoveLabel(InlineToken token)
     {
         if (token == null || string.IsNullOrWhiteSpace(token.Text)) return string.Empty;
-        var moveNr = (token.Ply / 2) + 1;
-        return token.Ply % 2 == 0 ? $"{moveNr}. {token.Text}" : $"{moveNr}... {token.Text}";
+        return token.IsWhite ? $"{token.MoveNumber}. {token.Text}" : $"{token.MoveNumber}... {token.Text}";
     }
 
     private Task PromoteSelectedVariation()

@@ -78,10 +78,29 @@ type RecordAgent(setup: Setup, logger: ILogger) =
 
   let metadataOf (game: FinishedGame) (deviations: int) : GameMetadata =
     let pair, result = game.Pairing, game.Result
+    // a Chess960 start position says so ([Variant]): read as standard chess, its castling is wrong
+    let chess960 =
+      not (String.IsNullOrWhiteSpace pair.Opening.Fen)
+      && (try (let b = Chess.Board() in b.LoadFen pair.Opening.Fen; b.IsFRC) with _ -> false)
+    // the game's own tags; a book game's tags of the same names (its players' Elo, its clock) do not carry over
+    let tcOf (e: EngineConfig) =
+      try (let c = tourny.FindTimeControl e.TimeControlID in c.PgnText (tourny.TimeControl.PeriodFor c)) with _ -> ""
+    let whiteTc, blackTc = tcOf pair.White, tcOf pair.Black
+    let ownTags =
+      [ if chess960 then "Variant", "Chess960"
+        if pair.White.Rating > 0 then "WhiteElo", string pair.White.Rating
+        if pair.Black.Rating > 0 then "BlackElo", string pair.Black.Rating
+        if whiteTc = blackTc && whiteTc <> "" then "TimeControl", whiteTc
+        if whiteTc <> blackTc && whiteTc <> "" then "WhiteTimeControl", whiteTc
+        if whiteTc <> blackTc && blackTc <> "" then "BlackTimeControl", blackTc ]
+      |> List.map (fun (key, value) -> { Key = key; Value = value })
+    let own = set [ "Variant"; "WhiteElo"; "BlackElo"; "TimeControl"; "WhiteTimeControl"; "BlackTimeControl"; "Termination" ]
+    let bookTags = pair.Opening.GameMetaData.OtherTags |> List.filter (fun t -> not (own.Contains t.Key))
     { OpeningHash = pair.OpeningHash
-      Event = tourny.Description
-      Site = tourny.Name
-      Date = DateTime.Now.ToShortDateString()
+      Event = tourny.Name
+      Site = if String.IsNullOrWhiteSpace tourny.Site then "?" else tourny.Site
+      // the PGN standard's date, YYYY.MM.DD
+      Date = DateTime.Now.ToString("yyyy.MM.dd", Globalization.CultureInfo.InvariantCulture)
       Round = pair.RoundNr
       White = result.Player1
       Black = result.Player2
@@ -94,7 +113,7 @@ type RecordAgent(setup: Setup, logger: ILogger) =
       OpeningName = pair.Opening.GameMetaData.OpeningName
       Deviations = deviations
       StartEvals = result.OutOfOpeningEvals
-      OtherTags = pair.Opening.GameMetaData.OtherTags }
+      OtherTags = ownTags @ bookTags }
 
   let seed (pair: Pairing) =
     if not tourny.PreventMoveDeviation then None

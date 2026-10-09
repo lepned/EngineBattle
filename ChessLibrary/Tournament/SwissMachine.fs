@@ -1,7 +1,8 @@
 /// A Swiss tournament as a pure step: state + event -> state + effects. ModeRunner plays the
 /// games it asks for and carries out the rest. Mirrors the runner it replaces game for game:
-/// rounds of pairings, each pairing a match of units (an opening and its colours), byes, a pair
-/// abandoned after repeated unplayable games, then the tiebreak.
+/// rounds of pairings, each pairing a match of units (an opening and its colours), byes, then the
+/// tiebreak. Unplayable games in a row stop the tournament, as in a cup or a ladder: a resume plays
+/// the pair on where it stands (it was skipped before, and a resume replayed it rounds later).
 module ChessLibrary.SwissMachine
 
 open System
@@ -296,7 +297,7 @@ let private nextUnit (st: State) (p: Pair) (pc: PairCursor) (acc: Effect<SwissSt
 let private maxPlayoffRounds = 3
 
 /// The tiebreak once the rounds are over: a playoff round when exactly two lead, Sonneborn-Berger
-/// for more, for a playoff that could not be played, or after maxPlayoffRounds playoffs.
+/// for more or after maxPlayoffRounds playoffs.
 let private startTie (st: State) n (acc: Effect<SwissState> list) =
   let cfg = st.Config
   let scores = standings st
@@ -305,13 +306,10 @@ let private startTie (st: State) n (acc: Effect<SwissState> list) =
     let best = scores |> Seq.maxBy (fun kv -> kv.Value) |> fun kv -> kv.Value
     let tied = scores |> Seq.filter (fun kv -> kv.Value = best) |> Seq.map (fun kv -> kv.Key) |> List.ofSeq
     let playoffs = st.Rounds |> List.filter (fun r -> r.Number > cfg.TotalRounds)
-    // a playoff pair left undecided in a finished round was abandoned: its games could not be played
-    let abandoned = playoffs |> List.exists (fun r -> r.Pairs |> List.exists (fun p -> not p.Decided && p.B <> "BYE"))
     if tied.Length <= 1 then { st with Phase = Over }, acc
-    elif tied.Length > 2 || abandoned || playoffs.Length >= maxPlayoffRounds then
+    elif tied.Length > 2 || playoffs.Length >= maxPlayoffRounds then
       let why =
         if tied.Length > 2 then $"{tied.Length} players tied at {best}"
-        elif abandoned then $"2 players tied at {best}, the playoff could not be played"
         else $"2 players still tied at {best} after {playoffs.Length} playoff rounds"
       // Sonneborn-Berger: the points taken off each opponent times that opponent's score
       let sb = Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
@@ -357,7 +355,8 @@ let rec private advance (st: State) (acc: Effect<SwissState> list) : State * Eff
           let acc = acc @ [ Info "Swiss tournament completed: all unique pairs have been played." ]
           if cfg.AllowExtraPairsOnTie then advance { st with Phase = Tie n } acc else advance { st with Phase = Over } acc
         else
-          let pairs = Scheduler.Swiss.pairNextRound cfg.Players cfg.SeedOrder (standings st) prior (SwissProgress.byes (asRounds st))
+          // paired so that the rounds after it can still be paired without a rematch
+          let pairs = Scheduler.Swiss.pairRoundLeaving (cfg.TotalRounds - n) cfg.Players cfg.SeedOrder (standings st) prior (SwissProgress.byes (asRounds st))
           let st, acc = openRound st n pairs acc
           advance st acc
   | None, Tie n, None ->
@@ -454,9 +453,10 @@ let step (st: State) (event: Event) : State * Effect<SwissState> list =
           | None ->
               let failures = pc.Failures + 1
               let st = { st with Current = Some (n, { pc with Failures = failures }) }
-              let acc =
-                if failures >= cfg.MaxFailures then
-                  [ Critical $"Abandoning pairing {game.White.Name} vs {game.Black.Name} after {failures} consecutive unplayable games" ]
-                else []
-              advance st acc
+              if failures >= cfg.MaxFailures then
+                // a pair cannot be skipped and played later without changing the rounds after it:
+                // the tournament stops, and a resume plays the pair on in its round
+                let text = $"Stopping the Swiss: {game.White.Name} vs {game.Black.Name} had {failures} consecutive unplayable games - fix the engine and resume, the pair is played on in round {n}"
+                advance { st with Stopped = true } [ Critical text; StopRun ]
+              else advance st []
       | _ -> st, []

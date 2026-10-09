@@ -352,6 +352,32 @@ module Program =
         
 
   
+  /// The [Event lines of a PGN file, for the records the parser made no game of: a vectorised
+  /// search for a newline and "[Event " in 1 MB blocks (a UTF-8 BOM before the first is skipped).
+  let private countEventLines (path: string) =
+    let pattern = "\n[Event "B
+    use fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 <<< 20, FileOptions.SequentialScan)
+    let bom = Array.zeroCreate<byte> 3
+    if not (fs.Read(bom, 0, 3) = 3 && bom.[0] = 0xEFuy && bom.[1] = 0xBBuy && bom.[2] = 0xBFuy) then fs.Position <- 0L
+    let buffer = Array.zeroCreate<byte> (1 <<< 20)
+    buffer.[0] <- byte '\n'   // the first line counts as one after a newline
+    let mutable kept = 1
+    let mutable count = 0
+    let mutable read = fs.Read(buffer, kept, buffer.Length - kept)
+    while read > 0 do
+        let filled = kept + read
+        let mutable rest = ReadOnlySpan<byte>(buffer, 0, filled)
+        let mutable at = rest.IndexOf(ReadOnlySpan<byte>(pattern))
+        while at >= 0 do
+            count <- count + 1
+            rest <- rest.Slice(at + 1)
+            at <- rest.IndexOf(ReadOnlySpan<byte>(pattern))
+        // the tail a match could still start in moves to the front
+        kept <- min filled (pattern.Length - 1)
+        Buffer.BlockCopy(buffer, filled - kept, buffer, 0, kept)
+        read <- fs.Read(buffer, kept, buffer.Length - kept)
+    count
+
   let runEretTest (path:string) =
     let normalizedPath = normalizePath path
     let loaded = loadEretConfig normalizedPath
@@ -2516,7 +2542,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn ""
     printfn "Commands:"
     printfn "  match [options]                          An engine match from one command line (match -help)"
-    printfn "  tournamentjson, tournament, t <config>  Run a tournament from JSON config"
+    printfn "  tournamentjson, tournament, t <config> [--append]  Run a tournament from JSON config (--append: a new cup/Swiss/ladder may start in a PGN that has games)"
     printfn "  puzzlejson, puzzle, p <config> [--json <path>]"
     printfn "                                          Run puzzle evaluation from JSON config"
     printfn "                                          --json <path>: write structured results JSON for tooling"
@@ -2550,6 +2576,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
     printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
+    printfn "  pgnstrip, strip <pgnFile> [--out F] [--force] [--skip-empty] [--skip-invalid]  Write the games without comments, variations or NAGs (default <name>_stripped.pgn)"
     printfn "  pgnvalidate, pgnv <pgnFile> [--csv F] [--threads N]  Replay every game: illegal/ambiguous moves (errors), non-standard SAN (warnings)"
     printfn "  bookeval, be <book.pgn|epd> --engine <def|exe> [--nodes N|--movetime MS] [--engine ...]"
     printfn "                                          Keep the openings every engine scores within --min/--max cp"
@@ -2774,7 +2801,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     runPuzzles path jsonOut
                 | Verb (Eret path) ->                     
                     runEretTest path
-                | Verb (Tournament configFile) ->
+                | Verb (Tournament (configFile, append)) ->
                     let normalizedPath = normalizePath configFile                
                     let tournamentConfig = JSON.readTournamentJson normalizedPath
                     match tournamentConfig with
@@ -2794,6 +2821,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                 ConsoleOnly = true
                                 DelayBetweenGames = TimeSpan.Zero
                             }
+                        tournament.AppendToPgn <- append
                         if tournament.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase) then
                           printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)
                         for warning in Validation.duplicateOpeningWarnings tournament do
@@ -2942,6 +2970,77 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         printf "%s" (ChessLibrary.DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage)
                         printfn "Done in %.1fs" sw.Elapsed.TotalSeconds
                 | Verb (BookEval p) -> runBookEval p
+                | Verb (PgnStrip (path, outOpt, force, skipEmpty, skipInvalid)) ->
+                    // Every game streamed out again without comments, variations or NAGs: its tags as
+                    // written, the main line numbered and wrapped at 80 characters, the result
+                    let normalizedPath = normalizePath path
+                    let outPath =
+                        match outOpt with
+                        | Some o -> Path.GetFullPath(normalizePath o)
+                        | None -> Path.Combine(Path.GetDirectoryName(Path.GetFullPath normalizedPath), Path.GetFileNameWithoutExtension normalizedPath + "_stripped.pgn")
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                        exit 1
+                    elif String.Equals(Path.GetFullPath normalizedPath, outPath, StringComparison.OrdinalIgnoreCase) then
+                        printfn "The output would overwrite the input: give another --out"
+                        exit 1
+                    elif File.Exists outPath && not force then
+                        printfn "%s exists: --force to overwrite it" outPath
+                        exit 1
+                    else
+                        let sizeMb = float (FileInfo(normalizedPath).Length) / 1048576.0
+                        let sw = Diagnostics.Stopwatch.StartNew()
+                        let mutable games = 0
+                        let mutable plies = 0L
+                        let mutable comments = 0L
+                        let mutable variations = 0L
+                        let mutable nags = 0L
+                        let mutable emptyLeft = 0
+                        let mutable invalidLeft = 0
+                        let board = Chess.Board()
+                        // left out on request: a game without moves; a game the validator finds an
+                        // illegal or ambiguous move or an unplayable FEN in (non-standard SAN is kept)
+                        let leftOut (game: PGNTypes.PgnGame) =
+                            if skipEmpty && game.Mainline.Count = 0 then
+                                emptyLeft <- emptyLeft + 1
+                                true
+                            elif skipInvalid && (fst (PgnValidation.validateGame board game) |> List.exists (fun f -> PgnValidation.isError f.Kind)) then
+                                invalidLeft <- invalidLeft + 1
+                                true
+                            else false
+                        // written beside the output and moved over it at the end: a failed run leaves no half file
+                        let temp = outPath + ".tmp"
+                        try
+                            do
+                                use writer = new StreamWriter(temp, false, Text.UTF8Encoding(false), 1 <<< 16)
+                                for game in FullPGNParser.parsePgnFileWithRaw normalizedPath |> Seq.filter (leftOut >> not) do
+                                    if games > 0 then writer.Write('\n')
+                                    writer.Write(PGNWriter.strippedGameText game)
+                                    games <- games + 1
+                                    for m in game.Mainline do
+                                        plies <- plies + 1L
+                                        if not (String.IsNullOrWhiteSpace m.Comment) then comments <- comments + 1L
+                                        if not (isNull m.Variations) then variations <- variations + int64 m.Variations.Count
+                                        nags <- nags + int64 m.Nags.Length + (if m.San.EndsWith "!" || m.San.EndsWith "?" then 1L else 0L)
+                                    if games % 100_000 = 0 then
+                                        printfn "  %s games, %.1f s..." (games.ToString("N0")) sw.Elapsed.TotalSeconds
+                            File.Move(temp, outPath, true)
+                            let eventLines = countEventLines normalizedPath
+                            sw.Stop()
+                            let outMb = float (FileInfo(outPath).Length) / 1048576.0
+                            printfn ""
+                            printfn "File       : %s (%.1f MB)" normalizedPath sizeMb
+                            printfn "Written    : %s (%.1f MB)" outPath outMb
+                            printfn "Games      : %s, plies %s" (games.ToString("N0")) (plies.ToString("N0"))
+                            printfn "Removed    : %s comments, %s variations, %s NAGs (main line)" (comments.ToString("N0")) (variations.ToString("N0")) (nags.ToString("N0"))
+                            if skipEmpty then printfn "Left out   : %s games without moves (--skip-empty)" (emptyLeft.ToString("N0"))
+                            if skipInvalid then printfn "Left out   : %s games with an illegal or ambiguous move or a bad FEN (--skip-invalid)" (invalidLeft.ToString("N0"))
+                            printfn "Records skipped : %s ([Event lines the parser made no game of - not in the output)" ((max 0 (eventLines - games - emptyLeft - invalidLeft)).ToString("N0"))
+                            printfn "Time       : %.1f s (%.1f MB/s)" sw.Elapsed.TotalSeconds (sizeMb / max sw.Elapsed.TotalSeconds 0.001)
+                        with ex ->
+                            (try File.Delete temp with _ -> ())
+                            printfn "pgnstrip failed after %s games: %s" (games.ToString("N0")) ex.Message
+                            exit 1
                 | Verb (PgnCheck path) ->
                     // Pure parser health check: stream the file (never materialize it),
                     // report structure and throughput. Deliberately does NO analysis —
@@ -3051,27 +3150,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                             // records the parser skips (an [Event] line with nothing after it, say): the
                             // file's [Event lines against the games it gave - a second pass over the
                             // bytes, a vectorised search for a newline and "[Event " in 1 MB blocks
-                            let eventLines =
-                                let pattern = "\n[Event "B
-                                use fs = new FileStream(normalizedPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 <<< 20, FileOptions.SequentialScan)
-                                let buffer = Array.zeroCreate<byte> (1 <<< 20)
-                                buffer.[0] <- byte '\n'   // the first line counts as one after a newline
-                                let mutable kept = 1
-                                let mutable count = 0
-                                let mutable read = fs.Read(buffer, kept, buffer.Length - kept)
-                                while read > 0 do
-                                    let filled = kept + read
-                                    let mutable rest = ReadOnlySpan<byte>(buffer, 0, filled)
-                                    let mutable at = rest.IndexOf(ReadOnlySpan<byte>(pattern))
-                                    while at >= 0 do
-                                        count <- count + 1
-                                        rest <- rest.Slice(at + 1)
-                                        at <- rest.IndexOf(ReadOnlySpan<byte>(pattern))
-                                    // the tail a match could still start in moves to the front
-                                    kept <- min filled (pattern.Length - 1)
-                                    Buffer.BlockCopy(buffer, filled - kept, buffer, 0, kept)
-                                    read <- fs.Read(buffer, kept, buffer.Length - kept)
-                                count
+                            let eventLines = countEventLines normalizedPath
                             sw.Stop()
                             let count kind = match counts.TryGetValue kind with | true, n -> n | _ -> 0
                             let errors = count PgnValidation.IllegalMove + count PgnValidation.AmbiguousMove + count PgnValidation.BadStart

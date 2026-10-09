@@ -92,7 +92,7 @@ type VerbResult =
     | PvBatch of PvBatchParams
     | PvCombo of pgn:string
     | PuzzleJson of path:string * jsonOut:string option
-    | Tournament of configFile:string
+    | Tournament of configFile:string * append:bool
     | Eret of configFile: string
     | Benchmark of configFile:string
     | Tune of configFile:string
@@ -102,6 +102,7 @@ type VerbResult =
     | PgnCheck of path:string
     // every game replayed: each move against the legal moves of its position; findings to a CSV
     | PgnValidate of path:string * csvOut:string option * threads:int option
+    | PgnStrip of path:string * out:string option * force:bool * skipEmpty:bool * skipInvalid:bool
     | BookEval of BookEvalParams
     | Deviations of path:string
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
@@ -656,7 +657,9 @@ module CustomParser =
             | "tournamentjson" | "tournament" | "t" -> // Handle the Tournament verb
                 if index + 1 < args.Length then
                     let configFile = args.[index + 1]
-                    parseArgs args (index + 2) (Verb (Tournament configFile) :: acc)
+                    // --append: a new cup, Swiss or ladder may start in a PGN that has games
+                    let append = index + 2 < args.Length && args.[index + 2] = "--append"
+                    parseArgs args (index + (if append then 3 else 2)) (Verb (Tournament (configFile, append)) :: acc)
                 else failwith "Missing parameter for Tournament" 
             | "benchmark" | "bench" | "b" -> // Handle the Benchmark verb
                 if index + 1 < args.Length then
@@ -697,6 +700,19 @@ module CustomParser =
                     let next, csv, threads = options (index + 2) None None
                     parseArgs args next (Verb (PgnValidate (path, csv, threads)) :: acc)
                 else failwith "Missing parameter for pgnvalidate"
+            | "pgnstrip" | "strip" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    // --out F, --force, --skip-empty and --skip-invalid, in any order
+                    let rec options i out force empty invalid =
+                        if i + 1 < args.Length && args.[i] = "--out" then options (i + 2) (Some args.[i + 1]) force empty invalid
+                        elif i < args.Length && args.[i] = "--force" then options (i + 1) out true empty invalid
+                        elif i < args.Length && args.[i] = "--skip-empty" then options (i + 1) out force true invalid
+                        elif i < args.Length && args.[i] = "--skip-invalid" then options (i + 1) out force empty true
+                        else i, out, force, empty, invalid
+                    let next, out, force, empty, invalid = options (index + 2) None false false false
+                    parseArgs args next (Verb (PgnStrip (path, out, force, empty, invalid)) :: acc)
+                else failwith "Missing parameter for pgnstrip"
             | "bookeval" | "be" ->
                 // A limit right after an --engine is that engine's; one before the first --engine
                 // is everyone's default.

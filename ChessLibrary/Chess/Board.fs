@@ -346,13 +346,16 @@ type Board() =
       updatePathFromCurrent ()
       this.PositionWithMoves()
 
+    /// A played move as a PGN writes it: "12. Nf3", "12... Nf6", castling with the letter O.
     member this.SanMoveNumberString san =
       if String.IsNullOrWhiteSpace san then ""
       else
+        // EB's SAN castles with zeros; the PGN standard writes O-O
+        let san = if san.StartsWith "0-0" then san.Replace('0', 'O') else san
         let ply = int position.Ply
         let moveNr = (ply + 1) / 2
         if position.STM = 0uy then // White to move: Black just moved
-          if moveNr = 0 then sprintf "%d. %s" 1 san else sprintf "%d ...%s" moveNr san
+          if moveNr = 0 then sprintf "%d. %s" 1 san else sprintf "%d... %s" moveNr san
         else sprintf "%d. %s" moveNr san
 
     member this.MoveNumber() = max 1 ((int position.Ply + 1) / 2)
@@ -740,14 +743,16 @@ type Board() =
           let hashAfter = this.PositionHash()
           let childrenEdges = (graph.Node graph.Current).Children |> graph.EdgesOf
           let toFen (e: MoveEdge) = if graph.HasNode e.To then (graph.Node e.To).Fen else ""
-          let existingEdge = childrenEdges |> List.tryFind (fun e -> e.San = shortSan && graph.HasNode e.To && toFen e = fenAfter)
+          // the same move is the one that leads to the same position - not the same spelling: a
+          // PGN's "O-O" and the generated "0-0" are one castle, and comparing SAN branched it
+          let existingEdge = childrenEdges |> List.tryFind (fun e -> graph.HasNode e.To && toFen e = fenAfter)
           let mainChild =
             childrenEdges
             |> List.tryFind (fun e -> e.IsMainline)
             |> Option.orElseWith (fun () -> childrenEdges |> List.tryHead)
           let isVariation =
             match mainChild with
-            | Some m -> m.San <> shortSan || toFen m <> fenAfter
+            | Some m -> toFen m <> fenAfter
             | None -> false
           let edgeId =
             match existingEdge with
@@ -800,10 +805,8 @@ type Board() =
           let moveStr = TMoveOps.getUciNotation move position.STM
           // Coordinate input must be converted, or "e2e4" would end up in the move list, the
           // move graph and the SAN history. Real SAN is kept verbatim so a PGN round-trips
-          // with its own spelling ("O-O" stays "O-O") — which does mean PlayUciMove's dedup
-          // (it compares generated SAN, always "0-0" and suffix-free) can still miss such a
-          // move and branch instead of following the mainline. Pre-existing, and the price of
-          // the round-trip guarantee. Computed before the move is made.
+          // with its own spelling ("O-O" stays "O-O"); PlayUciMove finds such a move by the
+          // position it leads to, so the spelling does not branch it. Computed before the move is made.
           let shortSan =
             if TMoveOps.isCoordinateNotation (san.Trim())
             then TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length move position

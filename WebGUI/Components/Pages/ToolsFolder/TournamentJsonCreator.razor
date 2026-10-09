@@ -74,6 +74,17 @@
                     </div>
                 }
             </div>
+            @* What the tournament is and where it is played: the name and these two go into every game's PGN *@
+            <div class="field-group">
+                <label>Description</label>
+                <input type="text" @bind="description" placeholder="One line under the tournament name" />
+                <small>Shown under the tournament name, and in the comment before each game's first move.</small>
+            </div>
+            <div class="field-group">
+                <label>Site</label>
+                <input type="text" @bind="site" placeholder="?" />
+                <small>The PGN's Site tag - where the games were played (a place, a lab, a URL). Left empty, it is ? (unknown).</small>
+            </div>
             <div class="toggle-row" style="margin-top: 0.4rem;">
                 <label class="toggle"><input type="checkbox" @bind="preventMoveDeviation" /><span class="slider"></span></label>
                 <span class="toggle-label">Prevent Move Deviation</span>
@@ -89,11 +100,7 @@
     <details class="settings-section">
         <summary>Branding</summary>
         <div class="section-body">
-            <div class="section-hint">Shown on the tournament page: the description under the name, the logo between the two engines, and how large the logos may be.</div>
-            <div class="field-group">
-                <label>Description</label>
-                <input type="text" @bind="description" placeholder="One line under the tournament name" />
-            </div>
+            <div class="section-hint">Shown on the tournament page: the logo between the two engines, and how large the logos may be.</div>
             <div class="two-col">
                 <div class="field-group">
                     <label>Main logo</label>
@@ -432,6 +439,7 @@
 
     // ── Output ──
     private string pgnOutPath = "";
+    private string site = "";
     private string saveFolder = "";
     private string saveFileName = "";
     private bool saveFileNameCustomized = false;
@@ -690,6 +698,8 @@
 
             // PGN output path (already a full .pgn path from auto-fill or user edit)
             root["PgnOutPath"] = pgnOutPath;
+            // the PGN Site tag; left out when empty, so the games say ? (unknown)
+            if (!string.IsNullOrWhiteSpace(site)) root["Site"] = site.Trim();
 
             // Advanced
             root["TestOptions"]!["NumberOfGamesInParallel"] = parallelGames;

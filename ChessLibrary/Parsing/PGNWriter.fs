@@ -7,6 +7,7 @@ open System.Text.RegularExpressions
 open ChessLibrary.PGNTypes
 open ChessLibrary.EPDTypes
 open TypesDef.CoreTypes
+open ChessLibrary.MiscTypes
 
 /// Gets the results from a PGN game.
 /// <param name="game">The PGN game.</param>
@@ -54,44 +55,64 @@ let writeOpeningPGNMoves (moves: string seq) =
   loop 1 (moves |> Seq.toList) 0
   sb.ToString()
 
-/// Writes a minimal PGN file.
+/// A game without comments, variations or NAGs: its tags, then the main line in export form -
+/// numbered ("12..." when Black moves first), lines of at most 80 characters, the result last.
+/// Tags come from the game's own text when it was parsed with it (every tag, in its order),
+/// otherwise from the parsed tags (the seven standard ones first).
+let strippedGameText (g: PgnGame) =
+  let sb = StringBuilder()
+  let meta = g.GameMetaData
+  if not (String.IsNullOrEmpty g.Raw) then
+    let lines = g.Raw.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r').Trim()) |> Array.filter (fun l -> l <> "" && not (l.StartsWith "%"))
+    // a tag given twice (a record with tags and no moves runs into the next game's) is written
+    // once, its last value - the one the parser keeps
+    let tags = lines |> Array.takeWhile (fun l -> l.StartsWith "[")
+    let keyOf (l: string) = let e = l.IndexOfAny([| ' '; '"' |]) in if e > 1 then l.Substring(1, e - 1) else l
+    let last = tags |> Array.mapi (fun i l -> keyOf l, i) |> Map.ofArray
+    tags |> Array.iteri (fun i line -> if last.[keyOf line] = i then sb.Append(line).Append('\n') |> ignore)
+  else
+    for key, value in [ "Event", meta.Event; "Site", meta.Site; "Date", meta.Date; "Round", meta.Round
+                        "White", meta.White; "Black", meta.Black; "Result", meta.Result ] do
+      sb.Append($"[{key} \"{value}\"]\n") |> ignore
+    if not (String.IsNullOrEmpty meta.Fen) then
+      if not (meta.OtherTags |> List.exists (fun t -> t.Key = "SetUp")) then sb.Append("[SetUp \"1\"]\n") |> ignore
+      sb.Append($"[FEN \"{meta.Fen}\"]\n") |> ignore
+    for t in meta.OtherTags do
+      sb.Append($"[{t.Key} \"{t.Value}\"]\n") |> ignore
+  sb.Append('\n') |> ignore
+  let result = if String.IsNullOrWhiteSpace meta.Result then "*" else meta.Result.Trim()
+  // a move's annotation glyphs (!, ?, !?) are NAGs too
+  let san (m: PlyMove) = m.San.TrimEnd('!', '?')
+  let units =
+    seq {
+      for i, m in Seq.indexed g.Mainline do
+        if m.Color = "w" then yield $"{m.MoveNumber}. {san m}"
+        elif i = 0 then yield $"{m.MoveNumber}... {san m}"
+        else yield san m
+      yield result }
+  let mutable lineLength = 0
+  for u in units do
+    if lineLength > 0 && lineLength + 1 + u.Length > 80 then
+      sb.Append('\n') |> ignore
+      lineLength <- 0
+    if lineLength > 0 then
+      sb.Append(' ') |> ignore
+      lineLength <- lineLength + 1
+    sb.Append(u) |> ignore
+    lineLength <- lineLength + u.Length
+  sb.Append('\n').ToString()
+
+/// Writes a minimal PGN file: every game without comments, variations or NAGs.
 /// <param name="pgnGames">The sequence of PGN games.</param>
 /// <param name="filename">The filename.</param>
 let writeMinimalPgnFile (pgnGames: PgnGame seq) (filename: string) =
-  // Create a new text file using StreamWriter
   use writer = new StreamWriter(filename, append=false)
   printfn "Created pgn-file at this location: %s" filename
-
+  let mutable first = true
   for g in pgnGames do
-    writer.WriteLine(sprintf "[White \"%s\"]" g.GameMetaData.White)
-    writer.WriteLine(sprintf "[Black \"%s\"]" g.GameMetaData.Black)
-    writer.WriteLine(sprintf "[Event \"%s\"]" g.GameMetaData.Event)
-    writer.WriteLine(sprintf "[Round \"%s\"]" g.GameMetaData.Round)
-    writer.WriteLine(sprintf "[Site \"%s\"]" g.GameMetaData.Site)
-    writer.WriteLine(sprintf "[Date \"%s\"]" g.GameMetaData.Date)
-    writer.WriteLine(sprintf "[Result \"%s\"]" g.GameMetaData.Result)
-    if String.IsNullOrEmpty (g.GameMetaData.Fen) |> not then
-      writer.WriteLine(sprintf "[FEN \"%s\"]" g.GameMetaData.Fen)
-    for tags in g.GameMetaData.OtherTags do
-      writer.WriteLine(sprintf "[%s \"%s\"]" tags.Key tags.Value)
-      // Write an empty line after tags
-    writer.WriteLine()
-
-    // Write SAN moves as pairs of white-black moves separated by spaces
-    for m in g.Mainline do
-      if m.Color = "w" then
-          writer.Write(sprintf "%d.%s " m.MoveNumber m.San)
-      else
-          writer.Write(sprintf "%s " m.San)
-
-    if String.IsNullOrWhiteSpace g.GameMetaData.Result |> not then
-      writer.WriteLine(g.GameMetaData.Result.Trim())
-    else
-      // If no result is specified, write an asterisk
-      writer.Write("*")
-    writer.WriteLine()
-
-  writer.Close()
+    if not first then writer.Write('\n')
+    first <- false
+    writer.Write(strippedGameText g)
 
 /// Writes an opening PGN from EPD.
 /// <param name="epds">The sequence of EPD entries.</param>
@@ -279,22 +300,47 @@ let writePGNHeaderSection (writer: StreamWriter) (header: GameMetadata) =
       |[] -> false, ""
       |[x] -> true, sprintf "%s" x.ValueStr
       |x::y::_ -> true, sprintf "%s, %s" x.ValueStr y.ValueStr
+  // a tag value escapes its backslashes and quotes, as the PGN standard says
+  let esc (s: string) = if isNull s then "" else s.Replace("\\", "\\\\").Replace("\"", "\\\"")
   // Write header data as tags using brackets [ ]
-  writer.WriteLine(sprintf "[Event \"%s\"]" header.Event)
-  writer.WriteLine(sprintf "[Site \"%s\"]" header.Site)
+  writer.WriteLine(sprintf "[Event \"%s\"]" (esc header.Event))
+  writer.WriteLine(sprintf "[Site \"%s\"]" (esc header.Site))
   writer.WriteLine(sprintf "[Date \"%s\"]" header.Date)
   writer.WriteLine(sprintf "[Round \"%s\"]" header.Round)
-  writer.WriteLine(sprintf "[White \"%s\"]" header.White)
-  writer.WriteLine(sprintf "[Black \"%s\"]" header.Black)
+  writer.WriteLine(sprintf "[White \"%s\"]" (esc header.White))
+  writer.WriteLine(sprintf "[Black \"%s\"]" (esc header.Black))
   writer.WriteLine(sprintf "[Result \"%s\"]" header.Result)
+  let tag key = header.OtherTags |> List.tryFind (fun t -> t.Key = key) |> Option.map _.Value
+  let write key = tag key |> Option.iter (fun v -> writer.WriteLine(sprintf "[%s \"%s\"]" key (esc v)))
+  for key in [ "WhiteElo"; "BlackElo"; "TimeControl"; "WhiteTimeControl"; "BlackTimeControl" ] do write key
+  // how the game ended, in the standard's words (Reason keeps EngineBattle's own)
+  let termination =
+    match header.Reason with
+    | Checkmate | Stalemate | Repetition | ExcessiveMoves | AdjudicateMaterial | Resignation -> "normal"
+    | AdjudicateTB | AdjudicatedEvaluation | AdjudicatedByUser -> "adjudication"
+    | ForfeitLimits -> "time forfeit"
+    | Illegal -> "rules infraction"
+    | Disconnected _ | Stalled _ -> "abandoned"
+    | Cancel | NotStarted -> "unterminated"
+  writer.WriteLine(sprintf "[Termination \"%s\"]" termination)
+  // the opening, its variation and ECO code as tags of their own; a FEN is not an opening's name
+  let isFen (s: string) = s.Split('/').Length = 8
+  let opening =
+    tag "Opening" |> Option.orElse (if String.IsNullOrWhiteSpace header.OpeningName then None else Some header.OpeningName)
+    |> Option.filter (fun o -> not (String.IsNullOrWhiteSpace o) && not (isFen o))
+  opening |> Option.iter (fun o -> writer.WriteLine(sprintf "[Opening \"%s\"]" (esc o)))
+  write "Variation"
+  write "ECO"
   writer.WriteLine(sprintf "[Reason \"%s\"]" (header.Reason.ToString()))
   writer.WriteLine(sprintf "[PlyCount \"%d\"]" header.PlyCount)
   writer.WriteLine(sprintf "[GameTime \"%s\"]" (header.GameTime.ToString()))
-  writer.WriteLine(sprintf "[Opening \"%s\"]" (PGNHelper.getOpeningOnly header))
   if haveEvals then
     writer.WriteLine(sprintf "[StartEvals \"%s\"]" evals)
   writer.WriteLine(sprintf "[OpeningHash \"%s\"]" header.OpeningHash)
+  // a game from a position: SetUp (the standard wants it with FEN), the variant, the FEN
   if header.Fen <> "" then
+    writer.WriteLine("[SetUp \"1\"]")
+    header.OtherTags |> List.tryFind (fun t -> t.Key = "Variant") |> Option.iter (fun t -> writer.WriteLine(sprintf "[Variant \"%s\"]" (esc t.Value)))
     writer.WriteLine(sprintf "[FEN \"%s\"]" header.Fen)
   if header.Deviations > 0 then
     writer.WriteLine(sprintf "[Deviations \"%d\"]" header.Deviations)

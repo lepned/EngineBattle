@@ -718,11 +718,14 @@ public partial class Tournaments
 		ShowOpeningWarnings();
 		if (!await CheckPonderingEngines())
 			return;
-		if (!await ConfirmCupResumeOrNew())
+		// the state files of tournament.json as the run will read it, not this page's copy
+		var runConfig = ChessLibrary.Tournament.Manager.loadTournament() ?? tournament;
+		ChessLibrary.Tournament.Manager.setAppendToPgn(false);
+		if (!await ConfirmCupResumeOrNew(runConfig))
 			return;
-		if (!await ConfirmSwissResumeOrNew())
+		if (!await ConfirmSwissResumeOrNew(runConfig))
 			return;
-		if (!await ConfirmLadderResumeOrNew())
+		if (!await ConfirmLadderResumeOrNew(runConfig))
 			return;
 		RunTournament();
 	}

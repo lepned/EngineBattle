@@ -16,7 +16,8 @@ open ChessLibrary.ChessUtilities
 // ---------------------------------------------------------------------------
 // The Cup runner against golden traces of the runner it replaces: every game asked for, every
 // pairing list sent, the totals and the final bracket. TestData/CupGolden holds the old runner's
-// traces (recorded with EB_WRITE_GOLDEN=1 while it existed).
+// traces (recorded with EB_WRITE_GOLDEN=1 while it existed), except the cups with openings unique
+// in the whole tournament: re-recorded when they stopped restarting the book in every match.
 // ---------------------------------------------------------------------------
 
 let private stable (s: string) = s |> Seq.fold (fun h c -> (h * 31 + int c) % 1000003) 7

@@ -50,3 +50,9 @@ let ``the average row's move time is the average, the median row's the median`` 
   let a median = rows |> Array.find (fun r -> r.Player = "A" && r.Median = median)
   Assert.Equal(100L, (a true).Time)
   Assert.Equal(220L, (a false).Time)
+
+[<Fact>]
+let ``with fewer than four moves the average is the plain average, not 0`` () =
+  let move mt = { EngineTypes.EngineMoveStat.Empty with mt = mt }
+  Assert.Equal(200.0, PGNStatistics.averageNpsWithoutOutliers [| move 100L; move 300L |] (fun m -> m.mt))
+  Assert.Equal(0.0, PGNStatistics.averageNpsWithoutOutliers [||] (fun m -> m.mt))

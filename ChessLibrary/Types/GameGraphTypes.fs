@@ -44,6 +44,11 @@ module GameGraphTypes =
           IsBracket: bool
           Hash: uint64
           FromVariation: bool
+          /// Half-moves from the root (0 = the first move): what per-move lists are indexed by
           Ply: int
+          /// The move's number and side as the root FEN counts them (a game from move 30 with
+          /// Black to move starts 30...); Ply alone cannot tell
+          MoveNumber: int
+          IsWhite: bool
           Evaluation: string
           IsLineStart: bool }

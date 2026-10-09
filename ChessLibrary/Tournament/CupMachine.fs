@@ -266,6 +266,11 @@ let private globalOpenings (st: State) =
   let cfg = st.Config
   if not st.GlobalOrder.IsEmpty then st.GlobalOrder |> List.map (fun i -> cfg.Book.[i % cfg.Book.Length]) else cfg.Openings
 
+/// The pairs begun in the whole cup: one opening each. Counted from the bracket, so a resume
+/// continues the tournament's opening order where it stopped.
+let private pairsBegun (st: State) =
+  st.Rounds |> List.sumBy (fun r -> r.Matches |> List.sumBy (fun m -> (m.Games.Length + 1) / 2))
+
 /// The next opening of the tournament's order (or the match's, unique per match).
 let private nextOpening (st: State) (openings: PgnGame list) (local: int) =
   if st.Config.UniquePerMatchOnly then st, openings.[local % openings.Length]
@@ -353,6 +358,16 @@ let rec private advance (st: State) (acc: Effect<CupBracket> list) : State * Eff
               | None ->
                   let st, o = nextOpening st c.Openings c.Local
                   st, o, c.Local, acc @ [ Info $"Cup resume: opening hash {last.OpeningHash} not found in opening book - using next available opening." ]
+            elif not cfg.UniquePerMatchOnly then
+              // unique in the whole cup: the tournament's next opening not played yet in it (a bracket
+              // from before may have played others), the book again once all are used
+              let begun = pairsBegun st
+              let used = st.Rounds |> Seq.collect (fun r -> r.Matches) |> Seq.collect (fun m -> m.Games) |> Seq.map _.OpeningHash |> Set.ofSeq
+              let index = PairingHelper.nextUnusedOpeningIndex used c.Openings (begun % c.Openings.Length)
+              let acc =
+                if begun > 0 && begun % c.Openings.Length = 0 then acc @ [ Info $"Cup: all {c.Openings.Length} openings used - starting the book again" ]
+                else acc
+              { st with NextOpeningIndex = index + 1 }, c.Openings.[index], index + 1, acc
             else
               let used = m.Games |> List.map _.OpeningHash |> Set.ofList
               let index =

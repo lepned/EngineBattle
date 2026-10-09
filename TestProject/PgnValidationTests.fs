@@ -85,3 +85,19 @@ let ``disambiguation that still leaves two pieces is ambiguous`` () =
 let ``disambiguation that names no piece able to move there is illegal`` () =
   let findings, _ = validate "103. Qaf6" threeQueens
   Assert.Equal(IllegalMove, (Assert.Single(findings)).Kind)
+
+[<Fact>]
+let ``a move that names where it starts must start there`` () =
+  // d5 for exd5: a pawn capture written as a push
+  let findings, played = validate "1. e4 d5 2. d5" None
+  Assert.Equal((IllegalMove, 2), ((Assert.Single(findings)).Kind, played))
+  // fxd5: the capture named from the wrong file
+  let findings, _ = validate "1. e4 d5 2. fxd5" None
+  Assert.Equal(IllegalMove, (Assert.Single(findings)).Kind)
+  // Ngb5 with the only knight that can go there on c3
+  let findings, _ = validate "1. Nc3 e5 2. Ngb5" None
+  Assert.Equal(IllegalMove, (Assert.Single(findings)).Kind)
+  // the forgiving spellings stay warnings: no x, the knight's own file, coordinates, ed5
+  let findings, played = validate "1. e4 d5 2. ed5 Qd5 3. Nbc3 Qa5 4. g1f3 Nf6" None
+  Assert.Equal<Kind list>([ NonStandardSan; NonStandardSan; NonStandardSan; NonStandardSan ], findings |> List.map _.Kind)
+  Assert.Equal(8, played)

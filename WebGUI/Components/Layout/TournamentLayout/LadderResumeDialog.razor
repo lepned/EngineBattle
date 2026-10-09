@@ -1,10 +1,8 @@
 ﻿@using System.IO
 
-@* Two dialogs in one component. With actions it is the resume prompt, and MudBlazor's own
-   paper is right for that. Without them it is the between-games popup, which shows nothing but
-   the table and should read as the same panel the tournament page uses. *@
-<MudDialog Class="@(ShowActions ? "" : "eb-ladder-dialog")"
-           ContentClass="@(ShowActions ? "" : "eb-ladder-dialog-content")">
+@* Two dialogs in one component: with actions the resume prompt, without them the popup between
+   games and at the end - the same panel and width either way, the popup just has no title or buttons. *@
+<MudDialog>
     <DialogContent>
         @if (ShowActions)
         {

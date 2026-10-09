@@ -26,16 +26,46 @@ namespace WebGUI.Components.Pages.TournamentPages;
 
 public partial class Tournaments
 {
-	private async Task<bool> ConfirmSwissResumeOrNew()
+	// No state file to resume from, but the PGN already has games: a new cup, Swiss or ladder would
+	// put a second tournament into it - asked here; the console stops instead (unless --append)
+	private Task<bool> ConfirmAppendToPgn(TypesDef.Tournament.Tournament t, StatePaths.Mode mode, string modeName) =>
+		AskAppendToPgn(t, StatePaths.orphanGames(Environment.ContentRootPath, t, mode), modeName);
+
+	// Restart: the state goes, the PGN's games stay - asked before the state file is deleted, so
+	// Cancel leaves everything as it was
+	private Task<bool> ConfirmRestartIntoPgn(TypesDef.Tournament.Tournament t, string modeName) =>
+		AskAppendToPgn(t, StatePaths.pgnGameCount(Environment.ContentRootPath, t), modeName);
+
+	private async Task<bool> AskAppendToPgn(TypesDef.Tournament.Tournament t, int games, string modeName)
 	{
-		if (!IsSwissMode)
+		if (games <= 0)
+			return true;
+		var answer = await DialogService.ShowMessageBox(
+			"The PGN already has games",
+			$"{Path.GetFileName(t.PgnOutPath)} already has {games} game(s). Starting a new {modeName} now puts a second "
+			+ "tournament into the same PGN, and its standings will count both. "
+			+ "To keep them apart, cancel and set another PGN output path.",
+			yesText: "Add to this PGN", cancelText: "Cancel");
+		if (answer != true)
+			return false;
+		ChessLibrary.Tournament.Manager.setAppendToPgn(true);
+		return true;
+	}
+
+	// the mode as tournament.json says now: this page's copy may predate an edit
+	private static bool IsMode(TypesDef.Tournament.Tournament t, string mode) =>
+		t != null && string.Equals(t.TournamentMode, mode, StringComparison.OrdinalIgnoreCase);
+
+	private async Task<bool> ConfirmSwissResumeOrNew(TypesDef.Tournament.Tournament t)
+	{
+		if (!IsMode(t, "Swiss"))
 			return true;
 
-		var statePath = ModeStatePaths.Prepare(Environment.ContentRootPath, tournament, StatePaths.Mode.Swiss, logger);
+		var statePath = ModeStatePaths.Prepare(Environment.ContentRootPath, t, StatePaths.Mode.Swiss, logger);
 		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
-			return true;
+			return await ConfirmAppendToPgn(t, StatePaths.Mode.Swiss, "Swiss");
 
-		var configuredRounds = tournament?.EffectiveSwissRounds() ?? 0;
+		var configuredRounds = t.EffectiveSwissRounds();
 		var stateSummary = GetSwissStateSummary(statePath, configuredRounds);
 		if (stateSummary == SwissStateSummary.Missing)
 			return true;
@@ -57,6 +87,8 @@ public partial class Tournaments
 		var action = result.Data as string ?? "";
 		if (action.Equals("new", StringComparison.OrdinalIgnoreCase))
 		{
+			if (!await ConfirmRestartIntoPgn(t, "Swiss"))
+				return false;
 			BackupSwissStateFile(statePath);
 			DeleteSwissStateFiles(statePath);
 		}
@@ -176,14 +208,14 @@ public partial class Tournaments
 		public bool IsDecided { get; set; }
 	}
 
-	private async Task<bool> ConfirmLadderResumeOrNew()
+	private async Task<bool> ConfirmLadderResumeOrNew(TypesDef.Tournament.Tournament t)
 	{
-		if (!IsLadderMode)
+		if (!IsMode(t, "Ladder"))
 			return true;
 
-		var statePath = ModeStatePaths.Prepare(Environment.ContentRootPath, tournament, StatePaths.Mode.Ladder, logger);
+		var statePath = ModeStatePaths.Prepare(Environment.ContentRootPath, t, StatePaths.Mode.Ladder, logger);
 		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
-			return true;
+			return await ConfirmAppendToPgn(t, StatePaths.Mode.Ladder, "ladder");
 
 		var stateSummary = GetLadderStateSummary(statePath);
 		if (stateSummary == LadderStateSummary.Missing)
@@ -206,6 +238,8 @@ public partial class Tournaments
 		var action = result.Data as string ?? "";
 		if (action.Equals("new", StringComparison.OrdinalIgnoreCase))
 		{
+			if (!await ConfirmRestartIntoPgn(t, "ladder"))
+				return false;
 			BackupLadderStateFile(statePath);
 			DeleteLadderStateFiles(statePath);
 		}
@@ -315,17 +349,17 @@ public partial class Tournaments
 		public bool IsDecided { get; set; }
 	}
 
-	private async Task<bool> ConfirmCupResumeOrNew()
+	private async Task<bool> ConfirmCupResumeOrNew(TypesDef.Tournament.Tournament t)
 	{
 		ChessLibrary.Tournament.Manager.setCupResumeRequested(false);
 		ChessLibrary.Tournament.Manager.setCupBracketPathOverride(null);
-		if (!IsCupMode)
+		if (!IsMode(t, "Cup"))
 			return true;
 
-		var bracketPath = ModeStatePaths.Prepare(Environment.ContentRootPath, tournament, StatePaths.Mode.Cup, logger);
+		var bracketPath = ModeStatePaths.Prepare(Environment.ContentRootPath, t, StatePaths.Mode.Cup, logger);
 		ChessLibrary.Tournament.Manager.setCupBracketPathOverride(bracketPath);
 		if (string.IsNullOrWhiteSpace(bracketPath) || !File.Exists(bracketPath))
-			return true;
+			return await ConfirmAppendToPgn(t, StatePaths.Mode.Cup, "cup");
 
 		var bracketState = GetCupBracketSummary(bracketPath);
 		if (bracketState == CupBracketSummary.Missing)
@@ -347,6 +381,8 @@ public partial class Tournaments
 		var action = result.Data as string ?? "";
 		if (action.Equals("new", StringComparison.OrdinalIgnoreCase))
 		{
+			if (!await ConfirmRestartIntoPgn(t, "cup"))
+				return false;
 			ChessLibrary.Tournament.Manager.setCupResumeRequested(false);
 			BackupCupBracketFile(bracketPath);
 			DeleteCupBracketFiles(bracketPath);

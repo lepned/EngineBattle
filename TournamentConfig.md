@@ -6,8 +6,9 @@ This document provides an overview of the `tournament.json` configuration file u
 
 ### General Information
 
-- **Name**: The name of the tournament.
-- **Description**: A brief description of the tournament.
+- **Name**: The name of the tournament. Written as the PGN's `Event` tag.
+- **Description**: A brief description of the tournament. Written in the comment before each game's first move.
+- **Site**: Optional. The PGN's `Site` tag - where the games were played (a place, a lab, a URL). `?` (unknown) when left out.
 - **OS**: The operating system used for the tournament.
 - **CPU**: The CPU specifications.
 - **RAM**: The amount of RAM available.

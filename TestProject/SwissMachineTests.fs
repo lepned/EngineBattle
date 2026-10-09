@@ -211,7 +211,10 @@ let ``the Swiss machine plays the tournament the old runner played, game for gam
   let sc = scenarios |> List.find (fun s -> s.Name = name)
   let oldTrace, newTrace = traces sc
   let golden = Path.Combine(goldenDir, name + ".txt")
-  // the golden file is what the old runner played
+  // the golden file is what the old runner played (the failures trace re-recorded when unplayable
+  // games in a row came to stop the tournament instead of skipping the pair)
+  if Environment.GetEnvironmentVariable "EB_WRITE_GOLDEN" = "1" then
+    File.WriteAllLines(golden, oldTrace)
   Assert.True(File.Exists golden, $"no golden trace for {name}")
   Assert.Equal<string list>(List.ofArray (File.ReadAllLines golden), oldTrace)
   Assert.Equal<string list>(List.ofArray (File.ReadAllLines golden), newTrace)

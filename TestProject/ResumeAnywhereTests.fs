@@ -219,11 +219,36 @@ let private swissPlayoff (playoff: string) =
   run (fun i -> if i <= regular then tiedAfterRounds i else playoff) SwissMachine.step (SwissMachine.create cfg None 0) 0 0 None
 
 [<Fact>]
-let ``a Swiss playoff that cannot be played ends the tournament by Sonneborn-Berger`` () =
+let ``a Swiss playoff that cannot be played stops the tournament, its pair left for a resume`` () =
   let o = swissPlayoff "*"
   Assert.DoesNotContain(o.Games, fun g -> g.StartsWith "STILL PLAYING")
-  Assert.Equal(1, o.Saved.Value.Rounds |> Seq.filter (fun r -> r.RoundNumber > 3) |> Seq.length)
-  Assert.Contains(o.Notes, fun n -> n.Contains "could not be played" && n.Contains "Sonneborn-Berger")
+  Assert.Contains(o.Notes, fun n -> n.StartsWith "Stopping the Swiss")
+  let playoff = o.Saved.Value.Rounds |> Seq.filter (fun r -> r.RoundNumber > 3) |> List.ofSeq
+  Assert.Equal(1, playoff.Length)
+  Assert.Contains(playoff.Head.Pairings, fun p -> not p.IsDecided)
+
+[<Fact>]
+let ``a Swiss stopped by unplayable games plays the pair on in its round when resumed`` () =
+  let dir = freshDir ()
+  let t =
+    { baseTournament dir "Swiss" 6 with
+        SwissOptions = { Tournament.Empty.SwissOptions with GamesPerMatch = 2; Rounds = 3; StatePath = Path.Combine(dir, "s.json") } }
+  let cfg = SwissMachine.configOf t (openingsOf t)
+  // round 1's second pair cannot play: games 3, 4 and 5 fail
+  let failing i = if i >= 3 && i <= 5 then "*" else resultOf i
+  let first = run failing SwissMachine.step (SwissMachine.create cfg None 0) 0 0 None
+  Assert.Contains(first.Notes, fun n -> n.StartsWith "Stopping the Swiss")
+  Assert.Equal(1, first.Saved.Value.Rounds.Count)
+  // the engine fixed: the resume plays that pair in round 1 before round 2 is paired
+  let played = first.Games |> List.filter (fun g -> not (g.EndsWith "*")) |> List.length
+  let m = SwissMachine.create cfg first.Saved played
+  let second = run resultOf SwissMachine.step m (SwissMachine.totalGamesOf m) played None
+  Assert.StartsWith("1.", (second.Games.Head.Split ' ').[1])
+  let rounds = second.Saved.Value.Rounds |> List.ofSeq
+  Assert.Equal<int list>([ 1; 2; 3 ], rounds |> List.map _.RoundNumber)
+  Assert.All(rounds, fun r -> Assert.All(r.Pairings, fun p -> Assert.True(p.IsDecided, $"round {r.RoundNumber}: {p.PlayerA}-{p.PlayerB} undecided")))
+  let met = rounds |> List.collect (fun r -> List.ofSeq r.Pairings) |> List.map (fun p -> if String.CompareOrdinal(p.PlayerA, p.PlayerB) <= 0 then p.PlayerA + "|" + p.PlayerB else p.PlayerB + "|" + p.PlayerA)
+  Assert.Equal(met.Length, (List.distinct met).Length)
 
 [<Fact>]
 let ``a Swiss playoff drawn round after round ends after three by Sonneborn-Berger`` () =

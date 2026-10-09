@@ -104,7 +104,8 @@ let private belongs (tourny: Tournament) (s: Saved) =
 
 /// A tournament's state file made ready for a run, and what was done to it (for the log):
 /// - none of its own, but the shared file holds this tournament (same name, its engines) and the
-///   PGN has its games: the shared file is taken over (a run paused before state files moved);
+///   PGN has its games: the shared file is taken over (a run paused before state files moved) and
+///   renamed .migrated, so a Restart that deletes the new file is not undone by a second takeover;
 /// - it records games but the PGN has none (deleted to start over): set aside as .bak, so the
 ///   tournament starts afresh. A tournament without a PGN path keeps its state.
 let prepare (baseDir: string) (tourny: Tournament) mode : string * string option =
@@ -112,6 +113,13 @@ let prepare (baseDir: string) (tourny: Tournament) mode : string * string option
   let pgnGames () = not (String.IsNullOrWhiteSpace tourny.PgnOutPath) && pgnHasGames (rooted baseDir tourny.PgnOutPath)
   let dir = Path.GetDirectoryName file
   if not (String.IsNullOrWhiteSpace dir) then Directory.CreateDirectory dir |> ignore
+  // a file that cannot be read (cut short by a crash, say) is set aside as .corrupt: a run that
+  // started afresh would overwrite it, and the PGN still has its games (the guard below then asks)
+  let corrupt =
+    if File.Exists file && (saved mode file).IsNone then
+      File.Move(file, file + ".corrupt", true)
+      Some $"{file} could not be read: set aside as .corrupt"
+    else None
   let takenOver =
     let old = shared baseDir mode
     if File.Exists file || not (File.Exists old) || String.Equals(old, file, StringComparison.OrdinalIgnoreCase) then None
@@ -119,7 +127,8 @@ let prepare (baseDir: string) (tourny: Tournament) mode : string * string option
       match saved mode old with
       | Some s when s.Played > 0 && belongs tourny s && pgnGames () ->
           File.Copy(old, file)
-          Some $"{file}: taken over from {old}"
+          File.Move(old, old + ".migrated", true)
+          Some $"{file}: taken over from {old} (renamed .migrated)"
       | _ -> None
   let setAside =
     // with no PGN at all (allowed: nothing is written) the state is all there is
@@ -130,6 +139,28 @@ let prepare (baseDir: string) (tourny: Tournament) mode : string * string option
           File.Move(file, file + ".bak", true)
           Some $"{file} records {s.Played} games but the PGN has none: set aside as .bak, the tournament starts afresh"
       | _ -> None
-  file, (match takenOver, setAside with
-         | Some a, Some b -> Some (a + "; " + b)
-         | a, b -> Option.orElse b a)
+  file, ([ corrupt; takenOver; setAside ] |> List.choose id |> function [] -> None | notes -> Some (String.concat "; " notes))
+
+/// The games in the tournament's PGN (0 without a PGN path or file); unreadable counts as one.
+let pgnGameCount (baseDir: string) (tourny: Tournament) =
+  if String.IsNullOrWhiteSpace tourny.PgnOutPath then 0
+  else
+    let pgn = rooted baseDir tourny.PgnOutPath
+    if not (File.Exists pgn) then 0
+    else
+      try
+        use reader = new StreamReader(new FileStream(pgn, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete))
+        let mutable count = 0
+        let mutable line = reader.ReadLine()
+        while not (isNull line) do
+          if line.StartsWith("[Event ", StringComparison.Ordinal) then count <- count + 1
+          line <- reader.ReadLine()
+        count
+      // unreadable counts as having games: a tournament is never mixed into a file on a doubt
+      with _ -> 1
+
+/// The games of the tournament's PGN when it has no state file to resume from: a cup, Swiss or
+/// ladder started there afresh would mix two tournaments in one file. 0 when there is a state
+/// file, no PGN path, or a PGN without games.
+let orphanGames (baseDir: string) (tourny: Tournament) mode =
+  if File.Exists(path baseDir tourny mode) then 0 else pgnGameCount baseDir tourny

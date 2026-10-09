@@ -665,6 +665,8 @@ module TypesDef =
     type Tournament =
       { Name: string
         Description: string
+        /// The PGN Site tag; "?" (unknown) when not set.
+        Site: string
         OS: string
         CPU: string
         RAM: string
@@ -681,6 +683,9 @@ module TypesDef =
         EngineStartupTimeoutInSec: int
         Challengers: int
         [<JsonIgnore>] mutable IsChess960: bool
+        /// A cup, Swiss or ladder without a state file may start in a PGN that already has games
+        /// (the GUI asked, or the console's --append): otherwise it stops rather than mix two tournaments
+        [<JsonIgnore>] mutable AppendToPgn: bool
         [<JsonIgnore>] mutable DeviationCounter: int
         [<JsonIgnore>] mutable PreventMoveDeviationFor: string[]
         mutable Rounds: int
@@ -948,6 +953,7 @@ module TypesDef =
         static member Empty = {
           Name = ""
           Description = ""
+          Site = ""
           OS = ""
           CPU = ""
           RAM = ""
@@ -961,6 +967,7 @@ module TypesDef =
           PgnOutPath = ""
           ReferencePGNPath = ""
           IsChess960 = false
+          AppendToPgn = false
           PreventMoveDeviation = false
           AllowPondering = false
           EngineStartupTimeoutInSec = 180

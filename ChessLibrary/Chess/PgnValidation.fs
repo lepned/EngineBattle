@@ -67,6 +67,21 @@ let private startsAsWritten (san: string) (move: TMove) (stm: byte) =
     let rank = m.Groups.[3].Value
     (file = "" || from.[0] = file.[0]) && (rank = "" || from.[1] = rank.[0])
 
+let private pawnMove = Regex(@"^([a-h]?)x?([a-h][1-8])[QRBN]?$", RegexOptions.Compiled)
+
+// whether a pawn move is the move written: a capture names the file it starts on, a push names
+// no other file (d5 for exd5 is not a spelling of it, it is another move)
+let private pawnAsWritten (san: string) (move: TMove) (stm: byte) =
+  let m = pawnMove.Match(normalize san)
+  if not m.Success then true
+  else
+    let mutable side = stm
+    let names = TMoveOps.dictNumberToName &side
+    let from : string = names.[int move.From]
+    let file = m.Groups.[1].Value
+    if from.[0] <> names.[int move.To].[0] then file <> "" && file.[0] = from.[0]
+    else file = "" || file.[0] = from.[0]
+
 // A move-list buffer per thread: the usual move needs no new array
 let private buffers = new System.Threading.ThreadLocal<TMove[]>(fun () -> Array.zeroCreate 256)
 
@@ -180,8 +195,18 @@ let validateGame (board: Board) (game: PgnGame) : Finding list * int =
               elif fits.Length > 1 then
                 findings.Add(finding (ply + 1) (Some pm) IllegalMove "" (board.FEN()))
                 stopped <- true
+              elif fits.Length = 1 then
+                // one piece of that kind can go there: written from elsewhere (Ngb5 with the knight
+                // on c3) it is not that move
+                if named.Length = 1 then
+                  findings.Add(finding (ply + 1) (Some pm) NonStandardSan (snd fits.[0]) (board.FEN()))
+                  playOn (fst fits.[0])
+                else
+                  findings.Add(finding (ply + 1) (Some pm) IllegalMove "" (board.FEN()))
+                  stopped <- true
               else
-                match TMoveOps.tryFindMoveBySanOrUci legal position.STM (fun _ -> true) pm.San with
+                match TMoveOps.tryFindMoveBySanOrUci legal position.STM (fun _ -> true) pm.San
+                      |> Option.filter (fun m -> pawnAsWritten pm.San m position.STM) with
                 | Some m ->
                     let san = standard |> Array.find (fun (c, _) -> c = m) |> snd
                     findings.Add(finding (ply + 1) (Some pm) NonStandardSan san (board.FEN()))

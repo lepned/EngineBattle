@@ -104,6 +104,10 @@
 		<Compile Include="PgnValidationTests.fs" />
 		<Compile Include="SpeedFormatTests.fs" />
 		<Compile Include="CommentAttributionTests.fs" />
+		<Compile Include="OpeningRuleTests.fs" />
+		<Compile Include="SwissPairingRuleTests.fs" />
+		<Compile Include="PgnStripTests.fs" />
+		<Compile Include="PgnOutputTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

@@ -10,7 +10,8 @@ open ChessLibrary.GameAnalysis
 
 let movesFromPgn (pgn:PgnGame) =
   [
-    for m in pgn.Mainline -> m.San
+    // castling one way however it was written: O-O (the standard) and 0-0 (EB before) are one move
+    for m in pgn.Mainline -> if m.San.StartsWith "O-O" then m.San.Replace('O', '0') else m.San
   ]
 
 type MoveStore = {Move: string; Fen: string; White: string; Black:string; Hash: UInt64; MoveNr: int }

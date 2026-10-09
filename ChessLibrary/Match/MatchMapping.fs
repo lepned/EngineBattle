@@ -119,6 +119,8 @@ module MatchMapping =
         { CoreTypes.EngineConfig.Empty with
             Name = e.Name
             Alias = e.Name
+            // a command line gives no rating: unknown, not Empty's placeholder (it would be written as Elo)
+            Rating = 0
             Path = enginePath e
             Args = e.Args
             Options = options e
@@ -173,8 +175,10 @@ module MatchMapping =
 
     let tournament =
       { Tournament.Empty with
-          Name = t.Pgn.Site
+          // the PGN's Event and Site, as -event and -site give them
+          Name = t.Pgn.EventName
           Description = t.Pgn.EventName
+          Site = t.Pgn.Site
           ConsoleOnly = true
           TournamentMode = if gauntlet then "Gauntlet" else "RR"
           Challengers = seeds

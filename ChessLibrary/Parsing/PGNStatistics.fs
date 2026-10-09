@@ -146,8 +146,11 @@ let averageNpsWithoutOutliers (moves: EngineMoveStat array) mapping =
     |> Array.filter (fun m -> m > 0L)
     |> Array.sort
 
-  if sortedNps.Length < 4 then
+  if sortedNps.Length = 0 then
     0.0
+  // too few for quartiles: nothing can be called an outlier (was 0, shown as a 0 average)
+  elif sortedNps.Length < 4 then
+    Array.averageBy float sortedNps
   else
     let q1, q3 =
         let len = sortedNps.Length

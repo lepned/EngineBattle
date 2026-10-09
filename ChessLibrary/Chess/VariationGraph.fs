@@ -268,10 +268,19 @@ module internal VariationText =
   let inlineTokens (graph: VariationGraph) =
     let tokens = ResizeArray<InlineMoveToken>()
 
+    // the half-moves before the root, from its FEN: move 30 with Black to move starts 30...
+    let basePly =
+      let parts = (graph.Node graph.Root).Fen.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+      let fullMove = if parts.Length >= 6 then (match Int32.TryParse parts.[5] with | true, n when n > 0 -> n | _ -> 1) else 1
+      (fullMove - 1) * 2 + (if parts.Length >= 2 && parts.[1] = "b" then 1 else 0)
+    let numberOf ply = (basePly + ply) / 2 + 1
+    let isWhite ply = (basePly + ply) % 2 = 0
+
+    // a Black move is numbered where a line starts: a variation, or the game itself
     let formatTokenText ply san isLineStart inVariation =
-      let moveNr = (ply / 2) + 1
-      if ply % 2 = 0 then sprintf "%d. %s" moveNr san
-      elif inVariation && isLineStart then sprintf "%d... %s" moveNr san
+      let moveNr = numberOf ply
+      if isWhite ply then sprintf "%d. %s" moveNr san
+      elif isLineStart && (inVariation || ply = 0) then sprintf "%d... %s" moveNr san
       else san
 
     let addMoveToken (edge: MoveEdge) ply isLineStart inVariation =
@@ -285,6 +294,8 @@ module internal VariationText =
           Hash = toNode.Hash
           FromVariation = inVariation
           Ply = ply
+          MoveNumber = numberOf ply
+          IsWhite = isWhite ply
           Evaluation = edge.Comments
           IsLineStart = isLineStart }
 
@@ -298,6 +309,8 @@ module internal VariationText =
           Hash = (graph.Node edge.To).Hash
           FromVariation = true
           Ply = ply
+          MoveNumber = numberOf ply
+          IsWhite = isWhite ply
           Evaluation = edge.Comments
           IsLineStart = false }
 
@@ -351,9 +364,9 @@ module internal VariationText =
           sb.Append(')') |> ignore
           depth <- Math.Max(0, depth - 1)
       | _ ->
-          let moveNr = (tok.Ply / 2) + 1
+          let moveNr = tok.MoveNumber
           let prefix =
-            if tok.Ply % 2 = 0 then
+            if tok.IsWhite then
               lastNumber <- Some moveNr
               sprintf "%d. " moveNr
             elif depth > 0 then

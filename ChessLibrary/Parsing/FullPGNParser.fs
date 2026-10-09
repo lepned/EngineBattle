@@ -38,6 +38,8 @@ type private ParserState =
     OtherTags: ResizeArray<Header>
     // Movetext state
     mutable CurrentMoveNr: int
+    /// Half-moves before the game's first move, from its FEN (-1 until the first move asks)
+    mutable PlyBase: int
     mutable WhiteSan: string
     mutable BlackSan: string
     mutable PendingComment: string
@@ -80,6 +82,7 @@ type private ParserState =
       Deviations = 0
       OtherTags = ResizeArray<Header>()
       CurrentMoveNr = 1
+      PlyBase = -1
       WhiteSan = ""
       BlackSan = ""
       PendingComment = ""
@@ -142,6 +145,7 @@ let private resetState (st: ParserState) =
   st.Deviations <- 0
   st.OtherTags.Clear()
   st.CurrentMoveNr <- 1
+  st.PlyBase <- -1
   st.WhiteSan <- ""
   st.BlackSan <- ""
   st.PendingComment <- ""
@@ -163,9 +167,19 @@ let private hasGame (st: ParserState) =
 // PlyMove tree management
 // ============================================================================
 
+/// The half-moves played before the game starts: a FEN's move number and side to move (move 30
+/// with Black to move numbers the first move 30..., the next 31.); 0 without a FEN.
+let private plyBase (st: ParserState) =
+  if st.PlyBase < 0 then
+    let parts = if String.IsNullOrWhiteSpace st.Fen then [||] else st.Fen.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+    let fullMove =
+      if parts.Length >= 6 then (match Int32.TryParse parts.[5] with | true, n when n > 0 -> n | _ -> 1) else 1
+    st.PlyBase <- (fullMove - 1) * 2 + (if parts.Length >= 2 && parts.[1] = "b" then 1 else 0)
+  st.PlyBase
+
 let private appendPlyMove (st: ParserState) (san: string) (color: string) =
   let ply = st.CurrentPly
-  let moveNr = (ply / 2) + 1
+  let moveNr = (plyBase st + ply) / 2 + 1
   let nags = if st.PendingNags.Count > 0 then st.PendingNags |> Seq.toList else []
   let node =
     { Ply = ply
@@ -266,6 +280,8 @@ let private parseHeaderTexLine (st: ParserState) (line: string) =
     if firstQuote >= 0 && lastQuote > firstQuote then
       let key = headerSpan.Slice(0, firstQuote).Trim().ToString()
       let value = headerSpan.Slice(firstQuote + 1, lastQuote - firstQuote - 1).ToString()
+      // an escaped quote or backslash (\" and \\, as the standard writes them) is the character itself
+      let value = if value.Contains '\\' then value.Replace("\\\"", "\"").Replace("\\\\", "\\") else value
       match key with
       | "Event" -> st.Event <- value
       | "Site" -> st.Site <- value
@@ -585,6 +601,8 @@ let parsePgnStringHelper (content: string) withRaw : seq<PgnGame> =
             resetState st
             inMoveText <- false
           parseHeaderTexLine st trimmed
+        elif not st.InComment && currentLine.[0] = '%' then
+          () // an escape line (% in the first column): not part of the game
         else
           inMoveText <- true
           parseMoveTextLine st trimmed
@@ -649,6 +667,8 @@ let parsePgnFileHelper (pgnFilePath: string) withRaw : seq<PgnGame> =
             inMoveText <- false
           mayAddRaw currentLine
           parseHeaderTexLine st trimmed
+        elif not st.InComment && currentLine.[0] = '%' then
+          () // an escape line (% in the first column): not part of the game
         else
           mayAddRaw currentLine
           inMoveText <- true

@@ -20,43 +20,43 @@ pairings 1.9:e1-e3#0 1.10:e3-e1#0
 play #9 1.9 e1-e3 o5
 play #10 1.10 e3-e1 o5
 pairings 1.11:e2-e4#0 1.12:e4-e2#0
-play #11 1.11 e2-e4 o1
-play #12 1.12 e4-e2 o1
+play #11 1.11 e2-e4 o6
+play #12 1.12 e4-e2 o6
 total 18
 pairings 1.13:e2-e4#0 1.14:e4-e2#0
-play #13 1.13 e2-e4 o2
-play #14 1.14 e4-e2 o2
+play #13 1.13 e2-e4 o7
+play #14 1.14 e4-e2 o7
 total 20
 pairings 1.15:e2-e4#0 1.16:e4-e2#0
-play #15 1.15 e2-e4 o3
-play #16 1.16 e4-e2 o3
+play #15 1.15 e2-e4 o8
+play #16 1.16 e4-e2 o8
 total 22
 pairings 1.17:e2-e4#0 1.18:e4-e2#0
-play #17 1.17 e2-e4 o4
-play #18 1.18 e4-e2 o4
+play #17 1.17 e2-e4 o9
+play #18 1.18 e4-e2 o9
 total 24
 pairings 1.19:e2-e4#0 1.20:e4-e2#0
-play #19 1.19 e2-e4 o5
-play #20 1.20 e4-e2 o5
+play #19 1.19 e2-e4 o10
+play #20 1.20 e4-e2 o10
 pairings 2.1:e3-e2#0 2.2:e2-e3#0 2.3:e3-e2#0 2.4:e2-e3#0
-play #21 2.1 e3-e2 o1
-play #22 2.2 e2-e3 o1
+play #21 2.1 e3-e2 o11
+play #22 2.2 e2-e3 o11
 pairings 2.3:e3-e2#0 2.4:e2-e3#0
-play #23 2.3 e3-e2 o2
-play #24 2.4 e2-e3 o2
+play #23 2.3 e3-e2 o12
+play #24 2.4 e2-e3 o12
 total 26
 pairings 2.5:e3-e2#0 2.6:e2-e3#0
-play #25 2.5 e3-e2 o3
-play #26 2.6 e2-e3 o3
+play #25 2.5 e3-e2 o1
+play #26 2.6 e2-e3 o1
 total 28
 pairings 2.7:e3-e2#0 2.8:e2-e3#0
-play #27 2.7 e3-e2 o4
-play #28 2.8 e2-e3 o4
+play #27 2.7 e3-e2 o2
+play #28 2.8 e2-e3 o2
 total 30
 pairings 2.9:e3-e2#0 2.10:e2-e3#0
-play #29 2.9 e3-e2 o5
-play #30 2.10 e2-e3 o5
-bracket next=0 order=
+play #29 2.9 e3-e2 o3
+play #30 2.10 e2-e3 o3
+bracket next=3 order=
   r1 #1 e1-e3 4.0-6.0 winner=e3 true order=
     g1 e1-e3 o1 1/2-1/2
     g2 e3-e1 o1 1/2-1/2
@@ -69,24 +69,24 @@ bracket next=0 order=
     g9 e1-e3 o5 0-1
     g10 e3-e1 o5 1-0
   r1 #2 e2-e4 5.5-4.5 winner=e2 true order=
-    g11 e2-e4 o1 1-0
-    g12 e4-e2 o1 1-0
-    g13 e2-e4 o2 1/2-1/2
-    g14 e4-e2 o2 1/2-1/2
-    g15 e2-e4 o3 0-1
-    g16 e4-e2 o3 0-1
-    g17 e2-e4 o4 1-0
-    g18 e4-e2 o4 1-0
-    g19 e2-e4 o5 1/2-1/2
-    g20 e4-e2 o5 0-1
+    g11 e2-e4 o6 1-0
+    g12 e4-e2 o6 1-0
+    g13 e2-e4 o7 1/2-1/2
+    g14 e4-e2 o7 1/2-1/2
+    g15 e2-e4 o8 0-1
+    g16 e4-e2 o8 0-1
+    g17 e2-e4 o9 1-0
+    g18 e4-e2 o9 1-0
+    g19 e2-e4 o10 1/2-1/2
+    g20 e4-e2 o10 0-1
   r2 #3 e3-e2 4.0-6.0 winner=e2 true order=
-    g21 e3-e2 o1 1/2-1/2
-    g22 e2-e3 o1 1/2-1/2
-    g23 e3-e2 o2 0-1
-    g24 e2-e3 o2 0-1
-    g25 e3-e2 o3 1-0
-    g26 e2-e3 o3 1-0
-    g27 e3-e2 o4 1/2-1/2
-    g28 e2-e3 o4 1/2-1/2
-    g29 e3-e2 o5 0-1
-    g30 e2-e3 o5 1-0
+    g21 e3-e2 o11 1/2-1/2
+    g22 e2-e3 o11 1/2-1/2
+    g23 e3-e2 o12 0-1
+    g24 e2-e3 o12 0-1
+    g25 e3-e2 o1 1-0
+    g26 e2-e3 o1 1-0
+    g27 e3-e2 o2 1/2-1/2
+    g28 e2-e3 o2 1/2-1/2
+    g29 e3-e2 o3 0-1
+    g30 e2-e3 o3 1-0

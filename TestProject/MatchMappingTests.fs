@@ -154,11 +154,12 @@ let ``gauntlet seeds are the challengers`` () =
 [<Fact>]
 let ``event, site, wait and concurrency`` () =
     let t = (mapped (sf @ lc0 @ [ "-event"; "Test"; "-site"; "Home"; "-wait"; "250"; "-concurrency"; "4" ])).Tournament
-    Assert.Equal(("Test", "Home"), (t.Description, t.Name))
+    // the PGN's Event is the tournament's name, its Site the site
+    Assert.Equal(("Test", "Home"), (t.Name, t.Site))
     Assert.Equal(TimeSpan.FromMilliseconds 250.0, t.DelayBetweenGames)
     Assert.Equal(4, t.TestOptions.NumberOfGamesInParallel)
     let d = (mapped (sf @ lc0)).Tournament
-    Assert.Equal(("EngineBattle Match", "?"), (d.Description, d.Name))
+    Assert.Equal(("EngineBattle Match", "?"), (d.Name, d.Site))
 
 [<Fact>]
 let ``without -pgnout the games go to a temporary file`` () =

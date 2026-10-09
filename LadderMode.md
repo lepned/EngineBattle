@@ -132,7 +132,9 @@ Climb 2: surviving = [A, B, C], new climber = C (bottom)
       → A is champion (1st place)
 ```
 
-Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines).
+Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines); the old file is then renamed `.migrated`, so a later Restart is not undone by it.
+
+A cup, Swiss or ladder with no state file to resume from will not start in a PGN that already has games, since that would put two tournaments into one file: the GUI asks first (add to the PGN, or cancel and set another PgnOutPath), the console stops and says so (`tournamentjson <file> --append` adds to the PGN anyway). A state file that cannot be read - cut short by a crash, say - is set aside as `.corrupt` rather than overwritten, and the same question follows.
 
 In the PGN each game's `Round` is `climb.n`, numbered in the order played across the climb's matches, tiebreak games included.
 

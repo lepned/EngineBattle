@@ -84,6 +84,16 @@ module TimeControlTypes =
       /// Derived, so not written to a config file.
       [<System.Text.Json.Serialization.JsonIgnore>]
       member x.IsMoveTime = not x.NodeLimit && x.MoveTime > TimeSpan.Zero
+      /// The PGN TimeControl tag: seconds, "+increment", "moves/" for a period ("40/300+2");
+      /// "-" (no clock) for a node limit or a time per move. `period`: the tournament's moves per
+      /// period when the setting has none.
+      member x.PgnText (period: int) =
+        let seconds (t: TimeSpan) = Math.Round(t.TotalSeconds, 3).ToString("0.###", CultureInfo.InvariantCulture)
+        if x.NodeLimit || x.IsMoveTime then "-"
+        else
+          let clock = if x.Increment > TimeSpan.Zero then $"{seconds x.Fixed}+{seconds x.Increment}" else seconds x.Fixed
+          let moves = if x.MovesToGo > 0 then x.MovesToGo else period
+          if moves > 0 then $"{moves}/{clock}" else clock
       override x.ToString() =
         if x.NodeLimit then formatNodes x.Nodes
         elif x.IsMoveTime then formatMoveTime x.MoveTime

@@ -86,6 +86,9 @@ module TournamentUtils =
 
 module Manager =  
 
+  /// The GUI said yes to a new cup, Swiss or ladder in a PGN that has games; read once at the start
+  let mutable appendToPgnRequested = false
+  let setAppendToPgn value = appendToPgnRequested <- value
   let mutable cupResumeRequested = false
   let setCupResumeRequested value =
     cupResumeRequested <- value
@@ -217,6 +220,8 @@ module Manager =
       TablebaseProbe.startRun tb.UseTBAdjudication tb.TBMen tb.TablebaseDirectory
       // cup, swiss and ladder play from their state files; RR/Gauntlet take the worker runner
       // (one worker when NumberOfGamesInParallel is 1)
+      tournament.AppendToPgn <- tournament.AppendToPgn || appendToPgnRequested
+      appendToPgnRequested <- false
       let tourny =
         match TournamentRunners.tryRun consumeCupResumeRequested logger tournament sendResponse cts tryGetUserAdjudication pgnAgent with
         | Some run -> run
