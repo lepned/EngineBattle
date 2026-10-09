@@ -2319,6 +2319,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
 
     let runner = Manager.Runner(logger, printUpdate, false)
     runner.AddTournament tourny
+    // true when the run went through: tournamentjson's exit code
+    let mutable failed = false
     let start = Stopwatch.GetTimestamp()
     let formatHms (ts: TimeSpan) = 
         let hours = int ts.TotalHours 
@@ -2328,25 +2330,31 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
 
     try
         let results = runner.Run()
-        let endTime = Stopwatch.GetElapsedTime start
-        let gamesPlayed = results |> Seq.length
-        let msg = $"Tournament completed - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallel}"
-        Console.WriteLine msg
-        logger.LogInformation(msg)
-        if File.Exists tourny.PgnOutPath then            
-            let consoleRes, _, _, allResults = PGNCalculator.getEngineDataResults (runner.GetPGNGames())            
-            Console.WriteLine consoleRes
-            logger.LogInformation(consoleRes)
-        else
-            let results = results |> ResizeArray
-            let scoreTable = runner.GetPlayerResults(results)
-            let table = runner.GenerateStatsCrosstable(results)
-            let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
-            Console.WriteLine consoleRes
-            logger.LogInformation(consoleRes)        
+        // a run that stopped with an error has said why; no "completed" summary after it
+        failed <- runner.Failure.IsSome
+        if not failed then
+          let endTime = Stopwatch.GetElapsedTime start
+          let gamesPlayed = results |> Seq.length
+          let msg = $"Tournament completed - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallel}"
+          Console.WriteLine msg
+          logger.LogInformation(msg)
+          if File.Exists tourny.PgnOutPath then
+              let consoleRes, _, _, allResults = PGNCalculator.getEngineDataResults (runner.GetPGNGames())
+              Console.WriteLine consoleRes
+              logger.LogInformation(consoleRes)
+          else
+              let results = results |> ResizeArray
+              let scoreTable = runner.GetPlayerResults(results)
+              let table = runner.GenerateStatsCrosstable(results)
+              let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
+              Console.WriteLine consoleRes
+              logger.LogInformation(consoleRes)
         
     with
-    |ex -> printfn "Caught an exception: %s" ex.Message
+    |ex ->
+        printfn "Caught an exception: %s" ex.Message
+        failed <- true
+    not failed
 
   // ---------- Batch piece-value analysis over a folder of nets ----------
   // For each net: self-play (RR) at the template's time control - nodes=1 in the usual template -
@@ -2438,7 +2446,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                     PreventMoveDeviation = true }
                             // the template's time control, which the batch does not override
                             printfn "  running %d-game self-play at %s..." rounds (tourny.TimeControlTextForPlayer engA.TimeControlID)
-                            runTournament tourny logger
+                            runTournament tourny logger |> ignore
 
                         match pvOutcomeEndgame pgn with
                         | Some (n, b, r, q) ->
@@ -2834,8 +2842,10 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                           host.Start()
                           let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
                           let logger = loggerFactory.CreateLogger("EngineBattle Console logger") // Using a general category name
-                          runTournament tournament logger
+                          let ok = runTournament tournament logger
                           host.StopAsync().Wait()
+                          // a run that stopped with an error is not a success to a script
+                          if not ok then exit 1
                     | None -> 
                         printfn "Tournamentjson config file not found..."                        
                 | Verb (Benchmark path) ->

@@ -277,6 +277,7 @@ module Manager =
     let mutable taggedSink : (string -> Update -> unit) option = None
     // 0 idle, 1 running, 2 retired while running (close the PGN when the run ends), 3 retired
     let mutable lifecycle = 0
+    let mutable failure : string option = None
     // each engine's CPU and memory over the tournament, for the console's closing table
     let resources = Game.ResourceMonitor.Totals()
     // no Ordo for a cup: a knockout's games say who went through, not how strong anyone is
@@ -486,11 +487,17 @@ module Manager =
         logger.LogInformation("Tournament cancelled.")
         resultsFromPGN |> Seq.toList
       | e ->
-        printfn "Error: %A" e
-        logger.LogCritical ("failed to run tournament" + tournament.MinSummary())
+        // the message for whoever runs it, the trace for the log: a stop with a reason (no
+        // openings, a PGN another tournament wrote) is not a crash
+        failure <- Some e.Message
+        printfn "Error: %s" e.Message
+        logger.LogCritical("Failed to run tournament: {Message} {Summary}", e.Message, tournament.MinSummary())
+        logger.LogDebug(e, "Tournament failure")
         resultsFromPGN |> Seq.toList
-        //raise e
     
+    /// Why the last run failed (not a cancel): the console's exit code reads it
+    member _.Failure = failure
+
     member _.LinkCancellation(token: CancellationToken) = token.Register(fun () -> cts.Cancel()) |> ignore
     member _.GetPlayerResults (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =
       let challengers = tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name
