@@ -276,3 +276,84 @@ let ``a Swiss resumed without an engine that still has a pair to play stops and 
   // nothing played around the missing engine, nothing paired past it
   Assert.DoesNotContain(second.Games, fun g -> g.Contains open'.PlayerB)
   Assert.Equal(1, second.Saved |> Option.map (fun s -> s.Rounds.Count) |> Option.defaultValue 1)
+
+// ---------------------------------------------------------------------------
+// The same with shuffled openings and openings unique per match: the shuffled order is saved in
+// the state file and read back on a resume, and only its first 50 entries are kept - a book of 60
+// openings goes past that, so the order is rebuilt from the seed on the resume.
+// ---------------------------------------------------------------------------
+
+/// A book of 60 distinct openings: every White first move with three Black replies.
+let private bigBook dir =
+  let white = [ "a3"; "a4"; "b3"; "b4"; "c3"; "c4"; "d3"; "d4"; "e3"; "e4"; "f3"; "f4"; "g3"; "g4"; "h3"; "h4"; "Na3"; "Nc3"; "Nf3"; "Nh3" ]
+  let black = [ "a6"; "h6"; "Nc6" ]
+  let path = Path.Combine(dir, "book60.pgn")
+  let games =
+    [ for w in white do for b in black -> w, b ]
+    |> List.mapi (fun i (w, b) -> sprintf "[Event \"b\"]\n[Round \"%d\"]\n[White \"w\"]\n[Black \"b\"]\n[Result \"*\"]\n\n1. %s %s *\n" (i + 1) w b)
+  File.WriteAllText(path, String.Join("\n", games))
+  path
+
+let private withBook dir big (t: Tournament) =
+  if big then { t with Opening = { t.Opening with OpeningsPath = Some (bigBook dir) } } else t
+
+/// Every stop point against the uninterrupted run, for any of the three machines.
+let private everyStop step (start: 'S option * int -> 'M * int) =
+  let whole = let m, total = start (None, 0) in run resultOf step m total 0 None
+  let interrupted k =
+    let m, total = start (None, 0)
+    let first = run resultOf step m total 0 (Some k)
+    let m, total = start (first.Saved, k)
+    first, run resultOf step m total k None
+  whole, compareAll whole interrupted
+
+let shuffledCases : obj[] seq =
+  seq { for big in [ false; true ] do
+          for random, unique in [ true, false; false, true; true, true ] -> [| box random; box unique; box big |] }
+
+[<Theory>]
+[<MemberData(nameof shuffledCases)>]
+let ``a cup with shuffled or per-match openings resumed after any game plays what it would have played`` (random: bool) (unique: bool) (big: bool) =
+  let dir = freshDir ()
+  // with the big book: 16 players and 4 pairs a match, 60 pairs - past the 50 the file keeps
+  let t =
+    { baseTournament dir "Cup" (if big then 16 else 8) with
+        CupOptions =
+          { Tournament.Empty.CupOptions with
+              BracketPath = Path.Combine(dir, "b.json"); RandomOpenings = random; UniquePerMatchOnly = unique
+              RoundPairIncrements = (if big then [ 4 ] else []) } }
+    |> withBook dir big
+  let cfg = CupMachine.configOf t PairingHelper.CupSeedingStrategy.ByRating unique (openingsOf t)
+  let whole, failures = everyStop CupMachine.step (fun (loaded, played) -> let m = CupMachine.create cfg loaded played in m, CupMachine.currentTotalGames m)
+  Assert.True(whole.Games.Length > 10, "too short a cup")
+  Assert.Empty(failures)
+
+[<Theory>]
+[<MemberData(nameof shuffledCases)>]
+let ``a Swiss with shuffled or per-match openings resumed after any game plays what it would have played`` (random: bool) (unique: bool) (big: bool) =
+  let dir = freshDir ()
+  // with the big book: 12 players, 5 rounds of 4-game matches, 60 openings - past the 50 kept
+  let t =
+    { baseTournament dir "Swiss" (if big then 12 else 6) with
+        SwissOptions =
+          { Tournament.Empty.SwissOptions with
+              GamesPerMatch = 4; Rounds = (if big then 5 else 3); RandomOpenings = random; UniquePerMatchOnly = unique
+              StatePath = Path.Combine(dir, "s.json") } }
+    |> withBook dir big
+  let cfg = SwissMachine.configOf t (openingsOf t)
+  let whole, failures = everyStop SwissMachine.step (fun (loaded, played) -> let m = SwissMachine.create cfg loaded played in m, SwissMachine.totalGamesOf m)
+  Assert.True(whole.Games.Length > 10, "too short a Swiss")
+  Assert.Empty(failures)
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``a ladder with shuffled openings resumed after any game plays what it would have played`` (big: bool) =
+  let dir = freshDir ()
+  let t =
+    { baseTournament dir "Ladder" 5 with LadderOptions = { GamePairsPerMatch = 2; RandomOpenings = true; StatePath = Path.Combine(dir, "l.json") } }
+    |> withBook dir big
+  let cfg = LadderMachine.configOf t (openingsOf t)
+  let whole, failures = everyStop LadderMachine.step (fun (loaded, played) -> let m = LadderMachine.create cfg loaded played in m, LadderMachine.totalGames m)
+  Assert.True(whole.Games.Length > 10, "too short a ladder")
+  Assert.Empty(failures)
