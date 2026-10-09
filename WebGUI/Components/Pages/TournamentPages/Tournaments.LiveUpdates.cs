@@ -486,6 +486,16 @@ public partial class Tournaments
 				}
 				break;
 
+			// an engine that will not start stops the run as a cancel, not an error: said here, or the
+			// page just stops (the console prints it in red)
+			case TournamentTypes.Update.EngineStartFailed failed:
+				_ = InvokeAsync(() =>
+				{
+					Snackbar.Add($"Engine {failed.Engine} failed to start: {failed.Reason} - the tournament stopped",
+						Severity.Error, o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+					StateHasChanged();
+				});
+				break;
 			case TournamentTypes.Update.MessagesFromEngine sender:
 				MessagesFromCeres.Insert(0, sender.Message);
 				if (MessagesFromCeres.Count > 10)
