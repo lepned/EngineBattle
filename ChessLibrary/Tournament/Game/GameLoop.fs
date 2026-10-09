@@ -60,7 +60,7 @@ let private replayMove (tourny: Tournament) (replay: (ReferenceGameReplay * Refe
 
 /// Readies both engines for the game: the pooled path only resets them; the full path also sets
 /// MoveOverhead, restarts exited engines, sets contempt and paces the GUI.
-let private prepareEngines skipEngineInit (tourny: Tournament) (board: Board) (white: ChessEngine) (black: ChessEngine) (logger: ILogger) = async {
+let private prepareEngines skipEngineInit (cts: CancellationTokenSource) (tourny: Tournament) (board: Board) (white: ChessEngine) (black: ChessEngine) (logger: ILogger) = async {
   let prepare (engine: ChessEngine) = async {
     // a Winboard engine with reuse=0 needs a new process for every game
     if not engine.CanReuseWinboard && not (engine.HasExited()) then
@@ -85,8 +85,10 @@ let private prepareEngines skipEngineInit (tourny: Tournament) (board: Board) (w
     let pacing =
       if tourny.ConsoleOnly then 0
       else int (float board.OpeningMovesPlayed.Count * float tourny.MinMoveTimeInMS + 2000.0)
-    let delay = max pacing (int tourny.DelayBetweenGames.TotalMilliseconds)
-    let! _ = Async.Parallel [ prepare white; prepare black; Async.Sleep delay ]
+    // DelayBetweenGames is not waited here: the runners wait it after every game.
+    // A cancel ends the wait: the game then ends at once as cancelled
+    let wait = async { try do! Task.Delay(pacing, cts.Token) |> Async.AwaitTask with _ -> () }
+    let! _ = Async.Parallel [ prepare white; prepare black; wait ]
     GameInitialization.checkAndPrepareContempt white black }
 
 /// Exception.Data key under which a game that ended in an exception carries its deviation count.
@@ -135,7 +137,7 @@ let private playWith
   let chess960 : EngineOption = { Name = "UCI_Chess960"; Value = sprintf "%b" board.IsFRC }
   white.AddSetOption chess960
   black.AddSetOption chess960
-  try do! prepareEngines skipEngineInit tourny board white black logger
+  try do! prepareEngines skipEngineInit cts tourny board white black logger
   with ex ->
     match ex with
     | :? CustomException.EngineStartupException -> raise ex

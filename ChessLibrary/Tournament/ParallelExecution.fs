@@ -348,9 +348,7 @@ let parallelTournamentRun
                               verbose (sprintf "Gate: worker %d finished round %s" i pair.RoundNr)
                           // The pause the sequential runner gave the GUI after every game: the final
                           // position stays on the board for DelayBetweenGames before the next game
-                          // starts. GameLoop.prepareEngines also waits this long at the NEXT start, in parallel
-                          // with readyok, which is what the old runner did too - but that wait is
-                          // invisible, the board has already moved on. The console sets it to zero.
+                          // starts - the only wait for it. The console sets it to zero.
                           // After Release, so a repeat of this key is not held for the pause as well.
                           if tourny.DelayBetweenGames > TimeSpan.Zero && not cts.IsCancellationRequested then
                               do! Task.Delay(tourny.DelayBetweenGames, cts.Token)
