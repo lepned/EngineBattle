@@ -64,6 +64,8 @@
 		<Compile Include="Match\MatchScoreboard.fs" />
 		<Compile Include="Match\MatchArgs.fs" />
 		<Compile Include="Match\MatchConfigJson.fs" />
+		<!-- tablebase folders and probing (no F# dependencies): match reads the largest table -->
+		<Compile Include="Tournament\TablebaseProbe.fs" />
 		<Compile Include="Match\MatchMapping.fs" />
 		<EmbeddedResource Include="Match\match-help.txt" LogicalName="ChessLibrary.Match.match-help.txt" />
 
@@ -162,7 +164,6 @@
 		<Compile Include="Tournament\LiveFeedHttpSink.fs" />
 		<Compile Include="Tournament\TournamentState.fs" />
 		<Compile Include="Tournament\StatePaths.fs" />
-		<Compile Include="Tournament\TablebaseProbe.fs" />
 		<Compile Include="Tournament\GameReplay.fs" />
 		<Compile Include="Tournament\GameAdjudication.fs" />
 		<Compile Include="Tournament\GameInitialization.fs" />

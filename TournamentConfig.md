@@ -50,7 +50,9 @@ This document provides an overview of the `tournament.json` configuration file u
 - **TBAdj**:
   - **TablebaseDirectory**: Folder with the Syzygy tablebases; several are separated by `;` on Windows and `:` on Linux and macOS. Positions with more pieces than the largest table there are not probed.
   - **UseTBAdjudication**: Enable or disable tablebase adjudication.
-  - **TBMen**: Number of men in tablebase adjudication.
+  - **TBMen**: Number of men in tablebase adjudication. A game is adjudicated from the tablebases
+    only when they answer: a position with more pieces than the tables hold, a missing table, or a
+    win the 50-move rule turns into a draw is left to the evaluation rules above.
 
 ### Test Options
 

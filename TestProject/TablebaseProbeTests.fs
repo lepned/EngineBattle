@@ -98,6 +98,36 @@ let ``the tablebase answer decides over the engines' evals`` () =
       Assert.Equal(ResultReason.AdjudicateTB, r.Reason)
   | None -> failwith "expected a tablebase result"
 
+/// The tournament's own evaluation rules off (as match without -draw and -resign), or the win rule
+/// on: both engines above 5 pawns for a move.
+let private adjudicateWith (win: bool) (evals: EvalType list) tbOutput =
+  let never = 10000
+  let t = tourny ""
+  let rules =
+    { t.Adjudication with
+        DrawOption = { MinDrawMove = never; DrawMoveLength = 1; MaxDrawScore = 0.0 }
+        WinOption = if win then { MinWinMove = 0; WinMoveLength = 1; MinWinScore = 5.0 }
+                    else { MinWinMove = never; WinMoveLength = 1; MinWinScore = 1000.0 } }
+  GameAdjudication.adjudicateByEval NullLogger.Instance (boardAt won) evals { t with Adjudication = rules } "A" "B" "x"
+    (Stopwatch.GetTimestamp()) (ResizeArray<string>()) 40 tbOutput
+
+[<Fact>]
+let ``without an answer from the tables, the engines' evals do not stand in for one`` () =
+  // the old fallback: two evals within a pawn were a draw, two above 5 a win, a mate score
+  // counted as both - each called SyzygyTB
+  for evals in [ [ EvalType.CP 0.5; EvalType.CP 0.5 ]; [ EvalType.CP 9.0; EvalType.CP 9.0 ]
+                 [ EvalType.CP 9.0; EvalType.CP (-9.0) ]; [ EvalType.Mate 3; EvalType.CP 0.5 ] ] do
+    Assert.Equal(None, adjudicateWith false evals None)
+    Assert.Equal(None, adjudicateWith false evals (Some TbWdl.CursedWin))
+
+[<Fact>]
+let ``without an answer from the tables, the tournament's evaluation rules decide`` () =
+  match adjudicateWith true [ EvalType.CP 9.0; EvalType.CP 9.0; EvalType.CP 9.0; EvalType.CP 9.0 ] None with
+  | Some r ->
+      Assert.Equal("1-0", r.Result)
+      Assert.Equal(ResultReason.AdjudicatedEvaluation, r.Reason)
+  | None -> failwith "expected the win rule to adjudicate"
+
 [<Fact>]
 let ``a position the tables cannot answer is no answer`` () =
   for fen in [ ""; "not a fen"; "8/8/8/8/8/8/8/8 w - - 0 1"                // no kings

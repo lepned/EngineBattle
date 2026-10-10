@@ -144,6 +144,16 @@ let ``tablebases`` () =
     Assert.Equal(5, (mapped (sf @ lc0 @ [ "-tb"; "tb"; "-tbpieces"; "5" ])).Tournament.Adjudication.TBAdj.TBMen)
 
 [<Fact>]
+let ``without -tbpieces, positions are probed as large as the tables go`` () =
+    let dir = IO.Directory.CreateTempSubdirectory("eb_tb_").FullName
+    try
+        for n in [ "KQvK.rtbw"; "KRPvKR.rtbw" ] do IO.File.WriteAllText(IO.Path.Combine(dir, n), "")
+        Assert.Equal(5, (mapped (sf @ lc0 @ [ "-tb"; dir ])).Tournament.Adjudication.TBAdj.TBMen)
+        // -tbpieces still decides
+        Assert.Equal(4, (mapped (sf @ lc0 @ [ "-tb"; dir; "-tbpieces"; "4" ])).Tournament.Adjudication.TBAdj.TBMen)
+    finally IO.Directory.Delete(dir, true)
+
+[<Fact>]
 let ``gauntlet seeds are the challengers`` () =
     let m = mapped (sf @ lc0 @ [ "-engine"; "cmd=c"; "name=C"; "tc=1+0"; "-tournament"; "gauntlet"; "-seeds"; "2" ])
     let t = m.Tournament

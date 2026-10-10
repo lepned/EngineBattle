@@ -57,16 +57,6 @@ let isConsecutiveLowEvalSufficient (evals: EvalType list) drawPlies maxDrawScore
     let res = consecutiveNumberOfLowEvalsLeft evals drawPlies maxDrawScore
     res <= 0
 
-/// A function to check if the tablebase adjudication should be applied
-let shouldAdjudicateTB (evals: EvalType list) (piecesLeft: int) tbMen =
-    if piecesLeft <= tbMen && evals.Length > 1 then
-        match evals.[0], evals.[1] with
-        |fst, snd when fst.WinAdj 5 && snd.WinAdj 5 -> true //draw
-        |fst, snd when fst.DrawAdj 1 && snd.DrawAdj 1 -> true //win
-        |_ -> false
-    else
-        false
-
 /// Most pieces a position may have to be adjudicated from tablebases.
 let tablebaseMen (tourny: Tournament) =
     if tourny.Adjudication.TBAdj.UseTBAdjudication then tourny.Adjudication.TBAdj.TBMen else 2
@@ -106,70 +96,28 @@ let adjudicateByEval
     let winPlyLength = tourny.Adjudication.WinOption.WinMoveLength * 2
     let tooHighEvals () = hasSufficientHighEvals evals winPlyLength tourny.Adjudication.WinOption.MinWinScore
     let tooLowEvals () = isConsecutiveLowEvalSufficient evals drawPlyLength tourny.Adjudication.DrawOption.MaxDrawScore
-    let mutable posToCheck = board.Position
-    let piecesLeft = PositionOps.numberOfPieces &posToCheck
-    let withTBadjudicationMen = tablebaseMen tourny
     let firstTwoEvals () =
         match evals |> List.rev with
         |[] -> []
         |[x] -> [x]
         |x::y::_ -> [x;y]
 
-    // The tablebase branch answers only for positions it can probe. When the probe
-    // yields nothing it must not swallow the position: repetition, insufficient
-    // material, the 50-move rule, checkmate and stalemate all live in the chain below,
-    // and an endgame small enough for a tablebase is exactly where they matter most.
+    // The tables' answer, and nothing in its place: a position they cannot answer (more pieces
+    // than they hold, a missing table, a win or loss the 50-move rule takes away) goes on to the
+    // tournament's own evaluation rules below. Repetition, insufficient material, the 50-move
+    // rule, checkmate and stalemate come first, in terminalAdjudication.
     let tbAdjudication () =
-      if piecesLeft <= withTBadjudicationMen then
-          let firstTwoEvals = firstTwoEvals ()
-          // CursedWin and BlessedLoss (won or lost, but not within the 50-move rule) are played on
-          let tryProbe =
-              match tbOutput with
-              | Some TbWdl.Win ->
-                  let res = if board.Position.STM = 0uy then "1-0" else "0-1"
-                  Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-              | Some TbWdl.Draw ->
-                  Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-              | Some TbWdl.Loss ->
-                  let res = if board.Position.STM = 0uy then "0-1" else "1-0"
-                  Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-              | _ -> None
-
-          if tryProbe.IsSome then
-              tryProbe
-
-          elif tryProbe.IsNone && shouldAdjudicateTB evals piecesLeft withTBadjudicationMen then
-              try
-                  match evals.[0] with
-                  | EvalType.CP ev when ev > 5.0 ->
-                      Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                  | EvalType.CP ev when ev < -5.0 ->
-                      Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                  | EvalType.CP _ ->
-                      Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                  | EvalType.Mate m when m > 0 ->
-                      Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                  | EvalType.Mate m when m < 0 ->
-                      Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                  | EvalType.Mate m -> // mate 0 or mate -0
-                      if m = -0 then
-                          Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                      else
-                          Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                  | EvalType.NA ->
-                      logger.LogCritical("TB adjudication fallback skipped: NA eval")
-                      None
-              with ex ->
-                  logger.LogCritical(ex, "Error during TB adjudication fallback")
-                  None
-          else None
-      // Too many pieces for a tablebase — nothing for this branch to say.
-      else None
+      let tb result = Formatting.createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicateTB dur (firstTwoEvals ()) |> Some
+      let whiteToMove = board.Position.STM = 0uy
+      match tbOutput with
+      | Some TbWdl.Win -> tb (if whiteToMove then "1-0" else "0-1")
+      | Some TbWdl.Draw -> tb "1/2-1/2"
+      | Some TbWdl.Loss -> tb (if whiteToMove then "0-1" else "1-0")
+      | _ -> None
 
     // Terminal conditions are facts about the position: the game is already over. They run
-    // ahead of everything else, including the tablebase branch — a stalemate is a draw even
-    // when the tablebase (or the eval fallback standing in for it) calls the position won,
-    // and a checkmate has to be reported as Checkmate so the PGN gets its #.
+    // ahead of everything else, including the tablebase branch, and a checkmate has to be
+    // reported as Checkmate so the PGN gets its #.
     let terminalAdjudication () =
       if board.InsufficientMaterial() then
           let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())

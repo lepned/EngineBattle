@@ -161,7 +161,11 @@ module MatchMapping =
         if tb.Ignore50MoveRule then note "-tbignore50 is not applied"
         if tb.ResultType <> MatchArgs.Both then note "-tbadjudicate is not applied; wins, losses and draws are all adjudicated"
         String.Join(string Path.PathSeparator, dirs)
-    let tbAdj = { TablebaseDirectory = tbDir; UseTBAdjudication = tb.Enabled; TBMen = if tb.MaxPieces > 0 then tb.MaxPieces else 7 }
+    // without -tbpieces, as large as the tables go (7 when the folders hold none yet)
+    let tbMen =
+      if tb.MaxPieces > 0 then tb.MaxPieces
+      else match ChessLibrary.TablebaseProbe.largestTable tbDir with 0 -> 7 | n -> n
+    let tbAdj = { TablebaseDirectory = tbDir; UseTBAdjudication = tb.Enabled; TBMen = tbMen }
 
     // output and the rest
     let pgnPath =
