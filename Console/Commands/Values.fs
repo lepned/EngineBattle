@@ -725,7 +725,7 @@ let runPieceValueFitOutcome (p: FitParams) =
       let sampleN = p.Sample |> Option.defaultValue 20000
       printfn ""
       printfn "Positions: %s  (game-outcome regression — DeepMind tanh model)" path
-      printfn "Target:    game result z in {-1,0,+1}, White's perspective   (engine arg ignored)"
+      printfn "Target:    game result z in {-1,0,+1}, White's perspective"
       printfn ""
       printf "Collecting positions from games ..."
       let data = pvCollectOutcomeRows path sampleN
@@ -796,7 +796,7 @@ let runPieceValueFitPgnEval (p: FitParams) =
       let sampleN = p.Sample |> Option.defaultValue 20000
       printfn ""
       printfn "Positions: %s  (regression on embedded engine eval wv=, in pawns)" path
-      printfn "Target:    in-game eval, White's perspective   (engine arg ignored)"
+      printfn "Target:    in-game eval, White's perspective"
       match p.Player with
       | Some pn -> printfn "Player:    only plies where '%s' was on move (single-net eval values)" pn
       | None -> printfn "Player:    all moves (blended across both engines)"
@@ -909,6 +909,19 @@ let fit (p: Parsed) =
     let engineGiven = valueOf p "engine"
     let from = defaultArg (valueOf p "from") "eval"
     let positive name = intOf p name |> Option.map (fun n -> if n > 0 then n else raise (Usage $"--{name} must be above 0, got {n}"))
+    if not (List.contains from [ "eval"; "outcome"; "pgn-eval" ]) then
+        raise (Usage $"--from expects eval, outcome or pgn-eval, got '{from}'")
+    // an option the fit does not use is refused, not silently ignored
+    let uses =
+        match from with
+        | "eval" -> [ "engine"; "nodes"; "uci"; "args" ]
+        | "outcome" -> [ "bootstrap" ]
+        | _ -> [ "bootstrap"; "player" ]
+    let unused =
+        [ "engine"; "nodes"; "uci"; "args"; "bootstrap"; "player" ]
+        |> List.filter (fun o -> has p o && not (List.contains o uses))
+    if not unused.IsEmpty then
+        raise (Usage $"""--from {from} does not use {String.Join(", ", unused |> List.map (fun o -> "--" + o))}""")
     let fitParams =
         { Engine = engineGiven |> Option.map (fun given -> engineFrom p given "uci")
           Positions = path

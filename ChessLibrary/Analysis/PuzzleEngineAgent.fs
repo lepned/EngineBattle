@@ -1775,8 +1775,10 @@ let runTest
                     printfn "  → Skipping Solve test with %d nodes (requires node count higher than 1)" node
 
                 | _ -> ()  // skip if node = empty/zero or Value if not lc0/ceres
-            with ex ->
-              sendU (LichessError (sprintf "Engine '%s' failed: %s" engine.Name ex.Message))
+            with
+            // Ctrl+C or Stop: the group in progress is dropped, the groups before it are kept
+            | :? System.OperationCanceledException when ct.IsCancellationRequested -> ()
+            | ex -> sendU (LichessError (sprintf "Engine '%s' failed: %s" engine.Name ex.Message))
 
             // partial timing
             let elapsed = System.Diagnostics.Stopwatch.GetElapsedTime start

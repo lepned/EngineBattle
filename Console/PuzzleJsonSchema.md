@@ -19,13 +19,15 @@ this page describes is its `result`**:
 
 `ok` is false, with an `incomplete` error, when an engine failed or nothing was scored (the exit
 code is then 1); `paired-failed` says the `paired` section is empty because the paired comparison
-failed. The exit code is 2 for a config that cannot be used (a missing file, an unknown `Type`
-token, a bad `Nodes` value).
-Every run also writes the same document on its own, with or without `--json`: `LichessSummary_<stamp>.json` beside the text summary `LichessSummary_<stamp>.txt` and the failed-puzzles CSVs, in the config's `FailedPuzzlesOutputFolder` (`<stamp>` is the local time the results are written, as `yyyy-MM-dd_HH-mm`; nothing is written when the folder is empty). Runs started from the WebGUI puzzle page write the same file. These files are what `eb-cli puzzle trend` and the `/puzzles/report` and `/puzzles/trend` pages read.
+failed. A run stopped with Ctrl+C has an `interrupted` error and exit code 130: its result holds
+the rating groups that finished, and no `LichessSummary_<stamp>.json` is written for it. The exit
+code is 2 for a config that cannot be used (a missing file, an unknown `Type` token, a bad `Nodes`
+value).
+Every run that is not stopped with Ctrl+C also writes the same document on its own, with or without `--json`: `LichessSummary_<stamp>.json` beside the text summary `LichessSummary_<stamp>.txt` and the failed-puzzles CSVs, in the config's `FailedPuzzlesOutputFolder` (`<stamp>` is the local time the results are written, as `yyyy-MM-dd_HH-mm`; nothing is written when the folder is empty). Runs started from the WebGUI puzzle page write the same file. These files are what `eb-cli puzzle trend` and the `/puzzles/report` and `/puzzles/trend` pages read.
 
 ## File format
 
-A single top-level JSON object, UTF-8 encoded, indented with 2 spaces, camelCase field names. The output file is overwritten on each invocation.
+A single top-level JSON object (the envelope's `result`, or the whole of a `LichessSummary_<stamp>.json`), UTF-8 encoded, indented with 2 spaces, camelCase field names.
 
 ## Stability rules
 
@@ -66,7 +68,7 @@ The fields **always** emitted as integers (no float ambiguity) are: `schemaVersi
 
 A Lichess puzzle is a SEQUENCE of moves, and `accuracy` scores the whole sequence: one wrong move anywhere and the puzzle counts as failed. That remains the definition.
 
-> **Discontinuity, 2026-08-25.** Puzzles are credited when the engine's move differs from the recorded solution but still delivers checkmate. That check used to accept ANY position with no legal replies, which also matches **stalemate** — so a move that threw a won game away was scored as a solve. It now requires the opponent to be in check. `accuracy` therefore drops slightly from this build onward, and a step curve joining runs across the boundary (`puzzletrend` reads `accuracy`) will show it. The direction is a correction, not a regression: the old numbers were too high.
+> **Discontinuity, 2026-08-25.** Puzzles are credited when the engine's move differs from the recorded solution but still delivers checkmate. That check used to accept ANY position with no legal replies, which also matches **stalemate** — so a move that threw a won game away was scored as a solve. It now requires the opponent to be in check. `accuracy` therefore drops slightly from this build onward, and a step curve joining runs across the boundary (`puzzle trend` reads `accuracy`) will show it. The direction is a correction, not a regression: the old numbers were too high.
 
 The problem it creates is attribution. A puzzle's THEMES describe the move it exists for — its first solver move — while later moves are usually forced follow-up carrying the same tags without being about them. Measured on a 1500-puzzle sample, **38–43% of failed puzzles had the thematic move right** and went wrong later, so `accuracy` charges nearly four in ten failures to a theme that had nothing to do with them.
 
@@ -248,7 +250,10 @@ import json
 from pathlib import Path
 
 def load_puzzle_results(path: Path) -> dict:
+    """A LichessSummary_<stamp>.json, or the saved stdout of `puzzle run --json` (the envelope)."""
     data = json.loads(path.read_text(encoding="utf-8"))
+    if "command" in data:
+        data = data["result"] or {}
     if data.get("schemaVersion", 0) < 1:
         raise ValueError(f"Unsupported puzzle schema version: {data.get('schemaVersion')!r}")
     return data
@@ -288,5 +293,4 @@ If a future need requires per-puzzle detail in the JSON, it will go behind a sep
 ## Compatibility notes
 
 - `puzzle run` without `--json` still writes this document as `LichessSummary_<stamp>.json` in `FailedPuzzlesOutputFolder` (see Invocation).
-- Aliases `puzzle` and `p` accept the flag identically.
 - `paired` was added without a `schemaVersion` bump, per the stability rules: it is a new optional field, and a consumer that does not know it ignores it. Files written before it exist simply have no `paired` key — read it defensively.

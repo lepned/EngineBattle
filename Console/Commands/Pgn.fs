@@ -128,6 +128,9 @@ let validateSpec =
 let validate (p: Parsed) =
     let path = pgnArg p
     let csvPath = valueOf p "out" |> Option.map (outputFile p)
+    // the CSV is opened before the PGN is read: the same file would be emptied first
+    if csvPath |> Option.exists (fun c -> String.Equals(c, path, StringComparison.OrdinalIgnoreCase)) then
+        raise (Usage "--out would write over the PGN: give another file")
     let threads =
         match intOf p "threads" with
         | Some t when t < 1 -> raise (Usage $"--threads must be at least 1, got {t}")

@@ -240,9 +240,13 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
           |> Array.Parallel.map runSingleEngine
           |> Seq.toList
       else
+          // after a Stop no further engine is started
           engineConfigs
+          |> Seq.takeWhile (fun _ -> not ct.IsCancellationRequested)
           |> Seq.map runSingleEngine
           |> Seq.toList
+      // a stopped run leaves out the engines that had no position done
+      |> List.filter (fun r -> not ct.IsCancellationRequested || r.CorrectPuzzles.Count + r.FailedPuzzles.Count > 0)
 
   watch.Stop()
   resultsNew |> List.sortByDescending (fun eret -> eret.Accuracy) |> AllResults |> sendUpdate
@@ -264,7 +268,7 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
       )
 
   //get the max length of the engine name for coumn width
-  let maxEngineNameLength = eretSummary |> List.map (fun (engine, _, _, _) -> engine.Length) |> List.max
+  let maxEngineNameLength = eretSummary |> List.map (fun (engine, _, _, _) -> engine.Length) |> List.fold max 6
   let colWidths = [maxEngineNameLength + 2; 11; 10; 10]
   let eretFileName = Path.GetFileName epdPath
   let elapsed = watch.Elapsed

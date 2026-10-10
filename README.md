@@ -323,7 +323,7 @@ It is recommended to run policy tests in Console Mode for optimal performance by
 ### Tournament Console Mode
 
 The console mode is designed for quick and efficient testing, allowing users to run multiple games in parallel for benchmarking purposes. This mode is ideal for policy matches and very quick time controls, such as 20 + 0.3 seconds or less.
-In order to use the console mode, run `eb-cli` from the release folder (or, from a source clone, start the application from the Console folder) with the following command:
+In order to use the console mode, run `eb-cli` from the release folder (or, from a source clone, with `dotnet run --project Console` from the repo root) with the following command:
 
 ` eb-cli tournament run <fullPathToYourTournament.json> `
 

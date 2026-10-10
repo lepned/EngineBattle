@@ -20,13 +20,15 @@ type Outcome =
     | Run of Parsed
     /// `help`, `-h`, `--help`: the overview (None), one group's commands, or one command.
     | Help of HelpTopic
-    | Version
+    /// `version`, `--version`; true with --json.
+    | Version of json: bool
     | UsageError of message: string * command: Command option
 
 and HelpTopic =
     | Overview
     | Group of string
     | One of Command
+    | VersionTopic
 
 // ---------------------------------------------------------------- suggestions
 
@@ -87,9 +89,10 @@ let resolve (commands: Command list) (tokens: string list) : Result<Command * st
 
 // ---------------------------------------------------------------- options and arguments
 
-/// "--name" or "-x"; a lone "-" is a FEN field (no castling, no en passant), "-5" a number.
+/// "--name" or "-x" (or "-x=value"); a lone "-" is a FEN field (no castling, no en passant), "-5" a number.
 let isOption (token: string) =
-    (token.StartsWith "--" && token.Length > 2) || (token.Length = 2 && token.[0] = '-' && Char.IsLetter token.[1])
+    (token.StartsWith "--" && token.Length > 2)
+    || (token.Length >= 2 && token.[0] = '-' && Char.IsLetter token.[1] && (token.Length = 2 || token.[2] = '='))
 
 let private isHelp (token: string) = token = "--help" || token = "-h"
 
@@ -119,7 +122,7 @@ let parseCommand (c: Command) (tokens: string list) : Outcome =
             // --name=value is the same as --name value
             let token, inline' =
                 match t.IndexOf '=' with
-                | i when t.StartsWith "--" && i > 2 -> t.Substring(0, i), Some(t.Substring(i + 1))
+                | i when (t.StartsWith "--" && i > 2) || (not (t.StartsWith "--") && i = 2) -> t.Substring(0, i), Some(t.Substring(i + 1))
                 | _ -> t, None
             match findOpt token with
             | None -> usage $"unknown option '{token}'{didYouMean token optNames}"
@@ -128,6 +131,7 @@ let parseCommand (c: Command) (tokens: string list) : Outcome =
                 let add v = opts |> Map.change o.Name (fun old -> Some((defaultArg old []) @ [ v ]))
                 match o.Value, inline', rest with
                 | None, Some _, _ -> usage $"--{o.Name} takes no value"
+                | Some meta, Some "", _ -> usage $"--{o.Name} needs a value ({meta})"
                 | None, None, _ -> go rest pending args (add "") endOfOptions
                 | Some _, Some v, _ -> go rest pending args (add v) endOfOptions
                 | Some meta, None, v :: rest' -> go rest' pending args (add v) endOfOptions
@@ -156,7 +160,11 @@ let parse (commands: Command list) (tokens: string list) : Outcome =
     | [ "--help" ]
     | [ "-h" ] -> Help Overview
     | [ "version" ]
-    | [ "--version" ] -> Version
+    | [ "--version" ] -> Version false
+    | [ "version"; "--json" ]
+    | [ "--version"; "--json" ] -> Version true
+    | [ "help"; "version" ]
+    | [ "version"; ("-h" | "--help") ] -> Help VersionTopic
     | "help" :: topic ->
         match resolve commands topic with
         | Ok(c, []) -> Help(One c)

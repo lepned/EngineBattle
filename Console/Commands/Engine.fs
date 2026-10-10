@@ -106,7 +106,7 @@ let newDef (p: Parsed) =
     let wishes =
         { ChessLibrary.EngineProbe.Wishes.Empty with
             NetFile = optional "net" "network file"
-            Tablebases = valueOf p "syzygy" |> Option.map fullPath
+            Tablebases = valueOf p "syzygy" |> Option.map fullPaths
             Base = optional "base" "base def" |> Option.map ChessLibrary.Configuration.JSON.readSingleEngineConfig
             Overrides = uciPairs "uci" (valuesOf p "uci") }
     match ChessLibrary.EngineProbe.probe exe (timeout * 1000) with
@@ -137,7 +137,7 @@ let newDef (p: Parsed) =
 let genSpec =
     { command [ "engine"; "gen" ] Group "Write defs for training checkpoints, from an existing def" with
         Description =
-          Some "The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force."
+          Some "The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force; exit 1 when a def was not written because its file exists."
         Args = [ arg "template" "an existing def of the arm (a full path)" ]
         Options =
           [ value "net" "FILE" "Write the def of this one network only"
@@ -163,13 +163,16 @@ let gen (p: Parsed) =
     | Ok plan ->
         printfn "%s" (ChessLibrary.EngineDefGen.render plan)
         if not plan.ToWrite.IsEmpty then
-            if has p "dry-run" then info "--dry-run: nothing written"
+            if has p "dry-run" then
+                info "--dry-run: nothing written"
+                ExitOk
             else
                 let written = ChessLibrary.EngineDefGen.write (has p "force") plan
                 info $"Wrote {written.Length} def(s)"
                 let blocked = plan.ToWrite.Length - written.Length
-                if blocked > 0 then warn $"{blocked} not written: a file of that name exists (--force writes over it)"
-        ExitOk
+                if blocked > 0 then error $"{blocked} not written: a file of that name exists (--force writes over it)"
+                if blocked > 0 then ExitFailed else ExitOk
+        else ExitOk
 
 // ---------------------------------------------------------------- bench
 

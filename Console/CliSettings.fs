@@ -102,7 +102,7 @@ let current: Lazy<Result<Settings, string>> =
              for w in warnings do eprintfn "%s: %s" file w
              s))
 
-/// Where the tablebases are: --tb, then EB_SYZYGY_PATH, then eb-cli.json; None when nowhere. The
+/// Where the tablebases are: --syzygy, then EB_SYZYGY_PATH, then eb-cli.json; None when nowhere. The
 /// settings are read only when neither is given.
 let resolveSyzygyPath (flag: string option) (env: string option) (settings: unit -> Result<Settings, string>) =
     let given =

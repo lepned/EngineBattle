@@ -14,14 +14,22 @@ let startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 /// A path as typed: "~" is the home folder, a relative path is relative to the working directory.
 let fullPath (path: string) =
+    if String.IsNullOrWhiteSpace path then raise (Usage "a path is empty")
     let expanded =
         if path = "~" || path.StartsWith "~/" || path.StartsWith @"~\" then
             Environment.GetFolderPath Environment.SpecialFolder.UserProfile + path.Substring 1
         else path
     Path.GetFullPath expanded
 
+/// A list of folders separated by ';' (Windows) or ':' (elsewhere), each made full.
+let fullPaths (paths: string) =
+    paths.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+    |> Array.map fullPath
+    |> fun a -> String.Join(string Path.PathSeparator, a)
+
 /// An input file that must exist.
 let inputFile (what: string) (path: string) =
+    if String.IsNullOrWhiteSpace path then raise (Usage $"{what}: no path given")
     let full = fullPath path
     if File.Exists full then full else raise (Usage $"{what} not found: {path}")
 

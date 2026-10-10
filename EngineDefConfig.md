@@ -14,7 +14,7 @@ eb-cli engine new C:/Engines/lc0.exe --net C:/Networks/BT4-332.pb.gz --out-dir C
 `--net` goes into the engine's own network option (Lc0's `WeightsFile`, Ceres' `Network` - found
 on the option, not the engine's name) and its folder into `NetworkPath`; an engine without a
 network option refuses it. `--syzygy` fills `SyzygyPath` when the engine has one and names no folder
-yet. `--uci name value` overrides a default and must name an option the engine reported. `--base
+yet. `--uci NAME=VALUE` overrides a default and must name an option the engine reported. `--base
 def.json` carries the option values and the display fields of an existing def over onto a fresh
 probe. `--print` shows the def instead of writing it; an existing file is never overwritten
 without `--force`. The file is named after the engine without spaces (`Stockfish19.json`).

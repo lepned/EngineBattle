@@ -85,7 +85,7 @@ let ``help, version and a bad number`` () =
   Assert.Equal(Help(Group "pgn"), parse commands [ "pgn"; "--help" ])
   Assert.Equal(Help(One pgnCheck), parse commands [ "help"; "pgn"; "check" ])
   Assert.Equal(Help(One analyze), parse commands [ "analyze"; "sf"; "-h" ])
-  Assert.Equal(Version, parse commands [ "--version" ])
+  Assert.Equal(Version false, parse commands [ "--version" ])
   let p = run "analyze sf --nodes 5k"
   let ex = Assert.Throws<Usage>(fun () -> intOf p "nodes" |> ignore)
   Assert.Contains("--nodes expects a whole number, got '5k'", ex.Data0)
@@ -164,3 +164,36 @@ let ``ConsoleTools.md carries every command's help as the program prints it`` ()
     let body = help.Substring(0, help.IndexOf("\nExit codes:")).TrimEnd()
     Assert.True(doc.Contains($"### {Cli.Spec.name e.Spec}\n"), $"no section for '{Cli.Spec.name e.Spec}'")
     Assert.True(doc.Contains(body), $"the help of '{Cli.Spec.name e.Spec}' in ConsoleTools.md is not what eb-cli prints: write it again from 'eb-cli help {Cli.Spec.name e.Spec}'")
+// ---------------------------------------------------------------- review fixes
+
+[<Fact>]
+let ``short options take =, an empty value is a usage error, version has its own forms`` () =
+  Assert.Equal(Some "f.txt", valueOf (run "analyze sf -o=f.txt") "out")
+  Assert.Contains("--out needs a value", usage "analyze sf --out=")
+  Assert.Equal(Version true, parse commands [ "version"; "--json" ])
+  Assert.Equal(Help VersionTopic, parse commands [ "help"; "version" ])
+
+[<Fact>]
+let ``a run stopped with Ctrl+C exits 130, also when it ends in an exception`` () =
+  let entries = [ { Cli.App.Spec = analyze; Cli.App.Run = fun _ -> raise (System.OperationCanceledException()) } ]
+  Assert.Equal(1, Cli.App.run entries [ "analyze"; "sf" ])
+  Cli.Output.interrupted <- true
+  try Assert.Equal(130, Cli.App.run entries [ "analyze"; "sf" ])
+  finally Cli.Output.interrupted <- false
+
+[<Fact>]
+let ``the search limit is written in the JSON`` () =
+  let limit: Commands.Positions.LimitJson = { Nodes = System.Nullable 1000; MovetimeMs = System.Nullable(); Depth = System.Nullable() }
+  Assert.Contains("\"nodes\": 1000", System.Text.Json.JsonSerializer.Serialize(limit, Cli.Output.jsonOptions))
+
+[<Fact>]
+let ``mistakes in position, values fit and gui are usage errors`` () =
+  let usageOf (tokens: string list) (f: Parsed -> int) = (Assert.Throws<Usage>(fun () -> f (runReal tokens) |> ignore)).Data0
+  Assert.Contains("--positions takes none of --square", usageOf [ "position"; "--positions"; "x.epd"; "--square"; "e1" ] Commands.Positions.position)
+  Assert.Contains("not a square", usageOf [ "position"; "startpos"; "--square"; "z9" ] Commands.Positions.position)
+  Assert.Contains("PNBRQK", usageOf [ "position"; "startpos"; "--set-piece"; "e4=X" ] Commands.Positions.position)
+  Assert.Contains("is a page name", usageOf [ "gui"; "5100" ] Commands.Gui.run)
+  let epd = System.IO.Path.GetTempFileName()
+  try
+    Assert.Contains("does not use --engine", usageOf [ "values"; "fit"; epd; "--from"; "outcome"; "--engine"; "sf" ] Commands.Values.fit)
+  finally System.IO.File.Delete epd

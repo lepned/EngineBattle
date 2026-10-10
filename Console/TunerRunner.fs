@@ -141,20 +141,25 @@ module TunerRunner =
 
   let private failf fmt = Printf.kprintf failwith fmt
 
+  // a config mistake is a usage error (exit 2), not a failed run
+  let private configError (message: string) = raise (Cli.Parse.Usage message)
+
   let private resolvePath (path: string) fieldName =
-    if String.IsNullOrWhiteSpace path then failf "%s is required" fieldName
+    if String.IsNullOrWhiteSpace path then configError $"{fieldName} is required"
     let full = Path.GetFullPath(path)
-    if File.Exists full then full else failf "%s not found: %s" fieldName full
+    if File.Exists full then full else configError $"{fieldName} not found: {full}"
 
   let private ensureDir (path: string) =
-    if String.IsNullOrWhiteSpace path then failwith "OutputDir is required"
+    if String.IsNullOrWhiteSpace path then configError "OutputDir is required in the tuner config"
     Directory.CreateDirectory(path) |> ignore
 
   let private readTuneConfig path =
     let normalized = resolvePath path "Tune config"
     let json = File.ReadAllText(normalized)
-    let cfg = JsonSerializer.Deserialize<TuneConfig>(json, jsonOptionsRead)
-    if obj.ReferenceEquals(cfg, null) then failwith "Unable to parse tune config"
+    let cfg =
+      try JsonSerializer.Deserialize<TuneConfig>(json, jsonOptionsRead)
+      with ex -> configError $"not a tuner config: {normalized}: {ex.Message}"
+    if obj.ReferenceEquals(cfg, null) then configError $"not a tuner config: {normalized}"
     normalized, cfg
 
   let private tryToFloat (value: obj) : float option =

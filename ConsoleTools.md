@@ -44,13 +44,15 @@ The same rules hold for every command (`match` excepted - see below).
   position, the PGN, the config - is a positional argument; everything else is a named option.
   Commands are grouped: `pgn check`, `engine new`, `puzzle run`.
 - **Options** are `--kebab-case` and case-sensitive; only `-h` (help) and `-o` (output) have a
-  short form. `--name value` and `--name=value` are the same. `--` ends the options.
+  short form. `--name value` and `--name=value` are the same, as are `-o FILE` and `-o=FILE`.
+  `--` ends the options.
 - **Mistakes** are said, with a suggestion, and exit 2: `eb-cli pgn chek x.pgn` gives
   `'pgn chek' is not a command (did you mean 'check'?)`.
 - **Help:** `eb-cli` or `eb-cli help` lists the commands; `eb-cli help <command>` or
   `<command> --help` shows one command's arguments, options with their defaults, and examples.
   The help is made from the same specification the parser reads, so it is always what the
-  program does; the reference below is that help.
+  program does; the reference below is that help. `eb-cli version` (or `--version`) names the
+  build, `eb-cli version --json` the same as JSON.
 - **Engines:** an engine def (`.json`, with its network, backend, arguments and options), an engine
   executable, or the name of a def in `engineDefsFolder` ([eb-cli.json](#eb-clijson)).
   `--uci NAME=VALUE` sets a UCI option (repeatable), `--args "..."` replaces the def's arguments.
@@ -167,7 +169,7 @@ Analyze a position with an engine
 
 Usage: eb-cli analyze <engine> [<fen>] [options]
 
-Searches the position once and prints the engine's info lines as they come, then a summary. With --json, only the result, on stdout.
+Searches the position once: the engine's info lines as they come on stderr, the summary on stdout (eval and WDL from White's view). A checkmate or stalemate is reported without a search. With --json, only the result, on stdout.
 
 Arguments:
   <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
@@ -352,7 +354,7 @@ Piece values for a folder of nets
 
 Usage: eb-cli values batch <template> <nets> [options]
 
-For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The first Ctrl+C stops after the net being played.
+For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The summary keeps the rows of nets the run did not reach. The first Ctrl+C stops the net being played without fitting it; the next run plays it on from its PGN.
 
 Arguments:
   <template>  a tournament config whose first engine def is the template
@@ -433,7 +435,7 @@ Write defs for training checkpoints, from an existing def
 
 Usage: eb-cli engine gen <template> [options]
 
-The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force.
+The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force; exit 1 when a def was not written because its file exists.
 
 Arguments:
   <template>  an existing def of the arm (a full path)
@@ -657,7 +659,7 @@ Run a puzzle test from a config
 
 Usage: eb-cli puzzle run <config> [options]
 
-Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. Exit 1 when an engine failed or nothing was scored.
+Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored.
 
 Arguments:
   <config>  a puzzle config (JSON)

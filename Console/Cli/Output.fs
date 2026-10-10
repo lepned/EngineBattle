@@ -71,20 +71,25 @@ let envelope (command: string) (ok: bool) (result: obj) (errors: JsonError list)
 /// Set by the first Ctrl+C of a long run: the run reports what it has, and the exit code is 130.
 let mutable interrupted = false
 
+/// One handler for the process: the first Ctrl+C cancels the token, the second exits.
+let private ctrlC =
+    lazy
+        (let cts = new Threading.CancellationTokenSource()
+         Console.CancelKeyPress.Add(fun e ->
+             e.Cancel <- true
+             if not interrupted then
+                 interrupted <- true
+                 warn "stopping - Ctrl+C again to stop at once"
+                 cts.Cancel()
+             else
+                 Console.Out.Flush()
+                 exit ExitInterrupted)
+         cts.Token)
+
 /// Ctrl+C for a long run: the first press cancels the returned token - the run stops starting new
 /// work and keeps what it has - and the second ends the process at once. Exit code 130 either way.
-let onCtrlC () =
-    let cts = new Threading.CancellationTokenSource()
-    Console.CancelKeyPress.Add(fun e ->
-        e.Cancel <- true
-        if not interrupted then
-            interrupted <- true
-            warn "stopping - Ctrl+C again to stop at once"
-            cts.Cancel()
-        else
-            Console.Out.Flush()
-            exit ExitInterrupted)
-    cts.Token
+/// Every call returns the same token.
+let onCtrlC () = ctrlC.Force()
 
 /// Where the JSON goes: the real stdout, kept here while Console.Out points at stderr during a
 /// --json command (the library prints its own notices with printfn; they must not land in the JSON).
@@ -100,8 +105,19 @@ let withJsonStdout (f: unit -> 'a) =
         Console.SetOut real
         jsonWriter <- null
 
+/// Where a command's result goes: the real stdout, also while Console.Out points at stderr.
+let resultWriter () = if isNull jsonWriter then Console.Out else jsonWriter
+
+/// Runs `f` with the library's printfn notices on stderr and the result (resultWriter) on stdout;
+/// under --json that is already so.
+let withResultsOnStdout (f: unit -> 'a) = if isNull jsonWriter then withJsonStdout f else f ()
+
+/// Whether this command has printed its envelope (stdout holds one JSON document, never two).
+let mutable jsonPrinted = false
+
 /// The envelope on stdout.
 let printJson (e: Envelope) =
+    jsonPrinted <- true
     let w = if isNull jsonWriter then Console.Out else jsonWriter
     w.WriteLine(JsonSerializer.Serialize(e, jsonOptions))
     w.Flush()

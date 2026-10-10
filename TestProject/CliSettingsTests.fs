@@ -8,7 +8,7 @@ let private fromFile (s: Settings) () = Ok s
 let private never () : Result<Settings, string> = failwith "the settings file must not be read"
 
 [<Fact>]
-let ``--tb, then EB_SYZYGY_PATH, then eb-cli.json`` () =
+let ``--syzygy, then EB_SYZYGY_PATH, then eb-cli.json`` () =
   let file = fromFile { empty with SyzygyPath = Some "F:/file" }
   Assert.Equal(Ok(Some "D:/flag"), resolveSyzygyPath (Some "D:/flag") (Some "E:/env") never)
   Assert.Equal(Ok(Some "E:/env"), resolveSyzygyPath None (Some "E:/env") never)

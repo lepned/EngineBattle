@@ -1,27 +1,28 @@
 # Piece Values from a Neural Net
 
 Tools for asking *"what is each piece worth to this network?"* — both contextually (one
-position) and globally (the net's implied piece values). Four console commands:
+position) and globally (the net's implied piece values). Four eb-cli commands
+(`eb-cli help <command>` lists every option; ConsoleTools.md has them all):
 
-- `piecevalues` / `pv` — **contextual** values in a single position (leave-one-out).
-- `piecevaluefit` / `pvfit` — **global** values via regression over many positions.
-- `pvbatch` — **batch** the global fit over a whole folder of nets (self-play + regress each).
-- `pvcombo` — a **material-imbalance report** from a PGN, grouped by absolute material signature.
+- `values position` — **contextual** values in a single position (leave-one-out).
+- `values fit` — **global** values via regression over many positions.
+- `values batch` — **batch** the global fit over a whole folder of nets (self-play + regress each).
+- `pgn imbalance` — a **material-imbalance report** from a PGN, grouped by absolute material signature.
 
 There are three distinct notions of "a net's piece value", each with its own tool:
 
 | Notion | Question it answers | Command |
 |---|---|---|
-| **Contextual** | What is *this* piece doing *here*? | `piecevalues` |
-| **Eval-function** | What does the net's *evaluation* encode? | `pvfit … --pgneval` (or default eval mode) |
-| **Revealed-preference** | What do the net's *results* imply? | `pvfit … --outcome` |
+| **Contextual** | What is *this* piece doing *here*? | `values position` |
+| **Eval-function** | What does the net's *evaluation* encode? | `values fit … --from pgn-eval` (or `--from eval`) |
+| **Revealed-preference** | What do the net's *results* imply? | `values fit … --from outcome` |
 
 ---
 
-## 1. Contextual values — `piecevalues`
+## 1. Contextual values — `values position`
 
 ```
-piecevalues <engine> [fen] [--fen S] [--moves m1 m2 …] [--nodes N] [--movetime MS] [--depth N] [--uci K V]
+eb-cli values position <engine> [<fen>] [--moves "e4 e5 …"] [--nodes N|--movetime MS|--depth N] [--uci NAME=VALUE]...
 ```
 
 For every non-king piece: evaluate the position, remove that piece, re-evaluate, and
@@ -41,24 +42,27 @@ game is effectively over).
 
 ---
 
-## 2. Global values — `pvfit`
+## 2. Global values — `values fit`
 
 ```
-pvfit <engine> <positions.epd|.pgn> [--sample N] [--nodes N] [--by-phase]
-                                    [--outcome] [--pgneval] [--player NAME]
-                                    [--bootstrap N] [--uci K V]
+eb-cli values fit <positions.epd|.pgn> [--from eval|outcome|pgn-eval] [--sample N] [--by-phase]
+                  [--engine E] [--nodes N] [--uci NAME=VALUE]...     (--from eval)
+                  [--bootstrap N]                                      (outcome, pgn-eval)
+                  [--player NAME]                                      (pgn-eval)
 ```
+
+An option the chosen fit does not use is refused.
 
 All modes regress on a **material-imbalance feature vector** `d = [ΔP, ΔN, ΔB, ΔR, ΔQ]`
 (White-minus-Black piece counts, read from the FEN). Values are normalised so pawn = 1.
 
-### Default (eval-regression)
-Re-evaluates each position with the engine at `nodes 1` and regresses
+### `--from eval` (the default) — eval regression
+Re-evaluates each position with the `--engine` at `nodes 1` and regresses
 `logit(W + ½D)` (White's view) on `d` (with intercept + a side-to-move/tempo term, L1
 loss). A **quiet filter** drops in-check positions and positions whose best move is a
 capture (a cheap quiescence proxy).
 
-### `--outcome` — DeepMind model (PGN only)
+### `--from outcome` — DeepMind model (PGN only)
 The method behind AlphaZero's published piece values
 ([Tomašev et al. 2020](https://arxiv.org/abs/2009.04374)): fit `g(d) = tanh(wᵀd)` to the
 **game result** `z ∈ {-1, 0, +1}` (White's perspective), by Gauss-Newton least squares.
@@ -67,7 +71,7 @@ fit automatically, so only materially-imbalanced positions drive the estimate. T
 **revealed-preference** view. (Uses `L1`/robust fitting elsewhere because the PNAS follow-up
 found `L2` underestimates piece weights.)
 
-### `--pgneval` — embedded eval (PGN only)
+### `--from pgn-eval` — embedded eval (PGN only)
 Regresses the engine's **in-game eval** (`wv=`, already stored White-relative and in pawns
 by EB's annotation writer; parsed via `EngineTypes.Annotation.getEngineStatData`) on `d`.
 A continuous, bounded pawn target avoids the queen blow-up that the `tanh`-on-outcome model
@@ -80,16 +84,16 @@ the named engine was on move, so every `wv` is that single net's eval — lettin
 `--by-phase` additionally splits into middlegame (>16 pieces) and endgame (≤16 pieces).
 
 ### `--bootstrap N` — confidence intervals (game-clustered)
-Adds a 95% percentile CI per piece from `N` bootstrap resamples (`--ci` is an alias). The
+Adds a 95% percentile CI per piece from `N` bootstrap resamples (outcome and pgn-eval). The
 resampling unit is the **whole game, not the position**: consecutive plies of one game share
 nearly the same material, so resampling individual positions would treat ~20k correlated rows
 as independent and report falsely tight intervals. Resampling games (≈1000 clusters) gives
-honest width. The point estimate uses the same fit (`tanh` for `--outcome`, `L1` for
-`--pgneval`); only the spread is bootstrapped. Fixed seed → reproducible.
+honest width. The point estimate uses the same fit (`tanh` for outcome, `L1` for
+pgn-eval); only the spread is bootstrapped. Fixed seed → reproducible.
 
 **The marginal intervals look wide** — at 1000 games the per-net per-piece CIs are around
 ±0.8 (minors), ±1.1 (rook), ±3 (queen, skewed up from separation). Example — BT4-332 endgame
-`--outcome`:
+`--from outcome`:
 
 | Piece | Point | 95% CI |
 |---|---|---|
@@ -132,9 +136,9 @@ policy moves (no search) are weak, so the net hangs pawns/minors/rooks without c
 and games are decisive. This is cheap to generate and is closest in spirit to AlphaZero's
 self-play (their signal came from self-play *diversity*, not strength). Generate a corpus
 with a normal EB tournament at `NodeLimit=true, Nodes=1` over a varied opening book, then
-point `pvfit` at the resulting PGN.
+point `values fit` at the resulting PGN.
 
-`pvfit` prints per-feature **material variance** and warns when it is near zero, so a
+`values fit` prints per-feature **material variance** and warns when it is near zero, so a
 degenerate corpus is obvious rather than silently producing garbage.
 
 ---
@@ -145,9 +149,9 @@ Corpus: 500 `nodes=1` self-play games (UHO openings, 68% decisive).
 
 | Method | Pawn | Knight | Bishop | Rook | Queen |
 |---|---|---|---|---|---|
-| `--outcome`, all positions | 1.00 | 3.06 | 3.47 | 4.74 | 10.0 |
-| `--outcome`, endgame | 1.00 | 2.83 | 3.17 | 4.20 | 8.54 |
-| `--pgneval`, endgame | 1.00 | 2.94 | 3.19 | 4.69 | 6.36 |
+| outcome, all positions | 1.00 | 3.06 | 3.47 | 4.74 | 10.0 |
+| outcome, endgame | 1.00 | 2.83 | 3.17 | 4.20 | 8.54 |
+| pgn-eval, endgame | 1.00 | 2.94 | 3.19 | 4.69 | 6.36 |
 | *classical theory* | *1* | *~3* | *~3.25* | *~5* | *~9* |
 
 The revealed-preference fit lands on textbook values, and **bishop > knight** is recovered
@@ -166,20 +170,22 @@ tighten it).
 
 ---
 
-## 3. Batch over a folder of nets — `pvbatch`
+## 3. Batch over a folder of nets — `values batch`
 
 ```
-pvbatch <templateTournament.json> <netFolder> [--rounds N] [--out DIR]
+eb-cli values batch <templateTournament.json> <netFolder> [--rounds N] [--out-dir DIR]
 ```
 
 Runs the global fit end-to-end for **every `*.onnx` in `<netFolder>`**, in one process. For
 each net it: clones the template tournament's first engine def (overriding `Network`), plays a
 self-play RR (`--rounds`, default 1000), then computes the **endgame (≤16 pieces)** `outcome`
-and `pgneval` regressions and appends a row to `summary.csv`
-(`net,mode,knight,bishop,rook,queen`). It is **resumable** (skips any net whose PGN already
-has `rounds` games) and **fault-tolerant** (a failing net is logged and the batch continues).
+and `pgneval` regressions and writes its rows to `summary.csv`
+(`net,mode,knight,bishop,rook,queen`; the rows of nets a run did not reach are kept). It is
+**resumable** (skips any net whose PGN already has `rounds` games; the first Ctrl+C stops the
+net being played, which the next run plays on from its PGN) and **fault-tolerant** (a failing
+net is logged and the batch continues; the exit code is 1 when any net failed).
 
-`pvbatch` does not set the search limit itself: the self-play uses the template tournament's
+`values batch` does not set the search limit itself: the self-play uses the template tournament's
 time control. Only the engines, mode (RR), rounds, PGN path, parallelism and deviation
 prevention are overridden (plus console-only output, no minimum move time and no delay
 between games). For the `nodes=1` self-play described above, give the template a node limit
@@ -195,7 +201,7 @@ of 1 (`NodeLimit=true, Nodes=1`).
 Corpus: 1000 `nodes=1` self-play games per net (UHO_4060_v4 openings), **endgame (≤16 pieces)**
 regressions. Pawn ≡ 1.
 
-**`--outcome` (revealed-preference — directly comparable to AlphaZero's published values):**
+**outcome (revealed-preference — directly comparable to AlphaZero's published values):**
 
 | Net | Knight | Bishop | Rook | Queen | B−N |
 |---|---|---|---|---|---|
@@ -212,7 +218,7 @@ regressions. Pawn ≡ 1.
 | **BT4-332 (Lc0)** | **2.78** | **2.95** | **4.82** | **9.12** | **+0.17** |
 | **AlphaZero (2020)** | **3.05** | **3.33** | **5.63** | **9.50** | **+0.28** |
 
-**`--pgneval` (eval-function view, L1 on the in-game eval):**
+**pgn-eval (eval-function view, L1 on the in-game eval):**
 
 | Net | Knight | Bishop | Rook | Queen |
 |---|---|---|---|---|
@@ -251,10 +257,10 @@ regressions. Pawn ≡ 1.
 
 ---
 
-## 4. Imbalance report — `pvcombo`
+## 4. Imbalance report — `pgn imbalance`
 
 ```
-pvcombo <games.pgn>
+eb-cli pgn imbalance <games.pgn>
 ```
 
 The contextual counterpart of the global fit: for eight classic matchups - `B vs N`, `R vs N`, `R vs B`,

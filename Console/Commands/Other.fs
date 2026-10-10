@@ -35,12 +35,15 @@ let perft (p: Parsed) =
         | Some c -> raise (Usage $"--count must be 1 to 960, got {c}")
         | None -> 10
     let records =
-        TestPositions.CHESS960PERFT_POS.Split(Environment.NewLine)
+        // any line ending: the file's checkout may have either
+        TestPositions.CHESS960PERFT_POS.Split([| '\r'; '\n' |])
         |> Seq.skip 1
         |> Seq.filter (fun l -> not (String.IsNullOrWhiteSpace l))
         |> Seq.map Test.parseChess960Record
         |> Seq.truncate count
         |> Array.ofSeq
+    // no positions would pass with nothing checked
+    if records.Length = 0 then failwith "no perft positions were read"
     let jsonMode = has p "json"
     let sw = Diagnostics.Stopwatch.StartNew()
     let mutable nodes = 0L

@@ -10,6 +10,7 @@ open Cli.Output
 open Cli.App
 
 let mutable private server: Process option = None
+let mutable private stopping = false
 
 /// The WebGUI project: found from the Console folder or its build output in a source checkout.
 /// None in a published package, which has no project to run (the WebGUI is EngineBattle there).
@@ -49,6 +50,8 @@ let private start (project: string) (page: string) (port: int option) =
                 try Process.Start(ProcessStartInfo(url, UseShellExecute = true)) |> ignore
                 with ex -> warn $"cannot open the browser: {ex.Message}")
     proc.ErrorDataReceived.Add(fun a -> if not (isNull a.Data) then Console.Error.WriteLine a.Data)
+    // a server that dies on its own (a build error, the port taken) says so
+    proc.Exited.Add(fun _ -> if not stopping then error "the WebGUI has exited; press Enter")
     proc.Start() |> ignore
     proc.BeginOutputReadLine()
     proc.BeginErrorReadLine()
@@ -58,6 +61,7 @@ let private start (project: string) (page: string) (port: int option) =
 let stop () =
     match server with
     | Some proc when not proc.HasExited ->
+        stopping <- true
         info "Stopping the WebGUI..."
         (try proc.Kill true with _ -> ())
         proc.Dispose()
@@ -75,15 +79,16 @@ let spec =
             "eb-cli gui analysis/single --port 5100", "Single-engine analysis on port 5100" ] }
 
 let run (p: Parsed) =
+    let page = defaultArg (argOf p "page") "tournament"
+    if page |> Seq.forall Char.IsDigit then raise (Usage $"'{page}' is a page name; a port is --port {page}")
+    let port =
+        intOf p "port"
+        |> Option.map (fun n -> if n > 0 && n < 65536 then n else raise (Usage $"--port must be 1-65535, got {n}"))
     match tryWebGuiProject () with
     | None ->
         error "there is no WebGUI project here to run (a download has EngineBattle next to eb-cli instead)"
         ExitFailed
     | Some project ->
-        let page = defaultArg (argOf p "page") "tournament"
-        let port =
-            intOf p "port"
-            |> Option.map (fun n -> if n > 0 && n < 65536 then n else raise (Usage $"--port must be 1-65535, got {n}"))
         info $"""Starting the WebGUI{(match port with Some n -> $" on port {n}" | None -> "")}; Enter or Ctrl+C stops it"""
         Console.CancelKeyPress.Add(fun e ->
             e.Cancel <- true
@@ -91,7 +96,8 @@ let run (p: Parsed) =
             exit ExitInterrupted)
         start project page port
         Console.ReadLine() |> ignore
+        let died = server |> Option.exists (fun proc -> proc.HasExited)
         stop ()
-        ExitOk
+        if died then ExitFailed else ExitOk
 
 let entries: Entry list = [ { Spec = spec; Run = run } ]

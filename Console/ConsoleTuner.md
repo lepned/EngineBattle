@@ -16,7 +16,7 @@ Three evaluation modes are available via `"evalMode"`:
 
 SPRT match execution details:
 - Uses the in-process tournament runner (`Manager.Runner`) for each comparison.
-- Does not spawn `tournamentjson` subprocesses per candidate.
+- Does not spawn `tournament run` subprocesses per candidate.
 - Writes match PGNs next to the base tournament's `PgnOutPath`, or as `<outputDir>/tuner_matches_*.pgn` when that is blank.
 - Computes SPRT decision after each bounded mini-match from final WDL.
 
@@ -86,7 +86,7 @@ The default `"evalMode": "sprt"` evaluates candidates by running head-to-head SP
 
 ### Puzzle Mode
 
-Set `"evalMode": "puzzle"` with `"evalConfigPath"` pointing to a Lichess puzzle config JSON (same format as `puzzlejson` command). The tuner evaluates each candidate by running puzzle accuracy tests instead of SPRT matches.
+Set `"evalMode": "puzzle"` with `"evalConfigPath"` pointing to a Lichess puzzle config JSON (the config of `eb-cli puzzle run`). The tuner evaluates each candidate by running puzzle accuracy tests instead of SPRT matches.
 
 Each candidate is evaluated for accuracy directly, and the accuracy value is used as the objective function (higher = better).
 
@@ -107,7 +107,7 @@ The puzzle config file should specify `puzzleFile`, `sampleSize`, `concurrency`,
 
 ### ERET Mode
 
-Set `"evalMode": "eret"` with `"evalConfigPath"` pointing to an ERET config JSON (same format as `eretjson` command). The tuner evaluates each candidate by running EPD position accuracy tests.
+Set `"evalMode": "eret"` with `"evalConfigPath"` pointing to an ERET config JSON (the config of `eb-cli puzzle eret`). The tuner evaluates each candidate by running EPD position accuracy tests.
 
 Example config:
 ```json

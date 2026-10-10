@@ -370,7 +370,10 @@ let createHost() =
 
 /// An ERET run from its config (a path that exists); exit 1 when an engine failed.
 let runEretTest (path: string) (ct: CancellationToken) =
-  let loaded = loadEretConfig path
+  let loaded =
+    try loadEretConfig path
+    with ex -> raise (Cli.Parse.Usage $"not an ERET config: {path}: {ex.Message}")
+  if obj.ReferenceEquals(loaded, null) then raise (Cli.Parse.Usage $"not an ERET config: {path}")
   printfn "Processing ERET puzzle file: %s" path
   // Resolved once, before any engine loads, and carried on the config the writers
   // read. Empty means the run writes no files - the handler skips on that.
@@ -384,21 +387,23 @@ let runEretTest (path: string) (ct: CancellationToken) =
       |> Seq.collect (mapToEngPuzzleConfig data.EngineFolder)
       |> ResizeArray   
   let timeControl = if data.RunWithNodeLimit then nodes else time
-  let errors = ref 0
-  let update (u: ERET) =
-    match u with
-    | EretError _ -> errors.Value <- errors.Value + 1
-    | _ -> ()
-    Eret.processEret data u
-  PuzzleRunners.runEretTests timeControl engineConfigs data update ct |> ignore
-  if errors.Value = 0 then Cli.Output.ExitOk else Cli.Output.ExitFailed
+  // an engine that fails ends the run with its exception (exit 1); the parallel run's names each one
+  try PuzzleRunners.runEretTests timeControl engineConfigs data (Action<ERET>(Eret.processEret data)) ct |> ignore
+  with :? AggregateException as ae ->
+    failwith (String.Join("; ", ae.Flatten().InnerExceptions |> Seq.map (fun e -> e.Message) |> Seq.distinct))
+  if ct.IsCancellationRequested then
+    Cli.Output.warn "stopped with Ctrl+C: the summary counts only the positions that were done"
+  Cli.Output.ExitOk
 
 /// A puzzle run from its config (a path that exists). With json the result (Console/PuzzleJsonSchema.md)
 /// is printed as the envelope's result. Exit 1 when an engine failed or nothing was scored.
 let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
   let startedUtc = DateTime.UtcNow
   let runStopwatch = System.Diagnostics.Stopwatch.StartNew()
-  let data = loadPuzzleConfig path
+  let data =
+    try loadPuzzleConfig path
+    with ex -> raise (Cli.Parse.Usage $"not a puzzle config: {path}: {ex.Message}")
+  if obj.ReferenceEquals(data, null) then raise (Cli.Parse.Usage $"not a puzzle config: {path}")
   let normalizedPath = Cli.Groups.inputFile "puzzle file (PuzzleFile in the config)" data.PuzzleFile
   printfn "Processing Lichess puzzle file: %s" path
   // Resolved before any engine loads, so an unusable path costs seconds instead of a
@@ -716,6 +721,8 @@ let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
       //let tableFileName = Path.Combine(escaped, $"LichessPuzzleScore_{datePart}.txt")
       tryWrite tableFileName (fun () ->
           use tableWriter = new StreamWriter(tableFileName)
+          if ct.IsCancellationRequested then
+              tableWriter.WriteLine("STOPPED WITH Ctrl+C: the rating group in progress is not counted")
           tableWriter.WriteLine(table)
           if pairedSummary <> "" then
               tableWriter.WriteLine(pairedSummary)
@@ -726,23 +733,28 @@ let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
       // Trend tooling reads these; nothing should have to parse the human-formatted table,
       // whose column layout has drifted across many releases. See Console/PuzzleJsonSchema.md.
       let pairedJsonFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.json")
-      try
-          PuzzleJsonOutput.buildResultWithPaired
-              pairedOutcome
-              normalizedPath
-              puzzleDbCount
-              data.SampleSize
-              data.MinRating
-              data.MaxRating
-              data.PuzzleFilter
-              data.RatingGroups
-              startedUtc
-              elapsedSeconds
-              scores
-          |> PuzzleJsonOutput.writeToFile pairedJsonFileName
-      with ex ->
-          writeFailures <- writeFailures + 1
-          RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON summary to {pairedJsonFileName}: {ex.Message}"
+      // a run stopped with Ctrl+C has no JSON twin: puzzle trend and the run report would read
+      // its partial numbers as a finished checkpoint
+      if ct.IsCancellationRequested then
+          Cli.Output.warn $"stopped with Ctrl+C: no {Path.GetFileName pairedJsonFileName} (the text summary has what finished)"
+      else
+          try
+              PuzzleJsonOutput.buildResultWithPaired
+                  pairedOutcome
+                  normalizedPath
+                  puzzleDbCount
+                  data.SampleSize
+                  data.MinRating
+                  data.MaxRating
+                  data.PuzzleFilter
+                  data.RatingGroups
+                  startedUtc
+                  elapsedSeconds
+                  scores
+              |> PuzzleJsonOutput.writeToFile pairedJsonFileName
+          with ex ->
+              writeFailures <- writeFailures + 1
+              RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON summary to {pairedJsonFileName}: {ex.Message}"
 
       // Naming the folder at the end makes a mistyped path obvious instead of leaving a
       // run that looks finished. It must never claim success over a red line above it -
@@ -772,15 +784,19 @@ let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
               elapsedSeconds
               scores
       let errors =
-          [ if not ok then
+          [ if ct.IsCancellationRequested then
+              { Cli.Output.Code = "interrupted"; Cli.Output.Message = "stopped with Ctrl+C: the rating group in progress is not counted" }
+            if not ok then
               { Cli.Output.Code = "incomplete"; Cli.Output.Message = $"{engineErrors.Value} engine error(s), {scored} score(s) recorded" }
             if pairedOutcome.Failed then
               { Cli.Output.Code = "paired-failed"; Cli.Output.Message = "the paired comparison failed; result.paired is empty" } ]
       let node = System.Text.Json.Nodes.JsonNode.Parse(PuzzleJsonOutput.serialize result)
-      Cli.Output.printJson (Cli.Output.envelope "puzzle run" ok (box node) errors)
+      Cli.Output.printJson (Cli.Output.envelope "puzzle run" (ok && not ct.IsCancellationRequested) (box node) errors)
   // A run in which an engine failed (refused network, crash mid-sweep) is not a finished one;
   // the files for the groups that did run are written above.
-  if not ok then
+  // stopped with Ctrl+C: the exit code is 130 whatever was recorded
+  if ct.IsCancellationRequested then Cli.Output.ExitOk
+  elif not ok then
       Cli.Output.error $"puzzle run incomplete: {engineErrors.Value} engine error(s), {scored} score(s) recorded"
       Cli.Output.ExitFailed
   else Cli.Output.ExitOk
@@ -901,7 +917,8 @@ let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensio
       if not failed then
         let endTime = Stopwatch.GetElapsedTime start
         let gamesPlayed = results |> Seq.length
-        let msg = $"Tournament completed - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallel}"
+        let how = if ct.IsCancellationRequested then "stopped (Ctrl+C)" else "completed"
+        let msg = $"Tournament {how} - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallel}"
         Console.WriteLine msg
         logger.LogInformation(msg)
         if File.Exists tourny.PgnOutPath then
@@ -959,8 +976,8 @@ type BatchParams =
 
 /// For each net: self-play at the template's time control, then the outcome and pgn-eval endgame
 /// fits; a net whose PGN already has the rounds is not played again (the batch resumes). The summary
-/// is written whole after each net, so a run again does not repeat rows. Ctrl+C stops after the net
-/// being played.
+/// keeps the rows of nets this run did not reach and replaces those it did. Ctrl+C stops the net
+/// being played without fitting it; the next run plays it on from its PGN.
 let runPvBatch (p: BatchParams) (ct: CancellationToken) =
     match JSON.readTournamentJson p.Template with
     | None -> raise (Cli.Parse.Usage $"cannot read the template tournament: {p.Template}")
@@ -973,8 +990,16 @@ let runPvBatch (p: BatchParams) (ct: CancellationToken) =
             let nets = Directory.GetFiles(p.NetFolder, "*.onnx") |> Array.sort
             printfn "Found %d nets in %s\nOutput: %s\n" nets.Length p.NetFolder p.OutDir
             let summaryPath = Path.Combine(p.OutDir, "summary.csv")
-            let rows = Collections.Generic.List<string>()
-            let writeSummary () = File.WriteAllText(summaryPath, "net,mode,knight,bishop,rook,queen\n" + String.Join("", rows))
+            // net -> its rows; the rows of an earlier run stay until this run has the net's own
+            let rows = Collections.Generic.SortedDictionary<string, string list>(StringComparer.Ordinal)
+            if File.Exists summaryPath then
+                for line in File.ReadAllLines summaryPath |> Array.skip 1 do
+                    match line.Split(',') with
+                    | parts when parts.Length > 1 && line.Trim() <> "" ->
+                        rows.[parts.[0]] <- (match rows.TryGetValue parts.[0] with | true, l -> l | _ -> []) @ [ line + "\n" ]
+                    | _ -> ()
+            let writeSummary () =
+                File.WriteAllText(summaryPath, "net,mode,knight,bishop,rook,queen\n" + String.Join("", rows.Values |> Seq.concat))
             use host = createHost()
             host.Start()
             let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
@@ -993,9 +1018,11 @@ let runPvBatch (p: BatchParams) (ct: CancellationToken) =
                         let pgn = Path.Combine(p.OutDir, baseName + ".pgn").Replace("\\", "/")
                         printfn "\n==== %s ====" baseName
                         let have = pvCountGames pgn
-                        if have >= p.Rounds then
+                        let played =
+                          if have >= p.Rounds then
                             printfn "  the PGN already has %d games: not played again" have
-                        else
+                            true
+                          else
                             let engA = cloneEngine (sprintf "PVB-%s-a" baseName) netPath
                             let engB = cloneEngine (sprintf "PVB-%s-b" baseName) netPath
                             let tourny =
@@ -1013,21 +1040,27 @@ let runPvBatch (p: BatchParams) (ct: CancellationToken) =
                                     TestOptions = { templateTourny.TestOptions with NumberOfGamesInParallel = 1 }
                                     PreventMoveDeviation = true }
                             printfn "  running %d-game self-play at %s..." p.Rounds (tourny.TimeControlTextForPlayer engA.TimeControlID)
-                            runTournament tourny logger ct |> ignore
+                            runTournament tourny logger ct
+                        if ct.IsCancellationRequested then
+                            printfn "  stopped: not fitted; the next run plays it on from its PGN"
+                        elif not played then
+                            failures <- failures + 1
+                            Cli.Output.error $"{baseName}: the self-play did not run through"
+                        else
+                        let netRows = Collections.Generic.List<string>()
                         match pvOutcomeEndgame pgn with
                         | Some (n, b, r, q) ->
                             printfn "  outcome endgame:  P 1.00  N %s  B %s  R %s  Q %s" (fmt n) (fmt b) (fmt r) (fmt q)
-                            rows.Add(sprintf "%s,outcome,%.2f,%.2f,%.2f,%.2f\n" baseName n b r q)
+                            netRows.Add(sprintf "%s,outcome,%.2f,%.2f,%.2f,%.2f\n" baseName n b r q)
                         | None -> printfn "  outcome endgame:  (insufficient data)"
                         match pvPgnEvalEndgame pgn with
                         | Some (n, b, r, q) ->
                             printfn "  pgneval endgame:  P 1.00  N %s  B %s  R %s  Q %s" (fmt n) (fmt b) (fmt r) (fmt q)
-                            rows.Add(sprintf "%s,pgneval,%.2f,%.2f,%.2f,%.2f\n" baseName n b r q)
+                            netRows.Add(sprintf "%s,pgneval,%.2f,%.2f,%.2f,%.2f\n" baseName n b r q)
                         | None -> printfn "  pgneval endgame:  (insufficient data)"
+                        rows.[baseName] <- List.ofSeq netRows
                         writeSummary ()
-                    with
-                    | :? CustomException.EngineStartupException -> reraise ()
-                    | ex ->
+                    with ex ->
                         failures <- failures + 1
                         Cli.Output.error $"{baseName}: {ex.Message}"
             host.StopAsync().Wait()
@@ -1108,7 +1141,7 @@ let private configArg what = arg "config" what
 let puzzleRunSpec =
     { command [ "puzzle"; "run" ] Group "Run a puzzle test from a config" with
         Description =
-          Some "Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. Exit 1 when an engine failed or nothing was scored."
+          Some "Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored."
         Args = [ configArg "a puzzle config (JSON)" ]
         Options = [ json ]
         Examples =
@@ -1246,11 +1279,12 @@ let bookEval (p: Parsed) =
 
 /// The tournament of a config, with its engines read: None when the file is not a tournament.
 let private loadTournament (path: string) =
-    match JSON.readTournamentJson path with
-    | Some tourny ->
+    // the parse error is the usage error's message (readTournamentJson printed it on stdout)
+    match JSON.tryReadTournamentJson path with
+    | Result.Error message -> raise (Usage message)
+    | Result.Ok tourny ->
         let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList
         Some(tourny, engineList)
-    | None -> None
 
 let tournamentRunSpec =
     { command [ "tournament"; "run" ] Group "Run a tournament from a config" with
@@ -1281,13 +1315,14 @@ let tournamentRun (p: Parsed) =
             printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)
         for warning in Validation.duplicateOpeningWarnings tournament do
             Cli.Output.warn warning
+        // before the pondering check, which starts engines too
+        let ct = Cli.Output.onCtrlC ()
         // AllowPondering: every engine started once first, to see which can ponder
         let enginesOk = not tournament.AllowPondering || (let ok, _, _ = Tournament.TournamentUtils.checkPonderingEngines tournament in ok)
         if not enginesOk then
             Cli.Output.error "AllowPondering is set, but not every engine can ponder"
             Cli.Output.ExitFailed
         else
-            let ct = Cli.Output.onCtrlC ()
             use host = createHost ()
             host.Start()
             let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
@@ -1341,7 +1376,7 @@ let tuneDashboard (p: Parsed) =
 let valuesBatchSpec =
     { command [ "values"; "batch" ] Commands.Positions.Group "Piece values for a folder of nets" with
         Description =
-          Some "For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The first Ctrl+C stops after the net being played."
+          Some "For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The summary keeps the rows of nets the run did not reach. The first Ctrl+C stops the net being played without fitting it; the next run plays it on from its PGN."
         Args = [ arg "template" "a tournament config whose first engine def is the template"; arg "nets" "a folder of .onnx networks" ]
         Options =
           [ value "rounds" "N" "Self-play games per net" |> withDefault "1000"

@@ -19,7 +19,8 @@ let private elapsedText (t: TimeSpan) =
     elif t.TotalMinutes < 1.0 then $"{t.TotalSeconds:F1} s"
     else $"{int t.TotalMinutes}m {t.Seconds:D2}s"
 
-type private LimitJson =
+// public: System.Text.Json writes only public properties
+type LimitJson =
     { Nodes: Nullable<int>
       MovetimeMs: Nullable<int>
       Depth: Nullable<int> }
@@ -30,7 +31,16 @@ let private limitJson (l: Limit) =
     | MoveTime ms -> { Nodes = Nullable(); MovetimeMs = Nullable ms; Depth = Nullable() }
     | Depth d -> { Nodes = Nullable(); MovetimeMs = Nullable(); Depth = Nullable d }
 
-let private searchJson (r: Engines.SearchResult) =
+/// White to move in the position after the moves.
+let private whiteToMove (fen: string) (moves: string list) = (fen.Split(' ').[1] = "w") = (moves.Length % 2 = 0)
+
+/// The engine's WDL (side to move) from White's view, like the eval.
+let private wdlWhite (whiteMoves: bool) (r: Engines.SearchResult) =
+    r.Wdl |> Option.map (fun w -> if whiteMoves then w.Win, w.Draw, w.Loss else w.Loss, w.Draw, w.Win)
+
+let private say format = Printf.kprintf (fun (s: string) -> (resultWriter ()).WriteLine s) format
+
+let private searchJson (whiteMoves: bool) (r: Engines.SearchResult) =
     {| Depth = r.Depth
        SelDepth = r.SelDepth
        Eval = Engines.evalJson r.Eval
@@ -39,7 +49,7 @@ let private searchJson (r: Engines.SearchResult) =
        Eps = r.Eps
        TimeMs = int64 r.Time.TotalMilliseconds
        TbHits = r.TbHits
-       Wdl = (match r.Wdl with Some w -> box {| Win = w.Win; Draw = w.Draw; Loss = w.Loss |} | None -> null)
+       Wdl = (match wdlWhite whiteMoves r with Some(w, d, l) -> box {| Win = w; Draw = d; Loss = l |} | None -> null)
        Bestmove = r.Bestmove
        Pv = r.Pv
        SanPv = r.SanPv |}
@@ -49,7 +59,7 @@ let private searchJson (r: Engines.SearchResult) =
 let analyzeSpec =
     { command [ "analyze" ] Group "Analyze a position with an engine" with
         Description =
-          Some "Searches the position once and prints the engine's info lines as they come, then a summary. With --json, only the result, on stdout."
+          Some "Searches the position once: the engine's info lines as they come on stderr, the summary on stdout (eval and WDL from White's view). A checkmate or stalemate is reported without a search. With --json, only the result, on stdout."
         Args = [ arg "engine" engineArgHelp; fenArg false $"{fenHelp} (default startpos)" ]
         Options = [ moves ] @ limitOptions 1_000_000 @ [ uci; args; switch "list-options" "List the engine's UCI options and their defaults instead of searching"; json ]
         OneOf = [ limitOneOf ]
@@ -65,10 +75,25 @@ let analyze (p: Parsed) =
     let played = movesFrom p fenText
     let lim = limit p 1_000_000
     let jsonMode = has p "json"
+    let whiteMoves = whiteToMove fenText played
+    let status = (ChessLibrary.BoardUtils.getPositionStatus (after fenText played)).Status
+    let terminal = status = "checkmate" || status = "stalemate"
+    // the library's notices (options set, engine shut down) go to stderr; the summary is stdout's
+    withResultsOnStdout (fun () ->
     if not jsonMode then
-        printfn "Engine: %s" config.Name
-        printfn "FEN:    %s" fenText
-        if not played.IsEmpty then printfn "Moves:  %s" (String.concat " " played)
+        say "Engine: %s" config.Name
+        say "FEN:    %s" fenText
+        if not played.IsEmpty then say "Moves:  %s" (String.concat " " played)
+    if terminal && not (has p "list-options") then
+        // nothing to search: what the position is, not an engine failure
+        if jsonMode then
+            let result = {| Engine = config.Name; Fen = fenText; Moves = played; Status = status; Limit = limitJson lim; Search = null |}
+            printJson (envelope (name p.Command) true (box result) [])
+        else
+            say ""
+            say "No search: the position is %s" status
+        ExitOk
+    else
     let a = Engines.start config
     try
         if has p "list-options" then
@@ -76,41 +101,41 @@ let analyze (p: Parsed) =
             if jsonMode then
                 printJson (envelope (name p.Command) true (box {| Engine = config.Name; Options = dict options |}) [])
             else
-                printfn ""
+                say ""
                 for k, v in options do
-                    printfn "  %-30s  %s" k v
+                    say "  %-30s  %s" k v
             ExitOk
         else
             if not jsonMode then
-                printfn "Search: %s" lim.Text
-                printfn ""
+                say "Search: %s" lim.Text
+                say ""
             let r = Engines.search a fenText played lim (not jsonMode)
             let ok = r.Depth > 0 || r.Bestmove <> ""
             if jsonMode then
-                let result = {| Engine = config.Name; Fen = fenText; Moves = played; Limit = limitJson lim; Search = searchJson r |}
+                let result = {| Engine = config.Name; Fen = fenText; Moves = played; Status = status; Limit = limitJson lim; Search = searchJson whiteMoves r |}
                 let errors = if ok then [] else [ { Code = "no-search"; Message = "the engine sent no search information" } ]
                 printJson (envelope (name p.Command) ok (box result) errors)
             elif ok then
-                printfn ""
-                printfn "Depth:    %d (seldepth %d)" r.Depth r.SelDepth
-                printfn "Eval:     %s" (r.Eval.ToString())
-                printfn "Nodes:    %s" (fmtN r.Nodes)
+                say ""
+                say "Depth:    %d (seldepth %d)" r.Depth r.SelDepth
+                say "Eval:     %s" (r.Eval.ToString())
+                say "Nodes:    %s" (fmtN r.Nodes)
                 let eps = if r.Eps > 0.0 then $" ({ChessLibrary.GameAnalysis.Formatting.formatEPS r.Eps})" else ""
-                printfn "NPS:      %s%s" (ChessLibrary.GameAnalysis.Formatting.formatNPS (float r.Nps)) eps
-                printfn "Time:     %s" (elapsedText r.Time)
-                printfn "TB hits:  %d" r.TbHits
-                match r.Wdl with
-                | Some w -> printfn "WDL:      %d-%d-%d" (int w.Win) (int w.Draw) (int w.Loss)
+                say "NPS:      %s%s" (ChessLibrary.GameAnalysis.Formatting.formatNPS (float r.Nps)) eps
+                say "Time:     %s" (elapsedText r.Time)
+                say "TB hits:  %d" r.TbHits
+                match wdlWhite whiteMoves r with
+                | Some(w, d, l) -> say "WDL:      %d-%d-%d (White's view)" (int w) (int d) (int l)
                 | None -> ()
-                printfn "Bestmove: %s" r.Bestmove
+                say "Bestmove: %s" r.Bestmove
                 if not (String.IsNullOrWhiteSpace r.Pv) then
-                    printfn "PV:       %s" r.Pv
-                    printfn "PV (SAN): %s" r.SanPv
+                    say "PV:       %s" r.Pv
+                    say "PV (SAN): %s" r.SanPv
             else
                 error "the engine sent no search information"
             if ok then ExitOk else ExitFailed
     finally
-        Engines.quit a
+        Engines.quit a)
 
 // ---------------------------------------------------------------- compare
 
@@ -149,6 +174,7 @@ let compare (p: Parsed) =
     let lim = limit p 1_000_000
     let threshold = floatOf p "threshold"
     let jsonMode = has p "json"
+    withResultsOnStdout (fun () ->
     let e1 = Engines.start config1
     let e2 =
         try Engines.start config2
@@ -157,17 +183,18 @@ let compare (p: Parsed) =
             reraise ()
     try
         if not jsonMode then
-            printfn "E1 = %s" config1.Name
-            printfn "E2 = %s" config2.Name
-            printfn "Positions: %d, search: %s" positions.Length lim.Text
-            printfn ""
+            say "E1 = %s" config1.Name
+            say "E2 = %s" config2.Name
+            say "Positions: %d, search: %s" positions.Length lim.Text
+            say ""
         let fenW = positions |> Array.map String.length |> Array.max |> max 3
         if not jsonMode then
-            printfn "%-4s  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s" "#" fenW "FEN" "Eval E1" "Eval E2" "Diff" "NPS E1" "NPS E2" "Ratio" "Move"
-            printfn "%s" (String.replicate (fenW + 76) "-")
+            say "%-4s  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s" "#" fenW "FEN" "Eval E1" "Eval E2" "Diff" "NPS E1" "NPS E2" "Ratio" "Move"
+            say "%s" (String.replicate (fenW + 76) "-")
         let rows = Collections.Generic.List<obj>()
         let mutable failed = false
-        let results = Collections.Generic.List<Engines.SearchResult * Engines.SearchResult * float option>()
+        // with the position's number: a failed position is not in here
+        let results = Collections.Generic.List<int * Engines.SearchResult * Engines.SearchResult * float option>()
         let mutable stop = false
         for i in 0 .. positions.Length - 1 do
             if not stop then
@@ -179,13 +206,14 @@ let compare (p: Parsed) =
                         match Engines.pawnsOf r1.Eval, Engines.pawnsOf r2.Eval with
                         | Some a, Some b -> Some(abs (a - b))
                         | _ -> None
-                    results.Add((r1, r2, diff))
-                    rows.Add(box {| Index = i + 1; Fen = fenText; E1 = searchJson r1; E2 = searchJson r2; EvalDiff = Option.toNullable diff; Error = (null: string) |})
+                    results.Add((i + 1, r1, r2, diff))
+                    let white = whiteToMove fenText []
+                    rows.Add(box {| Index = i + 1; Fen = fenText; E1 = searchJson white r1; E2 = searchJson white r2; EvalDiff = Option.toNullable diff; Error = (null: string) |})
                     let show = match threshold, diff with Some t, Some d -> d >= t | _ -> true
                     if show && not jsonMode then
                         let moveText = if r1.Bestmove = r2.Bestmove then r1.Bestmove else $"{r1.Bestmove}/{r2.Bestmove}"
                         let ratio = if r1.Nps > 0L && r2.Nps > 0L then $"{float r1.Nps / float r2.Nps:F1}x" else "N/A"
-                        printfn "%-4d  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s" (i + 1) fenW fenText (r1.Eval.ToString()) (r2.Eval.ToString())
+                        say "%-4d  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s" (i + 1) fenW fenText (r1.Eval.ToString()) (r2.Eval.ToString())
                             (match diff with Some d -> $"{d:F2}" | None -> "N/A")
                             (ChessLibrary.GameAnalysis.Formatting.formatNPS (float r1.Nps))
                             (ChessLibrary.GameAnalysis.Formatting.formatNPS (float r2.Nps)) ratio moveText
@@ -202,10 +230,10 @@ let compare (p: Parsed) =
                     failed <- true
         let n = results.Count
         let avg (f: Engines.SearchResult * Engines.SearchResult * float option -> float option) =
-            let xs = results |> Seq.choose f |> Array.ofSeq
+            let xs = results |> Seq.choose (fun (_, a, b, d) -> f (a, b, d)) |> Array.ofSeq
             if xs.Length = 0 then None else Some(Array.average xs)
-        let agree = results |> Seq.filter (fun (a, b, _) -> a.Bestmove = b.Bestmove) |> Seq.length
-        let diffs = results |> Seq.mapi (fun i (_, _, d) -> i, d) |> Seq.choose (fun (i, d) -> d |> Option.map (fun d -> i, d)) |> Array.ofSeq
+        let agree = results |> Seq.filter (fun (_, a, b, _) -> a.Bestmove = b.Bestmove) |> Seq.length
+        let diffs = results |> Seq.choose (fun (i, _, _, d) -> d |> Option.map (fun d -> i, d)) |> Array.ofSeq
         let nps1 = avg (fun (a, _, _) -> if a.Nps > 0L then Some(float a.Nps) else None)
         let nps2 = avg (fun (_, b, _) -> if b.Nps > 0L then Some(float b.Nps) else None)
         let eps1 = avg (fun (a, _, _) -> if a.Eps > 0.0 then Some a.Eps else None)
@@ -227,26 +255,26 @@ let compare (p: Parsed) =
             let errors = if failed then [ { Code = "position-failed"; Message = "a position could not be searched (see positions[].error)" } ] else []
             printJson (envelope (name p.Command) (not failed) (box result) errors)
         elif n > 0 then
-            printfn ""
-            printfn "Summary (%d positions)" n
-            printfn "Move agreement: %d/%d (%.1f%%)" agree n (100.0 * float agree / float n)
+            say ""
+            say "Summary (%d positions)" n
+            say "Move agreement: %d/%d (%.1f%%)" agree n (100.0 * float agree / float n)
             if diffs.Length > 0 then
-                let worstIndex, worst = diffs |> Array.maxBy snd
-                printfn "Avg eval diff:  %.2f pawns" (diffs |> Array.averageBy snd)
-                printfn "Max eval diff:  %.2f pawns (position %d)" worst (worstIndex + 1)
+                let worstPosition, worst = diffs |> Array.maxBy snd
+                say "Avg eval diff:  %.2f pawns" (diffs |> Array.averageBy snd)
+                say "Max eval diff:  %.2f pawns (position %d)" worst worstPosition
             match nps1, nps2, ratio nps1 nps2 with
             | Some a, Some b, Some r ->
-                printfn "Avg NPS:        %s vs %s (ratio %.2fx)" (ChessLibrary.GameAnalysis.Formatting.formatNPS a) (ChessLibrary.GameAnalysis.Formatting.formatNPS b) r
+                say "Avg NPS:        %s vs %s (ratio %.2fx)" (ChessLibrary.GameAnalysis.Formatting.formatNPS a) (ChessLibrary.GameAnalysis.Formatting.formatNPS b) r
             | _ -> ()
             // EPS = network evaluations per second, for engines that report it (Ceres)
             match eps1, eps2, ratio eps1 eps2 with
             | Some a, Some b, Some r ->
-                printfn "Avg EPS:        %s vs %s (ratio %.2fx)" (ChessLibrary.GameAnalysis.Formatting.formatEPS a) (ChessLibrary.GameAnalysis.Formatting.formatEPS b) r
+                say "Avg EPS:        %s vs %s (ratio %.2fx)" (ChessLibrary.GameAnalysis.Formatting.formatEPS a) (ChessLibrary.GameAnalysis.Formatting.formatEPS b) r
             | _ -> ()
         if failed then ExitFailed else ExitOk
     finally
         Engines.quit e1
-        Engines.quit e2
+        Engines.quit e2)
 
 // ---------------------------------------------------------------- position
 
@@ -276,14 +304,20 @@ let positionSpec =
             "eb-cli position startpos --set-piece e4=Q --remove d2 --epd --op id=edited", "An edited position as an EPD line"
             "eb-cli position --positions suite.epd --json", "Every position of a file" ] }
 
+/// A square as a1..h8, or a usage error that names the option.
+let private square (option: string) (sq: string) =
+    if sq.Length = 2 && sq.[0] >= 'a' && sq.[0] <= 'h' && sq.[1] >= '1' && sq.[1] <= '8' then sq
+    else raise (Usage $"--{option}: '{sq}' is not a square (a1-h8)")
+
 let private applyEdits (p: Parsed) (fenText: string) =
     let mutable f = fenText
     for e in valuesOf p "set-piece" do
         match e.Split('=') with
-        | [| sq; piece |] when piece.Length = 1 -> f <- ChessLibrary.BoardUtils.setPieceAt f sq piece.[0]
-        | _ -> raise (Usage $"--set-piece expects SQ=P (e4=Q), got '{e}'")
+        | [| sq; piece |] when piece.Length = 1 && "PNBRQKpnbrqk".Contains piece.[0] ->
+            f <- ChessLibrary.BoardUtils.setPieceAt f (square "set-piece" sq) piece.[0]
+        | _ -> raise (Usage $"--set-piece expects SQ=P with P one of PNBRQK (white) or pnbrqk (black), got '{e}'")
     for sq in valuesOf p "remove" do
-        f <- ChessLibrary.BoardUtils.removePieceAt f sq
+        f <- ChessLibrary.BoardUtils.removePieceAt f (square "remove" sq)
     let setField (i: int) (v: string) =
         let parts = f.Split(' ')
         parts.[i] <- v
@@ -364,6 +398,9 @@ let position (p: Parsed) =
     match valueOf p "positions", argOf p "fen" with
     | Some _, Some _ -> raise (Usage "give a FEN or --positions, not both")
     | Some file, None ->
+        let single = [ "moves"; "square"; "pv"; "set-piece"; "remove"; "side"; "castling"; "ep"; "epd"; "op"; "svg"; "force" ] |> List.filter (has p)
+        if not single.IsEmpty then
+            raise (Usage $"""--positions takes none of {String.Join(", ", single |> List.map (fun o -> "--" + o))} (they are for one position)""")
         let path = inputFile "positions file" file
         let all = ChessLibrary.EPDExtractor.readEPDs path |> Array.ofSeq
         let valid, invalid =
@@ -381,17 +418,18 @@ let position (p: Parsed) =
     | None, _ ->
         let start = fen p "fen"
         let fenText = applyEdits p (after start (movesFrom p start))
-        valueOf p "svg"
-        |> Option.iter (fun file ->
-            let path = outputFile p file
+        if not (List.isEmpty (valuesOf p "op")) && not (has p "epd") then raise (Usage "--op is for --epd")
+        // every check first: a usage error leaves no svg behind
+        let svgPath = valueOf p "svg" |> Option.map (outputFile p)
+        let epd = if has p "epd" then Some(ChessLibrary.BoardUtils.epdOf fenText (valuesOf p "op" |> List.map epdOp)) else None
+        let f = facts fenText (valueOf p "square" |> Option.map (square "square")) (valueOf p "pv")
+        svgPath
+        |> Option.iter (fun path ->
             IO.File.WriteAllText(path, ChessLibrary.BoardSvg.renderWithInsights fenText)
             info $"svg written to {path}")
-        if has p "epd" then
-            printfn "%s" (ChessLibrary.BoardUtils.epdOf fenText (valuesOf p "op" |> List.map epdOp))
-        elif not (List.isEmpty (valuesOf p "op")) then
-            raise (Usage "--op is for --epd")
-        else
-            let f = facts fenText (valueOf p "square") (valueOf p "pv")
+        match epd with
+        | Some line -> printfn "%s" line
+        | None ->
             if jsonMode then
                 printJson (envelope (name p.Command) true (box f) [])
             else
@@ -486,6 +524,9 @@ let tablebase (p: Parsed) =
             printfn "  %-8s %s" m.San (ChessLibrary.TablebaseLookup.moveNote m)
         for note in [ ChessLibrary.TablebaseLookup.clockNote r; ChessLibrary.TablebaseLookup.wdlOnlyNote r ] do
             note |> Option.iter (fun n -> printfn ""; printfn "%s" n)
+        if answered && r.Moves.Length > 0 then
+            printfn ""
+            printfn "%s" (if ignoreClock then "The halfmove clock is read as 0 (--ignore-clock); DTZ is counted from this position" else "The halfmove clock counts; DTZ is counted from this position")
     if answered then ExitOk elif usage then ExitUsage else ExitFailed
 
 let entries: Entry list =
