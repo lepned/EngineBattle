@@ -13,7 +13,6 @@
 		<Content Include="Json\Tournament.json" />
 		<Content Include="Properties\launchSettings.json" />
 		<Content Include="benchmark-options.json" />
-		<Compile Include="CliParser.fs" />
 		<Compile Include="CliSettings.fs" />
 		<Compile Include="Cli\Spec.fs" />
 		<Compile Include="Cli\Parse.fs" />
@@ -33,6 +32,7 @@
 		<Compile Include="EngineCheck.fs" />
 		<Compile Include="Commands\Engine.fs" />
 		<Compile Include="Commands\Runs.fs" />
+		<Compile Include="Commands\Gui.fs" />
 		<Compile Include="Registry.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>

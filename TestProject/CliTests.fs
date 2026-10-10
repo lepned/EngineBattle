@@ -92,7 +92,7 @@ let ``help, version and a bad number`` () =
 
 [<Fact>]
 let ``the help of every real command names every option it has`` () =
-  for e in Registry.all (fun _ -> 0) do
+  for e in Registry.all do
     let text = Cli.Help.command e.Spec
     for o in e.Spec.Options do
       Assert.Contains("--" + o.Name, text)
@@ -116,7 +116,7 @@ let ``every outcome has its exit code`` () =
 
 // ---------------------------------------------------------------- the real commands (phase 2)
 
-let private real = Registry.all (fun _ -> 0) |> List.map (fun e -> e.Spec)
+let private real = Registry.all |> List.map (fun e -> e.Spec)
 
 let private runReal (tokens: string list) =
   match parse real tokens with

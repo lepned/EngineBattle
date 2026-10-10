@@ -90,11 +90,13 @@ let ``folders in the file are relative to the file, and no file is no settings``
   finally Directory.Delete(dir, true)
 
 [<Fact>]
-let ``puzzletrend may leave its folder to eb-cli.json`` () =
-  let parsed (args: string list) = CliParser.CustomParser.parse (Array.ofList ("eb-cli" :: args))
-  match parsed [ "pt"; "--arm"; "srv_deg4" ] with
-  | [ CliParser.Verb(CliParser.PuzzleTrend(None, Some "srv_deg4", _, _, _, _)) ] -> ()
+let ``puzzle trend may leave its folder to eb-cli.json`` () =
+  let specs = Registry.all |> List.map (fun e -> e.Spec)
+  match Cli.Parse.parse specs [ "puzzle"; "trend"; "--arm"; "srv_deg4" ] with
+  | Cli.Parse.Run p ->
+      Assert.Equal(None, Cli.Parse.argOf p "folder")
+      Assert.Equal(Some "srv_deg4", Cli.Parse.valueOf p "arm")
   | other -> Assert.Fail $"{other}"
-  match parsed [ "pt"; "D:/results"; "--arm"; "srv_deg4" ] with
-  | [ CliParser.Verb(CliParser.PuzzleTrend(Some "D:/results", Some "srv_deg4", _, _, _, _)) ] -> ()
+  match Cli.Parse.parse specs [ "puzzle"; "trend"; "D:/results"; "--arm"; "srv_deg4" ] with
+  | Cli.Parse.Run p -> Assert.Equal(Some "D:/results", Cli.Parse.argOf p "folder")
   | other -> Assert.Fail $"{other}"
