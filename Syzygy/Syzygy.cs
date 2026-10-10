@@ -43,8 +43,8 @@ Port notes:
    scores match the reference build.
 
 EngineBattle: the public API takes a FEN and gives moves in UCI, the attack tables are the portable ones in
-Attacks.cs (no BMI2), and Init also splits on the platform's path separator (':' on Linux and macOS, as
-Fathom there).
+Attacks.cs (no BMI2), Init also splits on the platform's path separator (':' on Linux and macOS, as Fathom
+there), and Init keeps TB_LARGEST until the new tables are published instead of zeroing it first.
 */
 
 using System;
@@ -764,8 +764,9 @@ public static unsafe class Syzygy
                 initialized = true;
             }
 
-            // retire the previous initialisation (never unmapped)
-            TB_LARGEST = 0;
+            // retire the previous initialisation (never unmapped). TB_LARGEST keeps its value until the new
+            // tables are published: probes on other threads check it (probe_ok) without the lock, and a 0 in
+            // between failed every probe made during the reload (EngineBattle change).
             foreach (var e in entries) retire_tb_entry(e);
             entries = new List<BaseEntry>();
             paths = Array.Empty<string>();
@@ -777,6 +778,7 @@ public static unsafe class Syzygy
             path = path.Trim();
             if (path.Length == 0 || path == "<empty>")
             {
+                TB_LARGEST = 0;
                 Volatile.Write(ref tbHash, h);
                 return true;
             }

@@ -129,6 +129,19 @@ let ``without an answer from the tables, the tournament's evaluation rules decid
   | None -> failwith "expected the win rule to adjudicate"
 
 [<Fact>]
+let ``without DTZ tables the WDL table answers at halfmove clock 0, and for a draw at any clock`` () =
+  Assert.Equal(Some TbWdl.Win, wdlOnlyAnswer 0 TbWdl.Win)
+  Assert.Equal(Some TbWdl.Loss, wdlOnlyAnswer 0 TbWdl.Loss)
+  Assert.Equal(Some TbWdl.CursedWin, wdlOnlyAnswer 0 TbWdl.CursedWin)
+  // a won position 30 moves into the 50-move rule may not be won any more: no answer
+  Assert.Equal(None, wdlOnlyAnswer 60 TbWdl.Win)
+  Assert.Equal(None, wdlOnlyAnswer 60 TbWdl.Loss)
+  Assert.Equal(None, wdlOnlyAnswer 60 TbWdl.BlessedLoss)
+  // a draw stays a draw however far the clock has run
+  Assert.Equal(Some TbWdl.Draw, wdlOnlyAnswer 60 TbWdl.Draw)
+  Assert.Equal(None, wdlOnlyAnswer 0 TbWdl.Failed)
+
+[<Fact>]
 let ``a position the tables cannot answer is no answer`` () =
   for fen in [ ""; "not a fen"; "8/8/8/8/8/8/8/8 w - - 0 1"                // no kings
                "r3k3/8/8/8/8/8/8/R3K3 w Qq - 0 1"                          // castling rights

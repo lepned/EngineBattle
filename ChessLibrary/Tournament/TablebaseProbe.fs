@@ -78,10 +78,29 @@ let private noAnswerReported = ref 0
 let resetProbeReports () =
     noAnswerReported.Value <- 0
 
+/// The FEN's halfmove clock; 0 when it has none.
+let private halfmoveClock (fen: string) =
+    match fen.Split(' ', StringSplitOptions.RemoveEmptyEntries) with
+    | f when f.Length > 4 -> (match Int32.TryParse f.[4] with | true, n -> n | _ -> 0)
+    | _ -> 0
+
+/// <summary>
+/// What a WDL table alone can say, for sets without DTZ tables. It assumes the halfmove clock is 0,
+/// so it is the position's value only when the clock is 0 - as it is right after the capture that
+/// brought the position into the tables - or when it is a draw, which a later clock cannot change.
+/// </summary>
+let wdlOnlyAnswer (halfmoveClock: int) (wdl: TbWdl) =
+    match wdl with
+    | TbWdl.Failed -> None
+    | TbWdl.Draw -> Some TbWdl.Draw
+    | _ when halfmoveClock = 0 -> Some wdl
+    | _ -> None
+
 /// <summary>
 /// What the tablebases say about a position, from the side to move's view with the 50-move rule
 /// counted (CursedWin and BlessedLoss are wins and losses the rule turns into draws), or None: more
-/// pieces than the tables hold, or no table for this material.
+/// pieces than the tables hold, or no table for this material. The root probe needs the DTZ tables;
+/// without them the WDL table answers where it can (wdlOnlyAnswer).
 /// </summary>
 let probe (tablebasePath: string) (fen: string) (pieces: int) : TbWdl option =
     ensureLoaded false tablebasePath
@@ -90,10 +109,17 @@ let probe (tablebasePath: string) (fen: string) (pieces: int) : TbWdl option =
         let result = Syzygy.ProbeRoot fen
         if result.Ok then Some result.Wdl
         else
-            if Interlocked.Exchange(noAnswerReported, 1) = 0 then
-                Console.Error.WriteLine(
-                    sprintf "No tablebase answer for %s (a table missing from %s?); such positions are played on. Later ones are not repeated." fen tablebasePath)
-            None
+            let wdl = Syzygy.ProbeWdl fen
+            match wdlOnlyAnswer (halfmoveClock fen) wdl with
+            | Some answer -> Some answer
+            | None ->
+                if Interlocked.Exchange(noAnswerReported, 1) = 0 then
+                    let why =
+                        if wdl = TbWdl.Failed then $"no table for it in {tablebasePath}"
+                        else $"no DTZ table (.rtbz) for it in {tablebasePath}, and the WDL table alone is exact only with the halfmove clock at 0"
+                    Console.Error.WriteLine(
+                        sprintf "No tablebase answer for %s: %s. Such positions are played on; later ones are not repeated." fen why)
+                None
 
 /// A new run: reports cleared and, with tablebase adjudication on, the tables found before any game
 /// needs them (read again if they have changed since the last run).
