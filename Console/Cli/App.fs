@@ -47,7 +47,9 @@ let run (entries: Entry list) (tokens: string list) : int =
         // with --json, stdout is the JSON and nothing else
         let runIt () = if has p "json" then withJsonStdout (fun () -> entry.Run p) else entry.Run p
         try
-            runIt ()
+            let code = runIt ()
+            // a run stopped with Ctrl+C says so in its exit code, whatever it managed to write
+            if interrupted then ExitInterrupted else code
         with
         | Usage message -> usageError tokens message (Some p.Command)
         | ex ->

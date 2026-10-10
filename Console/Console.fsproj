@@ -32,6 +32,7 @@
 		<Compile Include="MatchMode.fs" />
 		<Compile Include="EngineCheck.fs" />
 		<Compile Include="Commands\Engine.fs" />
+		<Compile Include="Commands\Runs.fs" />
 		<Compile Include="Registry.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>

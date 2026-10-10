@@ -35,7 +35,7 @@ let private legacy (runLegacy: string list -> int) (path: string list) group sum
 let all (runLegacy: string list -> int) : Entry list =
     let l = legacy runLegacy
     // the moved commands, by name
-    let moved = Commands.Positions.entries @ Commands.Values.entries @ Commands.Pgn.entries @ Commands.Other.entries @ Commands.Engine.entries
+    let moved = Commands.Positions.entries @ Commands.Values.entries @ Commands.Pgn.entries @ Commands.Other.entries @ Commands.Engine.entries @ Commands.Runs.entries
     let m (path: string list) = moved |> List.find (fun e -> e.Spec.Path = path)
     [ m [ "analyze" ]
       m [ "compare" ]
@@ -43,7 +43,7 @@ let all (runLegacy: string list -> int) : Entry list =
       m [ "tablebase" ]
       m [ "values"; "position" ]
       m [ "values"; "fit" ]
-      l [ "values"; "batch" ] Positions "Piece values for a folder of nets" "pvbatch"
+      m [ "values"; "batch" ]
       m [ "engine"; "check" ]
       m [ "engine"; "new" ]
       m [ "engine"; "gen" ]
@@ -56,13 +56,13 @@ let all (runLegacy: string list -> int) : Entry list =
       m [ "pgn"; "speed" ]
       m [ "pgn"; "deviations" ]
       m [ "pgn"; "imbalance" ]
-      l [ "book"; "eval" ] Runs "Keep the openings every engine scores in an eval window" "bookeval"
-      l [ "puzzle"; "run" ] Runs "Run a puzzle test from a config" "puzzlejson"
-      l [ "puzzle"; "eret" ] Runs "Run an ERET test from a config" "eretjson"
-      l [ "puzzle"; "trend" ] Runs "Step curves per training arm from many puzzle runs" "puzzletrend"
-      l [ "tournament"; "run" ] Runs "Run a tournament from a config" "tournamentjson"
-      l [ "tournament"; "validate" ] Runs "Check a tournament config without running it" "validate"
-      l [ "tune"; "run" ] Runs "Tune engine parameters (Bayesian optimisation)" "tune"
-      l [ "tune"; "dashboard" ] Runs "Write the tuning dashboard again from the saved state" "redash"
+      m [ "book"; "eval" ]
+      m [ "puzzle"; "run" ]
+      m [ "puzzle"; "eret" ]
+      m [ "puzzle"; "trend" ]
+      m [ "tournament"; "run" ]
+      m [ "tournament"; "validate" ]
+      m [ "tune"; "run" ]
+      m [ "tune"; "dashboard" ]
       m [ "perft" ]
       l [ "gui" ] Other "Start the WebGUI of a source checkout" "gui" ]
