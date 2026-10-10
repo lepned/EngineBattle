@@ -133,6 +133,7 @@
 		<None Include="TestData\BoardApi.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\InfoLinesCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\CommentCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\SyzygyGolden.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\AnalysisOutput\*.txt" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>

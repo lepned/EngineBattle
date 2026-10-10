@@ -204,24 +204,9 @@
 		<PackageReference Include="CliWrap" Version="3.6.6" />
 		<PackageReference Include="System.Management" Version="8.0.0" />
 	</ItemGroup>
-	<!-- run as programs, so loose files beside the app: the .NET 11 SDK's single-file publish dropped fathom.exe -->
 	<ItemGroup>
-		<Content Include="Tools\fathom.exe">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-		</Content>
-		<Content Include="Tools\fathom.linux">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-		</Content>
-		<Content Include="Tools\fathom.macosx">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-		</Content>
+		<!-- tablebase probing, in process (a C# port of Fathom) -->
+		<ProjectReference Include="..\Syzygy\Syzygy.csproj" />
 	</ItemGroup>
-
 
 </Project>

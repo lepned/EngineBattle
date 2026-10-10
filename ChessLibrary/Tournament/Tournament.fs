@@ -214,7 +214,7 @@ module Manager =
       let timer = Stopwatch()
       timer.Start()
       // a fresh run: engine options print again, the tablebase prober reports again (the WebGUI
-      // runs many tournaments in one process) and opens the tables in the background
+      // runs many tournaments in one process) and reads the tables before the first game needs them
       ChessLibrary.Engine.resetPrintedEngines()
       let tb = tournament.Adjudication.TBAdj
       TablebaseProbe.startRun tb.UseTBAdjudication tb.TBMen tb.TablebaseDirectory

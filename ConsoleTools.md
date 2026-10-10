@@ -45,8 +45,8 @@ mv publish/eb-cli/EngineBattle.Console.exe publish/eb-cli/eb-cli.exe
 - `-r` is required for a single file: `win-x64`, `win-arm64`, `linux-x64`, `osx-x64` or `osx-arm64`.
 - `--no-self-contained` gives a file of about 13 MB that needs the .NET 10 runtime on the machine.
   `--self-contained` bundles the runtime instead: a much larger file that runs without .NET installed.
-- Keep the `Tools` folder next to the executable: tablebase adjudication runs Fathom from it as a
-  separate program, so it cannot be inside the file.
+- The file is all there is: tablebase adjudication probes the Syzygy tables in process, so nothing
+  has to sit next to it.
 
 ### General Syntax
 

@@ -49,7 +49,7 @@ jobs:
       - name: Publish
         # The tag without its "v" (v1.8.2 -> 1.8.2) is every assembly's version; BuildInfo reads it.
         # The console goes into the same folder as eb-cli, as cutechess ships cutechess-cli beside
-        # its GUI: one download per platform, and the two share the Tools folder (Fathom).
+        # its GUI: one download per platform.
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [ "${{ matrix.selfcontained }}" = "true" ]; then

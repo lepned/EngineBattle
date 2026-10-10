@@ -329,10 +329,10 @@ let private playWith
                       | None -> ()
                       { Uci = move; San = san; TMove = tmove }
                 let finish = applyMove isWhite s played ponder elapsed stats
-                let! tbOutput =
+                let tbOutput =
                   match GameAdjudication.tablebaseProbe tourny board with
-                  | Some (dir, fen, pieces) -> TablebaseProbe.probeAsync dir fen pieces cts.Token
-                  | None -> async.Return None
+                  | Some (dir, fen, pieces) -> TablebaseProbe.probe dir fen pieces
+                  | None -> None
                 match finish tbOutput with
                 | Some res -> return Choice2Of2 res
                 | None ->

@@ -92,7 +92,7 @@ The command line is taken as written; the match is EngineBattle's:
   `-srand` gives a reproducible order, not the same order as other tools.
 - **Adjudication.** `-draw` and `-resign` set EngineBattle's evaluation adjudication (scores
   converted from centipawns to pawns); its counting rules are its own. `-tb` takes one tablebase
-  folder or several (separated by `;`), probed through Fathom.
+  folder or several (separated by `;`), probed in process (EngineBattle's C# port of Fathom).
 - **Clock.** EngineBattle's clock decides time losses. A time loss reports how far the clock went
   below zero: `{White loses on time (37ms overrun)}`. Moves per period (`tc=40/60+0.6`) are each
   engine's own, as in the reference.

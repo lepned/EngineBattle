@@ -8,7 +8,7 @@ open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.MiscTypes
 open ChessLibrary.Chess
 open ChessLibrary.PositionTypes
-open ChessLibrary.TablebaseProbe
+open EngineBattle.Tablebases
 
 // Alias for backward compatibility with existing code that calls Formatting.createResultWithEval
 module Formatting = ChessLibrary.TypesDef.CoreTypes
@@ -87,7 +87,8 @@ let tablebaseProbe (tourny: Tournament) (board: Board) =
     else None
 
 /// A function to determine the winner and the result by evaluation agreement. `tbOutput`: what
-/// the tablebase probe (tablebaseProbe) said about this position, if it was probed.
+/// the tablebase probe (tablebaseProbe) said about this position, if it was probed - the side to
+/// move's WDL with the 50-move rule counted.
 let adjudicateByEval
     (logger: ILogger)
     (board:Board)
@@ -99,7 +100,7 @@ let adjudicateByEval
     gametimer
     gameMoveList
     moves
-    (tbOutput: string option) =
+    (tbOutput: TbWdl option) =
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let drawPlyLength = tourny.Adjudication.DrawOption.DrawMoveLength * 2
     let winPlyLength = tourny.Adjudication.WinOption.WinMoveLength * 2
@@ -121,25 +122,18 @@ let adjudicateByEval
     let tbAdjudication () =
       if piecesLeft <= withTBadjudicationMen then
           let firstTwoEvals = firstTwoEvals ()
+          // CursedWin and BlessedLoss (won or lost, but not within the 50-move rule) are played on
           let tryProbe =
-              try
-                  match tbOutput with
-                  | Some tableRes ->
-                      let tb = parse tableRes
-                      match tb.Wdl with
-                      | Some "Win" ->
-                          let res = if board.Position.STM = 0uy then "1-0" else "0-1"
-                          Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                      | Some "Draw" ->
-                          Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                      | Some "Loss" ->
-                          let res = if board.Position.STM = 0uy then "0-1" else "1-0"
-                          Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                      | _ -> None
-                  | None -> None
-              with ex ->
-                  logger.LogWarning(ex, "TB adjudication probe failed; continuing without TB")
-                  None
+              match tbOutput with
+              | Some TbWdl.Win ->
+                  let res = if board.Position.STM = 0uy then "1-0" else "0-1"
+                  Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+              | Some TbWdl.Draw ->
+                  Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+              | Some TbWdl.Loss ->
+                  let res = if board.Position.STM = 0uy then "0-1" else "1-0"
+                  Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+              | _ -> None
 
           if tryProbe.IsSome then
               tryProbe
