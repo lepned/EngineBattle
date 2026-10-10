@@ -35,7 +35,7 @@ let private legacy (runLegacy: string list -> int) (path: string list) group sum
 let all (runLegacy: string list -> int) : Entry list =
     let l = legacy runLegacy
     // the moved commands, by name
-    let moved = Commands.Positions.entries @ Commands.Values.entries
+    let moved = Commands.Positions.entries @ Commands.Values.entries @ Commands.Pgn.entries @ Commands.Other.entries
     let m (path: string list) = moved |> List.find (fun e -> e.Spec.Path = path)
     [ m [ "analyze" ]
       m [ "compare" ]
@@ -48,13 +48,13 @@ let all (runLegacy: string list -> int) : Entry list =
       l [ "engine"; "new" ] Engines "Write an engine def from what the engine answers to 'uci'" "mkdef"
       l [ "engine"; "gen" ] Engines "Write defs for training checkpoints, from an existing def" "gendefs"
       l [ "engine"; "bench" ] Engines "Benchmark an engine from a config" "benchmark"
-      l [ "pgn"; "check" ] Pgn "Parse every game: counts, empty games, speed" "pgncheck"
-      l [ "pgn"; "validate" ] Pgn "Replay every game: illegal or ambiguous moves, non-standard SAN" "pgnvalidate"
-      l [ "pgn"; "strip" ] Pgn "Write the games without comments, variations or NAGs" "pgnstrip"
-      l [ "pgn"; "summary" ] Pgn "How the games ended" "pgnsummary"
-      l [ "pgn"; "elo" ] Pgn "Ratings and results" "elo"
-      l [ "pgn"; "speed" ] Pgn "Speed statistics" "speed"
-      l [ "pgn"; "deviations" ] Pgn "Where engines deviated from each other and from themselves" "deviations"
+      m [ "pgn"; "check" ]
+      m [ "pgn"; "validate" ]
+      m [ "pgn"; "strip" ]
+      m [ "pgn"; "summary" ]
+      m [ "pgn"; "elo" ]
+      m [ "pgn"; "speed" ]
+      m [ "pgn"; "deviations" ]
       m [ "pgn"; "imbalance" ]
       l [ "book"; "eval" ] Runs "Keep the openings every engine scores in an eval window" "bookeval"
       l [ "puzzle"; "run" ] Runs "Run a puzzle test from a config" "puzzlejson"
@@ -64,5 +64,5 @@ let all (runLegacy: string list -> int) : Entry list =
       l [ "tournament"; "validate" ] Runs "Check a tournament config without running it" "validate"
       l [ "tune"; "run" ] Runs "Tune engine parameters (Bayesian optimisation)" "tune"
       l [ "tune"; "dashboard" ] Runs "Write the tuning dashboard again from the saved state" "redash"
-      l [ "perft" ] Other "Count the move tree on the Chess960 test positions" "perft"
+      m [ "perft" ]
       l [ "gui" ] Other "Start the WebGUI of a source checkout" "gui" ]

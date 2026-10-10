@@ -24,6 +24,8 @@
 		<Compile Include="Engines.fs" />
 		<Compile Include="Commands\Positions.fs" />
 		<Compile Include="Commands\Values.fs" />
+		<Compile Include="Commands\Pgn.fs" />
+		<Compile Include="Commands\Other.fs" />
 		<Compile Include="BenchmarkRunner.fs" />
 		<Compile Include="TunerRunner.fs" />
 		<Compile Include="BayesianOptimizer.fs" />
