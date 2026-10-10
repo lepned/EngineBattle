@@ -65,15 +65,19 @@ public partial class Tournaments
 	// Two forms of the same rule: a token for the banner, which is a strip of short values,
 	// and the sentence for its tooltip.
 	string WinRuleToken => tournament == null ? "" :
+		!tournament.Adjudication.WinOption.Enabled ? "off" :
 		$"≥{tournament.Adjudication.WinOption.MinWinScore} ×{tournament.Adjudication.WinOption.WinMoveLength}";
 
 	string WinRuleText => tournament == null ? "" :
+		!tournament.Adjudication.WinOption.Enabled ? "Win adjudication: off" :
 		$"Win: evals ≥ {tournament.Adjudication.WinOption.MinWinScore} for {tournament.Adjudication.WinOption.WinMoveLength} moves";
 
 	string DrawRuleToken => tournament == null ? "" :
+		!tournament.Adjudication.DrawOption.Enabled ? "off" :
 		$"≤{tournament.Adjudication.DrawOption.MaxDrawScore} ×{tournament.Adjudication.DrawOption.DrawMoveLength} @{tournament.Adjudication.DrawOption.MinDrawMove}";
 
 	string DrawRuleText => tournament == null ? "" :
+		!tournament.Adjudication.DrawOption.Enabled ? "Draw adjudication: off" :
 		$"Draw: after {tournament.Adjudication.DrawOption.MinDrawMove} moves, evals ≤ {tournament.Adjudication.DrawOption.MaxDrawScore} for {tournament.Adjudication.DrawOption.DrawMoveLength} moves";
 
 	bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);

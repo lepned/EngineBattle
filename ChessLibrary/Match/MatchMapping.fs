@@ -141,10 +141,10 @@ module MatchMapping =
 
     // adjudication
     let draw =
-      if t.Draw.Enabled then { MinDrawMove = t.Draw.MoveNumber; DrawMoveLength = t.Draw.MoveCount; MaxDrawScore = pawns t.Draw.Score }
+      if t.Draw.Enabled then { Enabled = true; MinDrawMove = t.Draw.MoveNumber; DrawMoveLength = t.Draw.MoveCount; MaxDrawScore = pawns t.Draw.Score }
       else DrawOption.Off
     let win =
-      if t.Resign.Enabled then { MinWinMove = 0; WinMoveLength = t.Resign.MoveCount; MinWinScore = pawns t.Resign.Score }
+      if t.Resign.Enabled then { Enabled = true; MinWinMove = 0; WinMoveLength = t.Resign.MoveCount; MinWinScore = pawns t.Resign.Score }
       else WinOption.Off
     if t.MaxMoves.Enabled then note $"-maxmoves {t.MaxMoves.MoveCount} is not applied"
     let tb = t.TbAdjudication

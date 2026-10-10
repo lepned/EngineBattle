@@ -395,6 +395,16 @@ module Validation =
           Errors [sprintf "All engines must have a unique name - duplicates %A" duplicates]
       else Ok
 
+  /// Tablebase adjudication that is on needs tables to adjudicate from.
+  let validateTablebases (tourny: Tournament) =
+      let tb = tourny.Adjudication.TBAdj
+      if not tb.UseTBAdjudication then Ok
+      elif not (TablebaseProbe.tablebasesExist tb.TablebaseDirectory) then
+          Errors [ sprintf "Tablebase adjudication is on, but TablebaseDirectory \"%s\" is not a folder that exists" tb.TablebaseDirectory ]
+      elif TablebaseProbe.largestTable tb.TablebaseDirectory = 0 then
+          Errors [ sprintf "Tablebase adjudication is on, but TablebaseDirectory \"%s\" holds no Syzygy tables (.rtbw)" tb.TablebaseDirectory ]
+      else Ok
+
   let validateEnginesPresent (engines: EngineConfig seq) nChallengers =
       let otherEngines = (engines |> Seq.length) - nChallengers
       if engines |> Seq.length < 2 then
@@ -503,6 +513,7 @@ module Validation =
           validateEngineConfigs tourny.EngineSetup.Engines
           validateEngineTimeControls tourny tourny.EngineSetup.Engines
           validateDelayBetweenGames tourny tourny.EngineSetup.Engines
+          validateTablebases tourny
           validateUniqueNames tourny.EngineSetup.Engines
           validateContempt tourny.EngineSetup.Engines
           validateEngineNames tourny.EngineSetup.Engines
@@ -820,10 +831,27 @@ module JSON =
               | (:? JsonObject as given), (:? JsonObject as d) when not (wholeSections.Contains at) -> overDefaults at d given
               | _ -> ()
 
+  /// What a given adjudication section means without its switch: a draw or win section is on (the
+  /// configs written before the switch existed), tablebase adjudication is on when it names a folder.
+  let private adjudicationSwitches (file: JsonObject) =
+      match file.["Adjudication"] with
+      | :? JsonObject as adj ->
+          for name in [ "DrawOption"; "WinOption" ] do
+              match adj.[name] with
+              | :? JsonObject as section when not (section.ContainsKey "Enabled") -> section.["Enabled"] <- JsonValue.Create true
+              | _ -> ()
+          match adj.["TBAdj"] with
+          | :? JsonObject as tb when not (tb.ContainsKey "UseTBAdjudication") ->
+              let folder = match tb.["TablebaseDirectory"] with :? JsonValue as v -> (try v.GetValue<string>() with _ -> "") | _ -> ""
+              tb.["UseTBAdjudication"] <- JsonValue.Create(not (String.IsNullOrWhiteSpace folder))
+          | _ -> ()
+      | _ -> ()
+
   /// The tournament file over Tournament.ConfigDefaults: a config needs only what has no default.
   let configOverDefaults (root: JsonNode) (options: JsonSerializerOptions) : unit =
       match root with
       | :? JsonObject as file ->
+          adjudicationSwitches file
           let defaults = JsonSerializer.SerializeToNode(Tournament.ConfigDefaults, options) :?> JsonObject
           overDefaults "" defaults file
       | _ -> ()

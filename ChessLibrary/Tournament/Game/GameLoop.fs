@@ -237,7 +237,8 @@ let private playWith
         PV = stats.Pv; LongPV = stats.LongPv; MoveAndFen = moveAndFen
         MoveHistory = board.GetSanMoveHistory(); Move50 = int board.Position.Count50
         R3 = board.RepetitionNr(); PiecesLeft = piecesLeft
-        AdjDrawML = GameAdjudication.movesLeftBeforeDrawAdjudication eval evals draw.MinDrawMove (draw.DrawMoveLength * 2) draw.MaxDrawScore }
+        // -1: draw adjudication is off (the banner says so)
+        AdjDrawML = if draw.Enabled then GameAdjudication.movesLeftBeforeDrawAdjudication eval evals draw.MinDrawMove (draw.DrawMoveLength * 2) draw.MaxDrawScore else -1 }
     let status = { stats.Status with PlayerName = s.Engine.Name }
     let annotate suffix = annotation tourny.MoveAnnotation board (board.SanMoveNumberString played.San + suffix) info |> sb.Append |> ignore
     let evals = evals

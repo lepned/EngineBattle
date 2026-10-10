@@ -259,7 +259,7 @@ Engines/
 ```
 
 3. Set the `OpeningsPath` and the `PgnOutPath` and time settings. Time controls, `MoveOverhead`, and `DelayBetweenGames` (or any other time settings) are specified as `hh:mm:ss` or `hh:mm:ss.fff` (fff = milliseconds, after a dot).
-4. The `UseTBAdjudication` can be turned on and off.
+4. Tablebase adjudication is on when `TablebaseDirectory` (under `Adjudication.TBAdj`) names a folder with Syzygy tables; draw and win adjudication each have an `Enabled` switch (see TournamentConfig.md).
 
 After you have created and configured a `tournament.json` file on your computer, it is highly advisable to make a backup copy. This ensures you can quickly restore your settings if you need to reinstall the application or encounter any configuration issues.
 

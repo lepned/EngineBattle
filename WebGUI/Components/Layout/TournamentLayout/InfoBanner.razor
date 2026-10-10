@@ -48,7 +48,7 @@
             <MudItem Style=@FontNormal lg="1"> @Info?.Round </MudItem>
             <MudItem Style=@FontNormal lg="1"> @move50 </MudItem>
             <MudItem Style=@FontNormal lg="1"> @R3 </MudItem>
-            <MudItem Style=@FontNormal lg="1"> @($"{DrawP}p") </MudItem>
+            <MudItem Style=@FontNormal lg="1"> @(DrawP < 0 ? "off" : $"{DrawP}p") </MudItem>
             @if (Info != null && Info.UseTBAdj)
             {
                 <MudItem Style=@FontNormal lg="1">

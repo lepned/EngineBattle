@@ -19,11 +19,13 @@
   "OrdoExePath": "",
   "Adjudication": {
     "DrawOption": {
+      "Enabled": true,
       "DrawMoveLength": 5,
       "MaxDrawScore": 0.3,
       "MinDrawMove": 20
     },
     "WinOption": {
+      "Enabled": true,
       "MinWinScore": 5.0,
       "WinMoveLength": 5,
       "MinWinMove": 0

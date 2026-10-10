@@ -28,6 +28,14 @@ let largestTable (tablebasePath: string) =
         with _ -> 0)
     |> Array.fold max 0
 
+/// largestTable, read once per setting: the GUI shows the count after every move. startRun reads
+/// it again, so tables added between runs are seen.
+let private largestKnown = Collections.Concurrent.ConcurrentDictionary<string, int>()
+
+let largestTableCached (tablebasePath: string) =
+    if String.IsNullOrWhiteSpace tablebasePath then 0
+    else largestKnown.GetOrAdd(tablebasePath, largestTable)
+
 /// <summary>
 /// The tables are probed in this process (Syzygy, a C# port of Fathom), which holds one set of
 /// tables: every folder a run has named, in the order they came. The WebGUI runs many tournaments
@@ -134,6 +142,8 @@ let startRun (useTablebases: bool) (men: int) (tablebasePath: string) =
     if useTablebases && tablebasesExist tablebasePath then
         ensureLoaded true tablebasePath
         let largest = largestTable tablebasePath
-        if largest < men then
+        largestKnown.[tablebasePath] <- largest
+        // men 0: as many as the tables hold
+        if men > 0 && largest < men then
             Console.Error.WriteLine(
                 sprintf "Tablebases in %s go up to %d pieces; positions with more are not adjudicated from tablebases." tablebasePath largest)

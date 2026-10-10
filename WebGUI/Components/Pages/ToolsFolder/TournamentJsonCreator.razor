@@ -226,6 +226,12 @@
         <summary>Adjudication</summary>
         <div class="section-body">
             <div class="sub-heading">Draw Adjudication</div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" @bind="useDrawAdjudication" /><span class="slider"></span></label>
+                <span class="toggle-label">Use Draw Adjudication</span>
+            </div>
+            @if (useDrawAdjudication)
+            {
             <div class="three-col">
                 <div class="field-group">
                     <label>Min Move</label>
@@ -240,8 +246,15 @@
                     <input type="number" @bind="drawMoveLength" min="1" max="50" />
                 </div>
             </div>
+            }
 
             <div class="sub-heading">Win Adjudication</div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" @bind="useWinAdjudication" /><span class="slider"></span></label>
+                <span class="toggle-label">Use Win Adjudication</span>
+            </div>
+            @if (useWinAdjudication)
+            {
             <div class="three-col">
                 <div class="field-group">
                     <label>Min Move</label>
@@ -256,6 +269,7 @@
                     <input type="number" @bind="winMoveLength" min="1" max="50" />
                 </div>
             </div>
+            }
 
             <div class="sub-heading">Tablebase</div>
             <div class="toggle-row">
@@ -272,8 +286,8 @@
             @if (useTBAdjudication)
             {
                 <div class="field-group">
-                    <label>TB Men</label>
-                    <input type="number" @bind="tbMen" min="3" max="7" />
+                    <label>TB Men (0 = all the tables hold)</label>
+                    <input type="number" @bind="tbMen" min="0" max="7" />
                 </div>
             }
         </div>
@@ -427,15 +441,17 @@
     private bool randomOpenings = false;
 
     // ── Adjudication ──
+    private bool useDrawAdjudication = true;
     private int minDrawMove = 20;
     private double maxDrawScore = 0.30;
     private int drawMoveLength = 5;
+    private bool useWinAdjudication = true;
     private int minWinMove = 0;
     private double minWinScore = 5.0;
     private int winMoveLength = 5;
     private bool useTBAdjudication = false;
     private string tablebaseDirectory = "";
-    private int tbMen = 6;
+    private int tbMen = 0;
 
     // ── Output ──
     private string pgnOutPath = "";
@@ -679,9 +695,11 @@
             root["Opening"]!["RandomOpenings"] = randomOpenings;
 
             // Adjudication
+            root["Adjudication"]!["DrawOption"]!["Enabled"] = useDrawAdjudication;
             root["Adjudication"]!["DrawOption"]!["MinDrawMove"] = minDrawMove;
             root["Adjudication"]!["DrawOption"]!["MaxDrawScore"] = maxDrawScore;
             root["Adjudication"]!["DrawOption"]!["DrawMoveLength"] = drawMoveLength;
+            root["Adjudication"]!["WinOption"]!["Enabled"] = useWinAdjudication;
             root["Adjudication"]!["WinOption"]!["MinWinMove"] = minWinMove;
             root["Adjudication"]!["WinOption"]!["MinWinScore"] = minWinScore;
             root["Adjudication"]!["WinOption"]!["WinMoveLength"] = winMoveLength;

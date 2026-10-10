@@ -595,15 +595,16 @@ module TypesDef =
     open LayoutTypes
     open TimeControlTypes
 
+    /// Draw adjudication; off when not Enabled (a config's section without "Enabled" is on).
     type DrawOption =
-      { DrawMoveLength: int; MaxDrawScore: float; MinDrawMove: int }
-      /// No draw adjudication. Zeros would adjudicate at once, so it starts at a move no game reaches
-      /// (the longest legal game is 5949 moves; kept that small because the time estimate counts it).
-      static member Off = { MinDrawMove = 6_000; DrawMoveLength = 1; MaxDrawScore = 0.0 }
+      { Enabled: bool; DrawMoveLength: int; MaxDrawScore: float; MinDrawMove: int }
+      /// Off. The numbers are a move no game reaches too (the longest legal game is 5949 moves), so
+      /// a reader that missed Enabled still never adjudicates.
+      static member Off = { Enabled = false; MinDrawMove = 6_000; DrawMoveLength = 1; MaxDrawScore = 0.0 }
+    /// Win adjudication; off when not Enabled.
     type WinOption =
-      { MinWinMove: int; MinWinScore: float; WinMoveLength: int }
-      /// No win adjudication (zeros would call every game won at move 0).
-      static member Off = { MinWinMove = 6_000; WinMoveLength = 1; MinWinScore = 1000.0 }
+      { Enabled: bool; MinWinMove: int; MinWinScore: float; WinMoveLength: int }
+      static member Off = { Enabled = false; MinWinMove = 6_000; WinMoveLength = 1; MinWinScore = 1000.0 }
     type TableBaseAdjudication = {TablebaseDirectory:string; UseTBAdjudication: bool; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
     type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool; Seed: int }
@@ -852,9 +853,9 @@ module TypesDef =
           else ""
 
         member x.TablebaseText() =
-          if x.Adjudication.TBAdj.UseTBAdjudication then
-            $"Tablebase adj={x.Adjudication.TBAdj.TBMen}-men"
-          else "Tablebase adj=not in use"
+          if not x.Adjudication.TBAdj.UseTBAdjudication then "Tablebase adj=not in use"
+          elif x.Adjudication.TBAdj.TBMen > 0 then $"Tablebase adj={x.Adjudication.TBAdj.TBMen}-men"
+          else "Tablebase adj=all the tables hold"
 
         member x.GetOpeningFileName() =
           if x.Opening.OpeningsPath.IsSome then
@@ -862,16 +863,15 @@ module TypesDef =
           else "no opening book"
 
         /// "Adjudication: -draw movenumber=30 movecount=5 score=0.3 -resign movecount=5 score=5.0",
-        /// scores in pawns; a part that is off (a move number never reached, as `match` sets
-        /// without -draw or -resign) says off
+        /// scores in pawns; a part that is off says off
         member x.AdjudicationText() =
           let d, w = x.Adjudication.DrawOption, x.Adjudication.WinOption
           let invariant = System.Globalization.CultureInfo.InvariantCulture
           let draw =
-            if d.MinDrawMove >= 6000 then "-draw off"
+            if not d.Enabled then "-draw off"
             else String.Format(invariant, "-draw movenumber={0} movecount={1} score={2:0.0##}", d.MinDrawMove, d.DrawMoveLength, d.MaxDrawScore)
           let resign =
-            if w.MinWinMove >= 6000 then "-resign off"
+            if not w.Enabled then "-resign off"
             else String.Format(invariant, "-resign movecount={0} score={1:0.0##}", w.WinMoveLength, w.MinWinScore)
           $"Adjudication: {draw} {resign} "
 
@@ -897,10 +897,9 @@ module TypesDef =
               parts.Add(sprintf "random=%b" x.Opening.RandomOpenings)
             String.Join(" | ", parts)
           let tablebases =
-            if x.Adjudication.TBAdj.UseTBAdjudication then
-              sprintf "Tablebases: %d-man" x.Adjudication.TBAdj.TBMen
-            else
-              "Tablebases: off"
+            if not x.Adjudication.TBAdj.UseTBAdjudication then "Tablebases: off"
+            elif x.Adjudication.TBAdj.TBMen > 0 then sprintf "Tablebases: %d-man" x.Adjudication.TBAdj.TBMen
+            else "Tablebases: all the tables hold"
 
           sb.AppendLine (sprintf "Run: %s" x.Name) |> ignore
           sb.AppendLine (sprintf "Hardware: %s" (x.Hardware())) |> ignore
@@ -1028,9 +1027,9 @@ module TypesDef =
           TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallel = 1; GPUs = null }
           Adjudication =
             {
-              DrawOption = {MinDrawMove = 0; MaxDrawScore = 0.0; DrawMoveLength = 0 }
-              WinOption = {MinWinMove = 0; MinWinScore = 0.0; WinMoveLength = 0  }
-              TBAdj = {TablebaseDirectory = String.Empty; UseTBAdjudication = true; TBMen = 6  }
+              DrawOption = DrawOption.Off
+              WinOption = WinOption.Off
+              TBAdj = {TablebaseDirectory = String.Empty; UseTBAdjudication = false; TBMen = 0  }
             }
 
           DelayBetweenGames = TimeSpan.Zero
@@ -1069,7 +1068,7 @@ module TypesDef =
               Adjudication =
                 { DrawOption = DrawOption.Off
                   WinOption = WinOption.Off
-                  TBAdj = { TablebaseDirectory = ""; UseTBAdjudication = false; TBMen = 6 } } }
+                  TBAdj = { TablebaseDirectory = ""; UseTBAdjudication = false; TBMen = 0 } } }
 
     type StartOfTournamentInfo =
       {

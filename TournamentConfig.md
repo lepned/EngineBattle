@@ -39,18 +39,25 @@ This document provides an overview of the `tournament.json` configuration file u
 
 ### Adjudication Options
 
+Every part may be left out. A part that is left out is off; a part that is given is on unless it
+says `"Enabled": false` (or, for tablebases, `"UseTBAdjudication": false`).
+
 - **DrawOption**:
+  - **Enabled**: `false` turns draw adjudication off; left out, the section is on.
   - **DrawMoveLength**: Number of moves to consider for a draw.
   - **MaxDrawScore**: Maximum score for a draw.
   - **MinDrawMove**: Minimum number of moves for a draw.
 - **WinOption**:
+  - **Enabled**: `false` turns win adjudication off; left out, the section is on.
   - **MinWinScore**: Minimum score for a win.
   - **WinMoveLength**: Number of moves to consider for a win.
   - **MinWinMove**: Minimum number of moves for a win.
 - **TBAdj**:
-  - **TablebaseDirectory**: Folder with the Syzygy tablebases; several are separated by `;` on Windows and `:` on Linux and macOS. Positions with more pieces than the largest table there are not probed.
-  - **UseTBAdjudication**: Enable or disable tablebase adjudication.
-  - **TBMen**: Number of men in tablebase adjudication. A game is adjudicated from the tablebases
+  - **TablebaseDirectory**: Folder with the Syzygy tablebases; several are separated by `;` on Windows and `:` on Linux and macOS. Naming a folder is enough to turn tablebase adjudication on.
+  - **UseTBAdjudication**: `false` turns tablebase adjudication off although a folder is named; left out, it is on when `TablebaseDirectory` names a folder. When it is on, the folder must exist and hold Syzygy tables (validation says so otherwise).
+  - **TBMen**: Optional. Left out (or 0), positions are adjudicated from as many pieces as the
+    tables hold. A number lowers that: `5` adjudicates only from five pieces even with 7-man
+    tables, to let the engines play more of the endgame. A game is adjudicated from the tablebases
     only when they answer: a position with more pieces than the tables hold, a missing table, or a
     win the 50-move rule turns into a draw is left to the evaluation rules above.
 
@@ -295,9 +302,7 @@ setting.
     },
 
     "TBAdj": {
-      "TablebaseDirectory": "C:/Dev/Chess/TableBases",
-      "UseTBAdjudication": false,
-      "TBMen": 6
+      "TablebaseDirectory": "C:/Dev/Chess/TableBases"
     }
   },
 

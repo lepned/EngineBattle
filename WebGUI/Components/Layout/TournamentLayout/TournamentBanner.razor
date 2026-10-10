@@ -26,7 +26,7 @@
            nothing on its own, but beside "≤0.3 ×5 @20" it reads as progress. *@
         @Field("Win rule", WinRule, WinRuleText)
         @Field("Draw rule", DrawRule, DrawRuleText)
-        @Field("Draw", $"{DrawP}p")
+        @Field("Draw", DrawP < 0 ? "off" : $"{DrawP}p")
         @if (Info != null && Info.UseTBAdj)
         {
             @Field("TB", TB.ToString())

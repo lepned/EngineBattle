@@ -57,9 +57,22 @@ let isConsecutiveLowEvalSufficient (evals: EvalType list) drawPlies maxDrawScore
     let res = consecutiveNumberOfLowEvalsLeft evals drawPlies maxDrawScore
     res <= 0
 
-/// Most pieces a position may have to be adjudicated from tablebases.
+/// Most pieces a position may have to be adjudicated from tablebases. TBMen 0: as many as the
+/// tables hold - the probe never asks for more than they do (Syzygy.MaxPieces), so 7 is "all".
 let tablebaseMen (tourny: Tournament) =
-    if tourny.Adjudication.TBAdj.UseTBAdjudication then tourny.Adjudication.TBAdj.TBMen else 2
+    let tb = tourny.Adjudication.TBAdj
+    if not tb.UseTBAdjudication then 2
+    elif tb.TBMen > 0 then tb.TBMen
+    else 7
+
+/// The piece count tablebase adjudication starts at, for showing: TBMen, or what the tables hold
+/// when it is 0 (or more than they hold); 0 when tablebase adjudication is off.
+let adjudicatedMen (tourny: Tournament) =
+    let tb = tourny.Adjudication.TBAdj
+    if not tb.UseTBAdjudication then 0
+    else
+        let largest = TablebaseProbe.largestTableCached tb.TablebaseDirectory
+        if tb.TBMen > 0 && tb.TBMen < largest then tb.TBMen else largest
 
 /// The probe this position needs - directory, FEN and piece count - or None: too many pieces,
 /// castling rights (tablebases have none), or a game already over by the rules.
@@ -149,7 +162,7 @@ let adjudicateByEval
           None
 
     let evalAdjudication () =
-      if moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
+      if tourny.Adjudication.WinOption.Enabled && moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
           let result =
               match evals.[0] with
               |EvalType.CP ev when ev >= tourny.Adjudication.WinOption.MinWinScore -> "1-0" |> Some
@@ -182,7 +195,7 @@ let adjudicateByEval
                   let res = Formatting.createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
                   Some res
 
-      elif moves >= (tourny.Adjudication.DrawOption.MinDrawMove * 2 + drawPlyLength) && tooLowEvals() then
+      elif tourny.Adjudication.DrawOption.Enabled && moves >= (tourny.Adjudication.DrawOption.MinDrawMove * 2 + drawPlyLength) && tooLowEvals() then
           let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
           Some res
 

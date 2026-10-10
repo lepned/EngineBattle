@@ -37,7 +37,7 @@ let ``a section that is given is read as written, field by field`` () =
         read (minimal """, "Adjudication": { "DrawOption": { "MaxDrawScore": 0.2, "DrawMoveLength": 5 } },
                           "SwissOptions": { "Rounds": 3 }, "Site": "Oslo" """)
     // a draw section without MinDrawMove adjudicates from the first move, as it always has
-    Assert.Equal({ MinDrawMove = 0; MaxDrawScore = 0.2; DrawMoveLength = 5 }, t.Adjudication.DrawOption)
+    Assert.Equal({ Enabled = true; MinDrawMove = 0; MaxDrawScore = 0.2; DrawMoveLength = 5 }, t.Adjudication.DrawOption)
     // the sections it leaves out of Adjudication are off
     Assert.Equal(WinOption.Off, t.Adjudication.WinOption)
     Assert.False t.Adjudication.TBAdj.UseTBAdjudication
@@ -55,3 +55,19 @@ let ``a null in the file is the default`` () =
     let t = read (minimal """, "LadderOptions": null, "ReferencePGNPath": null""")
     Assert.Equal(4, t.LadderOptions.GamePairsPerMatch)
     Assert.Equal("", t.ReferencePGNPath)
+
+[<Fact>]
+let ``draw and win adjudication have a switch, on when a section leaves it out`` () =
+    let t = read (minimal """, "Adjudication": { "DrawOption": { "Enabled": false, "MinDrawMove": 20, "MaxDrawScore": 0.2, "DrawMoveLength": 5 },
+                                                 "WinOption": { "MinWinMove": 0, "MinWinScore": 5.0, "WinMoveLength": 5 } }""")
+    Assert.False t.Adjudication.DrawOption.Enabled
+    Assert.True t.Adjudication.WinOption.Enabled
+
+[<Fact>]
+let ``tablebase adjudication is on when it names a folder, unless it says otherwise`` () =
+    let tb (section: string) = (read (minimal (sprintf """, "Adjudication": { "TBAdj": %s }""" section))).Adjudication.TBAdj
+    Assert.True (tb """{ "TablebaseDirectory": "D:/syzygy" }""").UseTBAdjudication
+    Assert.False (tb """{ "TablebaseDirectory": "D:/syzygy", "UseTBAdjudication": false }""").UseTBAdjudication
+    Assert.False (tb """{ "TablebaseDirectory": "" }""").UseTBAdjudication
+    // TBMen left out: as many as the tables hold
+    Assert.Equal(0, (tb """{ "TablebaseDirectory": "D:/syzygy" }""").TBMen)

@@ -30,7 +30,10 @@ module TournamentUtils =
     seconds
 
   let estimateTournamentAndGameTime (pairs:int) (tourny:Tournament) (pairings: Pairing seq) =
-    let movesEst = tourny.Adjudication.DrawOption.MinDrawMove + tourny.Adjudication.DrawOption.DrawMoveLength + 15
+    // without draw adjudication, a typical game's length
+    let movesEst =
+      let d = tourny.Adjudication.DrawOption
+      if d.Enabled then d.MinDrawMove + d.DrawMoveLength + 15 else 80
     let delay = tourny.DelayBetweenGames.TotalSeconds
     let mutable secs = 0.0
     for p in pairings do

@@ -128,9 +128,10 @@ let ``options go Threads first, a repeated one keeps its place and takes its las
 [<Fact>]
 let ``adjudication in pawns, and off when the reference has it off`` () =
     let t = (mapped (sf @ lc0 @ [ "-draw"; "movenumber=40"; "movecount=8"; "score=10"; "-resign"; "movecount=3"; "score=600" ])).Tournament
-    Assert.Equal({ MinDrawMove = 40; DrawMoveLength = 8; MaxDrawScore = 0.10 }, t.Adjudication.DrawOption)
-    Assert.Equal({ MinWinMove = 0; WinMoveLength = 3; MinWinScore = 6.0 }, t.Adjudication.WinOption)
+    Assert.Equal({ Enabled = true; MinDrawMove = 40; DrawMoveLength = 8; MaxDrawScore = 0.10 }, t.Adjudication.DrawOption)
+    Assert.Equal({ Enabled = true; MinWinMove = 0; WinMoveLength = 3; MinWinScore = 6.0 }, t.Adjudication.WinOption)
     let off = (mapped (sf @ lc0)).Tournament.Adjudication
+    Assert.False(off.DrawOption.Enabled || off.WinOption.Enabled)
     Assert.True(off.DrawOption.MinDrawMove > 5949 && off.WinOption.MinWinMove > 5949)
     Assert.False off.TBAdj.UseTBAdjudication
 
@@ -211,5 +212,5 @@ let ``ponder, as cutechess-cli writes it, lets every engine ponder - all or none
 let ``the adjudication text says off for a part that is off, scores in pawns`` () =
     let t = (mapped (sf @ lc0)).Tournament
     Assert.Equal("Adjudication: -draw off -resign off ", t.AdjudicationText())
-    let on = { t with Adjudication = { t.Adjudication with DrawOption = { MinDrawMove = 30; DrawMoveLength = 5; MaxDrawScore = 0.3 }; WinOption = { MinWinMove = 0; WinMoveLength = 5; MinWinScore = 5.0 } } }
+    let on = { t with Adjudication = { t.Adjudication with DrawOption = { Enabled = true; MinDrawMove = 30; DrawMoveLength = 5; MaxDrawScore = 0.3 }; WinOption = { Enabled = true; MinWinMove = 0; WinMoveLength = 5; MinWinScore = 5.0 } } }
     Assert.Equal("Adjudication: -draw movenumber=30 movecount=5 score=0.3 -resign movecount=5 score=5.0 ", on.AdjudicationText())

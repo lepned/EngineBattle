@@ -143,7 +143,7 @@ public partial class Tournaments
 				if (found != null)					
 					currentOpeningInPlay = $"{found.Name}, ECO: {found.ECO}";
 				await streamingBoard.OnNotifyMoveAndFen(b.Info.MoveAndFen);
-				TB = b.Info.PiecesLeft - tournament.Adjudication.TBAdj.TBMen;
+				TB = b.Info.PiecesLeft - ChessLibrary.GameAdjudication.adjudicatedMen(tournament);
 				move50 = b.Info.Move50;
 				r3 = b.Info.R3;
 				var white = b.Info.Player == whitePlayer;

@@ -101,13 +101,11 @@ let ``the tablebase answer decides over the engines' evals`` () =
 /// The tournament's own evaluation rules off (as match without -draw and -resign), or the win rule
 /// on: both engines above 5 pawns for a move.
 let private adjudicateWith (win: bool) (evals: EvalType list) tbOutput =
-  let never = 10000
   let t = tourny ""
   let rules =
     { t.Adjudication with
-        DrawOption = { MinDrawMove = never; DrawMoveLength = 1; MaxDrawScore = 0.0 }
-        WinOption = if win then { MinWinMove = 0; WinMoveLength = 1; MinWinScore = 5.0 }
-                    else { MinWinMove = never; WinMoveLength = 1; MinWinScore = 1000.0 } }
+        DrawOption = DrawOption.Off
+        WinOption = if win then { Enabled = true; MinWinMove = 0; WinMoveLength = 1; MinWinScore = 5.0 } else WinOption.Off }
   GameAdjudication.adjudicateByEval NullLogger.Instance (boardAt won) evals { t with Adjudication = rules } "A" "B" "x"
     (Stopwatch.GetTimestamp()) (ResizeArray<string>()) 40 tbOutput
 
@@ -205,3 +203,34 @@ let ``the game loop's probe gives the WDL`` () =
   Assert.Equal(Some TbWdl.CursedWin, probe syzygyPath "8/8/8/8/8/2k5/8/K6Q w - - 99 1" 3)
   // seven pieces: more than these tables hold
   Assert.Equal(None, probe syzygyPath "8/8/8/2k5/8/1R6/2PPP3/4K1n1 w - - 0 1" 7)
+
+[<Fact>]
+let ``a rule that is not Enabled never adjudicates, whatever its numbers`` () =
+  let t = tourny ""
+  let zeros =
+    { t.Adjudication with
+        DrawOption = { Enabled = false; MinDrawMove = 0; DrawMoveLength = 0; MaxDrawScore = 0.0 }
+        WinOption = { Enabled = false; MinWinMove = 0; WinMoveLength = 0; MinWinScore = 0.0 } }
+  for evals in [ [ EvalType.CP 9.0; EvalType.CP 9.0 ]; [ EvalType.CP 0.0; EvalType.CP 0.0 ] ] do
+    Assert.Equal(None, GameAdjudication.adjudicateByEval NullLogger.Instance (boardAt won) evals { t with Adjudication = zeros } "A" "B" "x"
+                         (Stopwatch.GetTimestamp()) (ResizeArray<string>()) 40 None)
+
+[<Fact>]
+let ``TBMen 0 is as many pieces as the tables hold`` () =
+  withTables [ "KQvK.rtbw"; "KRPvKR.rtbw" ] (fun dir ->
+    let withMen men = { tourny dir with Adjudication = { (tourny dir).Adjudication with TBAdj = { TablebaseDirectory = dir; UseTBAdjudication = true; TBMen = men } } }
+    Assert.Equal(5, GameAdjudication.adjudicatedMen (withMen 0))
+    Assert.Equal(4, GameAdjudication.adjudicatedMen (withMen 4))
+    // more than the tables hold is what they hold
+    Assert.Equal(5, GameAdjudication.adjudicatedMen (withMen 7))
+    // the probe never asks past the tables, so 0 lets every position the tables have through
+    Assert.Equal(7, GameAdjudication.tablebaseMen (withMen 0))
+    Assert.Equal(4, GameAdjudication.tablebaseMen (withMen 4)))
+
+[<Fact>]
+let ``tablebase adjudication that is on needs a folder with tables`` () =
+  let isError t = match Configuration.Validation.validateTablebases t with Configuration.Validation.Errors _ -> true | _ -> false
+  Assert.True(isError (tourny (Path.Combine(Path.GetTempPath(), "eb_no_such_tb_folder"))))
+  withTables [] (fun empty -> Assert.True(isError (tourny empty)))
+  withTables [ "KQvK.rtbw" ] (fun dir -> Assert.False(isError (tourny dir)))
+  Assert.False(isError Tournament.Empty)
