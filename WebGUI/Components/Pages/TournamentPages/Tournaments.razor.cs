@@ -678,7 +678,7 @@ public partial class Tournaments
 	/// the grid page that a parallel run makes.
 	private void ShowOpeningWarnings()
 	{
-		foreach (var warning in ChessLibrary.Configuration.Validation.duplicateOpeningWarnings(tournament))
+		foreach (var warning in ChessLibrary.Configuration.Validation.delayWarning(tournament).Concat(ChessLibrary.Configuration.Validation.duplicateOpeningWarnings(tournament)))
 			Snackbar.Add(new MarkupString(System.Net.WebUtility.HtmlEncode(warning).Replace("\n", "<br/>")), Severity.Warning,
 				o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
 	}

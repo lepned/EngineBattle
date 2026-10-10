@@ -408,7 +408,7 @@ module Validation =
   let validateEnginesPresent (engines: EngineConfig seq) nChallengers =
       let otherEngines = (engines |> Seq.length) - nChallengers
       if engines |> Seq.length < 2 then
-          Errors ["No engines found - at least two engines must be defined in EngineDefList in tournament.json"]
+          Errors ["Fewer than two engines: EngineSetup.EngineDefList must name at least two engine defs (files in EngineSetup.EngineDefFolder)"]
       else if otherEngines < 1 then
           Errors ["Gauntlet tournament configuration error: All engines are marked as challengers. In a gauntlet tournament, challengers need opponents to play against. Please either reduce the 'Challengers' parameter in tournament.json or add more engines to your EngineDefList so that some engines serve as non-challengers."]
       else
@@ -458,15 +458,14 @@ module Validation =
           else
               Ok
 
-  let validateEngineConfigs (configs: EngineConfig list) =
-      if configs.Length = 0 then
-          Errors ["No engines found - at least two engines must be defined in EngineDefList in tournament.json in order to run a tournament"]
-      elif configs.Length < 2 then
-          Errors ["Only one engine found - at least two engines must be defined in EngineDefList in tournament.json in order to run a tournament"]
-      else
-          Ok
+  /// The one section without a default: every engine plays at a time control the file names.
+  let validateTimeControl (tourny: Tournament) =
+      if obj.ReferenceEquals(box tourny.TimeControl, null) || isNull (box tourny.TimeControl.TimeConfigs) || List.isEmpty tourny.TimeControl.TimeConfigs then
+          Errors [ "TimeControl is missing: give at least one, e.g. \"TimeControl\": { \"TimeConfigs\": [ { \"Id\": 1, \"Tc\": \"60+1\" } ] }" ]
+      else Ok
 
   let validateEngineTimeControls (tourny: Tournament) (configs: EngineConfig list) =
+      if validateTimeControl tourny <> Ok then Ok else  // said once, by validateTimeControl
       configs
       |> List.map (fun config ->
           if tourny.TimeControl.TimeConfigs |> List.exists (fun e -> e.Id = config.TimeControlID) |> not then
@@ -474,11 +473,17 @@ module Validation =
           else Ok)
       |> accumulateErrors
 
-  let validateDelayBetweenGames (tourny: Tournament) (configs: EngineConfig list) =
-      let nodelimit = configs |> List.map (fun e -> tourny.FindTimeControl e.TimeControlID) |> List.forall (fun e -> e.NodeLimit)
-      if tourny.DelayBetweenGames.TotalSeconds < 2 && not nodelimit then
-          Errors ["Delay between games very low - consider to increase it to at least 5 seconds in tournament.json"]
-      else Ok
+  /// A hint, not an error: the console plays without a delay whatever the file says, and only a
+  /// viewer of the WebGUI board needs the pause.
+  let delayWarning (tourny: Tournament) =
+      let configs = tourny.EngineSetup.Engines
+      let nodelimit =
+          validateTimeControl tourny = Ok
+          && not configs.IsEmpty
+          && configs |> List.forall (fun e -> try (tourny.FindTimeControl e.TimeControlID).NodeLimit with _ -> false)
+      if not tourny.ConsoleOnly && tourny.DelayBetweenGames.TotalSeconds < 2 && not nodelimit then
+          [ "DelayBetweenGames is under 2 seconds: the WebGUI moves on to the next game almost at once (5 seconds or more gives time to look at the result; the console ignores it)" ]
+      else []
 
   let validateTournamentModeOptions (tourny: Tournament) =
       let mode =
@@ -506,13 +511,13 @@ module Validation =
 
   let validateTournament (tourny: Tournament) =
       [
-          validateEnginesPresent tourny.EngineSetup.Engines tourny.Challengers
+          // challengers count in a gauntlet only (the runner sets them to 0 otherwise)
+          validateEnginesPresent tourny.EngineSetup.Engines (if tourny.TournamentMode = "Gauntlet" then tourny.Challengers else 0)
+          validateTimeControl tourny
           validateTournamentModeOptions tourny
           validateOpeningPath tourny
           validatePgnOutPath tourny
-          validateEngineConfigs tourny.EngineSetup.Engines
           validateEngineTimeControls tourny tourny.EngineSetup.Engines
-          validateDelayBetweenGames tourny tourny.EngineSetup.Engines
           validateTablebases tourny
           validateUniqueNames tourny.EngineSetup.Engines
           validateContempt tourny.EngineSetup.Engines
@@ -602,6 +607,8 @@ module Validation =
           for msg in msgs do
               ConsoleUtils.printInColor ConsoleColor.Red msg
       // Non-blocking warnings
+      for warning in delayWarning tourny do
+          ConsoleUtils.printInColor ConsoleColor.Yellow ("Warning: " + warning)
       let mode = tourny.ModeLabel().Trim().ToLowerInvariant()
       let isRRorGauntlet = mode = "rr" || mode = "roundrobin" || mode = "round-robin" || mode = "gauntlet"
       if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then

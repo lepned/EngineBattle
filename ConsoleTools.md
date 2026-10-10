@@ -723,7 +723,7 @@ Run a tournament from a config
 
 Usage: eb-cli tournament run <config> [options]
 
-Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. Exit 1 when the run failed.
+Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. A config with errors (what tournament validate reports) is refused with exit 2, as the WebGUI refuses to start it. Exit 1 when the run failed.
 
 Arguments:
   <config>  a tournament config (JSON)

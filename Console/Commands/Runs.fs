@@ -1289,7 +1289,7 @@ let private loadTournament (path: string) =
 let tournamentRunSpec =
     { command [ "tournament"; "run" ] Group "Run a tournament from a config" with
         Description =
-          Some "Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. Exit 1 when the run failed."
+          Some "Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. A config with errors (what tournament validate reports) is refused with exit 2, as the WebGUI refuses to start it. Exit 1 when the run failed."
         Args = [ configArg "a tournament config (JSON)" ]
         Options = [ switch "append" "Let a new cup, Swiss or ladder start in a PGN that already has games" ]
         Examples =
@@ -1311,6 +1311,13 @@ let tournamentRun (p: Parsed) =
                 ConsoleOnly = true
                 DelayBetweenGames = TimeSpan.Zero }
         tournament.AppendToPgn <- has p "append"
+        // the GUI refuses to start a config with errors; so does the console
+        let checkable = { tournament with Challengers = (if tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) then tournament.Challengers else 0) }
+        match Validation.validateTournament checkable with
+        | Validation.Errors messages ->
+            for m in messages do Cli.Output.error m
+            raise (Usage "the config has errors (above); 'eb-cli tournament validate' checks it without running")
+        | _ -> ()
         if tournament.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase) then
             printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)
         for warning in Validation.duplicateOpeningWarnings tournament do

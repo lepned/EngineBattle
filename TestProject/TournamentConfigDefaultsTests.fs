@@ -71,3 +71,28 @@ let ``tablebase adjudication is on when it names a folder, unless it says otherw
     Assert.False (tb """{ "TablebaseDirectory": "" }""").UseTBAdjudication
     // TBMen left out: as many as the tables hold
     Assert.Equal(0, (tb """{ "TablebaseDirectory": "D:/syzygy" }""").TBMen)
+
+let private errorsOf (t: Tournament) =
+    match Configuration.Validation.validateTournament t with
+    | Configuration.Validation.Errors messages -> messages
+    | _ -> []
+
+[<Fact>]
+let ``a config without a time control is told so, not a NullReference`` () =
+    let path = Path.GetTempFileName()
+    File.WriteAllText(path, """{ "Name": "t", "EngineSetup": { "EngineDefFolder": "", "EngineDefList": [] } }""")
+    let t = try (match Configuration.JSON.tryReadTournamentJson path with Ok t -> t | Error e -> failwith e) finally File.Delete path
+    let errors = errorsOf t
+    Assert.Contains(errors, fun m -> m.StartsWith "TimeControl is missing")
+    Assert.Contains(errors, fun m -> m.Contains "EngineSetup.EngineDefList")
+    // with engines, each of which names a time control the file does not have
+    let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
+    let withEngines = { t with EngineSetup = { t.EngineSetup with Engines = [ engine "A"; engine "B" ] } }
+    Assert.Contains(errorsOf withEngines, fun m -> m.StartsWith "TimeControl is missing")
+
+[<Fact>]
+let ``a short delay between games is a hint for the WebGUI, and nothing for the console`` () =
+    let t = { read (minimal "") with DelayBetweenGames = System.TimeSpan.Zero }
+    Assert.DoesNotContain(errorsOf t, fun m -> m.Contains "Delay")
+    Assert.NotEmpty(Configuration.Validation.delayWarning t)
+    Assert.Empty(Configuration.Validation.delayWarning { t with ConsoleOnly = true })
