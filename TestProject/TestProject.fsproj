@@ -90,6 +90,7 @@
 		<Compile Include="MatchConfigTests.fs" />
 		<Compile Include="BuildInfoTests.fs" />
 		<Compile Include="TablebaseProbeTests.fs" />
+		<Compile Include="TablebaseLookupTests.fs" />
 		<Compile Include="PgnHeaderTests.fs" />
 		<Compile Include="EngineLogTests.fs" />
 		<Compile Include="UpdateAgentTests.fs" />

@@ -138,6 +138,8 @@
                             title="Open in single-engine analysis">Analyze</button>
                     <button class="be-btn be-primary" disabled="@(fenErrors.Length > 0)" @onclick="AnalyzeDual"
                             title="Open in dual-engine analysis">Dual</button>
+                    <button class="be-btn be-primary" disabled="@(fenErrors.Length > 0)" @onclick="OpenTablebase"
+                            title="Every move from the Syzygy tablebases">Tablebase</button>
                 </div>
             </fieldset>
         </div>
@@ -310,6 +312,9 @@
 
     private void AnalyzeDual() =>
         Nav.NavigateTo($"/analysis/dual?fen={Uri.EscapeDataString(fenInput)}");
+
+    private void OpenTablebase() =>
+        Nav.NavigateTo($"/tools/tablebase?fen={Uri.EscapeDataString(fenInput)}");
 
     private string PieceSrc(char piece)
     {

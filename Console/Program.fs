@@ -747,6 +747,76 @@ module Program =
         eprintfn "query error: %s" ex.Message
         exit 1
 
+  /// The tablebase page for a terminal: every move from the Syzygy tables, best first (TablebaseLookup,
+  /// shared with the page). Exit 1 when the tables give no answer.
+  let runTablebase (fen: string) (tb: string option) (json: bool) (ignoreClock: bool) =
+    let path =
+        match tb with
+        | Some p -> p
+        | None -> Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj |> Option.defaultValue ""
+    let r =
+        try ChessLibrary.TablebaseLookup.lookupWith (not ignoreClock) path fen
+        with ex ->
+            eprintfn "tb error: %s" ex.Message
+            exit 1
+    let answered =
+        match r.Status with
+        | ChessLibrary.TablebaseLookup.Answered _
+        | ChessLibrary.TablebaseLookup.Checkmate
+        | ChessLibrary.TablebaseLookup.Stalemate -> true
+        | _ -> false
+    let text = ChessLibrary.TablebaseLookup.statusText path r
+    let text =
+        match r.Status with
+        | ChessLibrary.TablebaseLookup.NoTablebaseFolder -> text + ": pass --tb <folder> or set EB_SYZYGY_PATH"
+        | _ -> text
+    if json then
+        let opts = System.Text.Json.JsonSerializerOptions(PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase, WriteIndented = true)
+        let category, dtz =
+            match r.Status with
+            | ChessLibrary.TablebaseLookup.Answered(c, d) -> ChessLibrary.TablebaseLookup.categoryText c, Option.toNullable d
+            | _ -> null, Nullable()
+        let record =
+            {| Fen = r.Fen
+               Answered = answered
+               Status = text
+               Category = category
+               Dtz = dtz
+               HasDtz = r.HasDtz
+               Uncertain = r.Uncertain
+               Note = (ChessLibrary.TablebaseLookup.clockNote r |> Option.toObj)
+               Moves =
+                r.Moves
+                |> Array.map (fun m ->
+                    {| Uci = m.Uci
+                       San = m.San
+                       Category = ChessLibrary.TablebaseLookup.categoryText m.Category
+                       Dtz = Option.toNullable m.Dtz
+                       IsZeroing = m.IsZeroing
+                       IsCapture = m.IsCapture
+                       GivesCheck = m.GivesCheck
+                       IsCheckmate = m.IsCheckmate
+                       IsStalemate = m.IsStalemate
+                       Uncertain = m.Uncertain |}) |}
+        printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, opts))
+    else
+        printfn "%s" r.Fen
+        if answered then printfn "%s" text
+        else ConsoleUtils.printInColor ConsoleColor.Red text
+        let mutable group = None
+        for m in r.Moves do
+            if group <> Some m.Category then
+                group <- Some m.Category
+                printfn ""
+                printfn "%s" (ChessLibrary.TablebaseLookup.categoryText m.Category)
+            printfn "  %-8s %s" m.San (ChessLibrary.TablebaseLookup.moveNote m)
+        for note in [ ChessLibrary.TablebaseLookup.clockNote r; ChessLibrary.TablebaseLookup.wdlOnlyNote r ] do
+            note |> Option.iter (fun n -> printfn ""; printfn "%s" n)
+        if r.Moves.Length > 0 then
+            printfn ""
+            printfn "%s" (if ignoreClock then "The halfmove clock is read as 0 (--ignore-clock); DTZ is counted from this position" else "The halfmove clock counts; DTZ is counted from this position")
+    if not answered then exit 1
+
   let runCompare (p: CliParser.CompareParams) =
     try
         let config1 = resolveEngineConfig p.Engine1 p.UciOptions1
@@ -2594,6 +2664,9 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  deviations, dev <pgnFile>               Self-consistency and position deviations from PGN"
     printfn "  query, q <fen|startpos> [options]       Position query as JSON (status, legal moves, attackers,"
     printfn "                                          pins, insights, SEE); --epd <file> for a batch"
+    printfn "  tb, tablebase <fen> [--tb <folder>] [--json] [--ignore-clock]"
+    printfn "                                          Every move from the Syzygy tables: win, draw, loss with DTZ"
+    printfn "                                          (folder default: EB_SYZYGY_PATH; the halfmove clock counts unless --ignore-clock)"
     printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
     printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
     printfn "  validate, v <config>                    Validate a tournament config without running"
@@ -2797,6 +2870,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     if code <> 0 then exit code
                 | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps, svgPath)) ->
                     runQuery fen square epd pv edits emitEpd epdOps svgPath
+                | Verb (Tablebase (fen, tb, json, ignoreClock)) ->
+                    runTablebase fen tb json ignoreClock
                 | Verb (PieceValues p) ->
                     runPieceValues p
                 | Verb (PieceValueFit p) ->

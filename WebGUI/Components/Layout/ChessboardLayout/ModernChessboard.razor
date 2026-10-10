@@ -702,6 +702,17 @@
         return true;
     }
 
+    /// <summary>Plays a legal move (UCI, as the board's own legal moves spell it) exactly as a click
+    /// would: move list, highlight and OnMoveMadeOnBoard. False when it is not legal here.</summary>
+    public async Task<bool> PlayMove(string uci)
+    {
+        if (string.IsNullOrEmpty(uci) || showPromotionDialog || !AllowMoves) return false;
+        if (!ChessBoard.GetLegalMoves().Any(m => m.Item1 == uci)) return false;
+        await UpdateNewMove(uci, true);
+        StateHasChanged();
+        return true;
+    }
+
     private int moveListFontSize = 8;
     private int moveListHeight = 80;
     private string openingStyle = $"font-size:15px";

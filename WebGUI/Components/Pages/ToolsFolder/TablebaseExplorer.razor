@@ -1,0 +1,240 @@
+@page "/tools/tablebase"
+@page "/tablebase"
+@using WebGUI.Components.Layout.ChessboardLayout
+@inject GlobalSettingsService SettingsService
+@inject NavigationManager Nav
+@inject ILogger<TablebaseExplorer> logger
+
+<PageTitle>Tablebase</PageTitle>
+
+<div class="tb-container">
+    <h2>Tablebase</h2>
+    <div class="tb-description">
+        Every legal move of a position from your Syzygy tablebases, best first: wins, then draws, then
+        losses. Paste a FEN or make moves on the board; click a move to play it. The halfmove clock
+        counts (a win the 50-move rule draws is a cursed win) unless you switch it off, and DTZ is
+        counted from the position on the board.
+    </div>
+
+    <div class="tb-layout">
+        <div class="tb-board-col">
+            <ModernChessboard @ref="chessBoardRazor" ChessBoard="@board" FENposition="@fen"
+                              ShowFenField="true" ShowChessNavButtons="true" ShowMoveList="true"
+                              MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Below"
+                              ShowSizeSlider="true" SizeKey="tablebase"
+                              ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
+                              ExtraArrows="@Arrows"
+                              OnMoveMadeOnBoard="_ => PositionChanged()" OnNewFENOnBoard="_ => PositionChanged()" />
+        </div>
+
+        <div class="tb-panel">
+            <MudTextField T="string" Label="Tablebase folder" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Value="@folder" ValueChanged="FolderChanged"
+                          HelperText="@($"Several folders separated by '{System.IO.Path.PathSeparator}'. Default from Settings.")" />
+
+            @if (TablebaseLookup.halfmoveClock(fen) is var clock && clock > 0)
+            {
+                <MudSwitch T="bool" Value="@countClock" ValueChanged="CountClockChanged" Color="Color.Primary"
+                           Label="@($"Count the halfmove clock ({clock})")"
+                           title="Off: the clock is read as 0 - what the position is worth if the clock starts now, as lichess shows it" />
+            }
+
+            <div class="tb-status @RootClass">
+                @if (busy)
+                {
+                    <span>Probing…</span>
+                }
+                else if (error != null)
+                {
+                    <span>@error</span>
+                }
+                else if (result != null)
+                {
+                    <span>@TablebaseLookup.statusText(folder, result)</span>
+                }
+            </div>
+
+            @if (result != null && !busy)
+            {
+                @if (result.Status.IsNoTablebaseFolder)
+                {
+                    <div class="tb-hint">Set the folder above, or once for all pages in <a href="/settings">Settings</a>.</div>
+                }
+                @if (result.Status.IsCastlingRights)
+                {
+                    <button class="tb-btn" @onclick="RemoveCastling">Remove castling rights</button>
+                }
+                @if (TablebaseLookup.clockNote(result) is { } clockNote)
+                {
+                    <div class="tb-hint">@clockNote.Value</div>
+                }
+                @if (TablebaseLookup.wdlOnlyNote(result) is { } wdlNote)
+                {
+                    <div class="tb-hint">@wdlNote.Value</div>
+                }
+
+                @foreach (var group in result.Moves.GroupBy(m => m.Category.Tag))
+                {
+                    var first = group.First();
+                    <div class="tb-group-title @CategoryClass(first.Category)">
+                        @TablebaseLookup.categoryText(first.Category)
+                        <span class="tb-count">@group.Count()</span>
+                    </div>
+                    @foreach (var m in group)
+                    {
+                        var move = m;
+                        <div class="tb-row @CategoryClass(move.Category)" title="Play @move.San"
+                             @onclick="() => Play(move.Uci)"
+                             @onmouseenter="() => hoverUci = move.Uci" @onmouseleave="() => hoverUci = null">
+                            <span class="tb-san">@move.San</span>
+                            <span class="tb-note">@TablebaseLookup.moveNote(move)</span>
+                        </div>
+                    }
+                }
+            }
+
+            <div class="tb-btn-row">
+                <button class="tb-btn" @onclick="Analyze" title="Open in single-engine analysis">Analyze</button>
+                <button class="tb-btn" @onclick="EditBoard" title="Open in the board editor">Edit board</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "fen")] public string FenParam { get; set; }
+
+    private const string EmptyBoardFen = "8/8/8/8/8/8/8/8 w - - 0 1";
+    private const string DefaultFen = "8/8/8/8/8/2k5/8/K6Q w - - 0 1";
+
+    private ModernChessboard chessBoardRazor;
+    private Chess.Board board = new();
+    private string fen = DefaultFen;
+    private string folder = "";
+    private TablebaseLookup.TbLookup result;
+    private string error;
+    private bool busy;
+    private int lookupId;
+    private string hoverUci;
+    private bool countClock = true;
+    // What the shown answer is for: the board raises more than one event for some changes.
+    private (string Fen, string Folder, bool CountClock) lookedUp;
+
+    protected override async Task OnInitializedAsync()
+    {
+        folder = SettingsService.Settings.TablebaseFolder ?? "";
+        countClock = SettingsService.Settings.TablebaseCountClock;
+        // The board shows the probed form: the castling rights as the board reads them, the clock kept.
+        if (!string.IsNullOrEmpty(FenParam) && BoardUtils.validateFen(FenParam).IsValid)
+            fen = TablebaseLookup.probeFen(FenParam);
+        board.ResetBoardStateFromFen(fen);
+        await Lookup(recheckFolder: true);
+    }
+
+    // Not awaited: the board finishes its own move update while the tables are probed.
+    private Task PositionChanged()
+    {
+        fen = board.FEN();
+        _ = Lookup(recheckFolder: false);
+        return Task.CompletedTask;
+    }
+
+    private Task FolderChanged(string value)
+    {
+        folder = value?.Trim() ?? "";
+        return Lookup(recheckFolder: true);
+    }
+
+    private Task CountClockChanged(bool value)
+    {
+        countClock = value;
+        var settings = SettingsService.Settings;
+        settings.TablebaseCountClock = value;
+        SettingsService.Save(settings);
+        return Lookup(recheckFolder: false);
+    }
+
+    // The probe maps table files on first use; off the dispatcher, and only the latest answer is
+    // shown. A folder that is set (again) is read again, in case tables were added to it.
+    private async Task Lookup(bool recheckFolder)
+    {
+        if (!recheckFolder && lookedUp == (fen, folder, countClock)) return;
+        lookedUp = (fen, folder, countClock);
+        var id = ++lookupId;
+        var position = fen;
+        var path = folder;
+        var count = countClock;
+        busy = true;
+        StateHasChanged();
+        TablebaseLookup.TbLookup r = null;
+        string failure = null;
+        try
+        {
+            r = await Task.Run(() =>
+            {
+                if (recheckFolder && TablebaseProbe.tablebasesExist(path))
+                    TablebaseProbe.useTables(true, path);
+                return TablebaseLookup.lookupWith(count, path, position);
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Tablebase lookup failed for {Fen}", position);
+            failure = $"The tablebase lookup failed: {ex.Message}";
+        }
+        if (id != lookupId) return;
+        // A failed lookup is tried again on the next event for the same position.
+        if (failure != null) lookedUp = default;
+        result = r;
+        error = failure;
+        hoverUci = null;
+        busy = false;
+        StateHasChanged();
+    }
+
+    // The board reports the move (OnMoveMadeOnBoard), which starts the lookup.
+    private async Task Play(string uci)
+    {
+        if (chessBoardRazor != null) await chessBoardRazor.PlayMove(uci);
+    }
+
+    private async Task RemoveCastling()
+    {
+        var stripped = TablebaseLookup.withoutCastling(fen);
+        if (stripped == null) return;
+        fen = stripped.Value;
+        board.ResetBoardStateFromFen(fen);
+        if (chessBoardRazor != null) await chessBoardRazor.OnReceivedFen(fen);
+        await Lookup(recheckFolder: false);
+    }
+
+    private void Analyze() => Nav.NavigateTo($"/analysis/single?fen={Uri.EscapeDataString(fen)}");
+
+    private void EditBoard() => Nav.NavigateTo($"/editor?fen={Uri.EscapeDataString(fen)}");
+
+    // The best move in green - only when DTZ ranks the moves (the WDL tables alone cannot tell the
+    // fastest of several wins), or for a mate; the move under the mouse in blue.
+    private IReadOnlyList<EbArrow> Arrows
+    {
+        get
+        {
+            var arrows = new List<EbArrow>();
+            if (result == null || busy || result.Moves.Length == 0) return arrows;
+            var best = result.Moves[0];
+            if (result.HasDtz || best.IsCheckmate)
+                arrows.Add(new EbArrow(best.Uci.Substring(0, 2), best.Uci.Substring(2, 2), "#4caf50", 0.8));
+            if (hoverUci != null && (hoverUci != best.Uci || arrows.Count == 0))
+                arrows.Add(new EbArrow(hoverUci.Substring(0, 2), hoverUci.Substring(2, 2), "#42a5f5", 0.8));
+            return arrows;
+        }
+    }
+
+    private static string CategoryClass(TablebaseLookup.TbCategory c) =>
+        c.IsWin ? "tb-win" : c.IsCursedWin ? "tb-cursed" : c.IsDraw ? "tb-draw" : c.IsBlessedLoss ? "tb-blessed" : "tb-loss";
+
+    private string RootClass =>
+        result?.Status is TablebaseLookup.TbStatus.Answered a ? CategoryClass(a.Item1)
+        : result?.Status.IsCheckmate == true ? "tb-loss"
+        : result?.Status.IsStalemate == true ? "tb-draw"
+        : result != null || error != null ? "tb-error" : "";
+}

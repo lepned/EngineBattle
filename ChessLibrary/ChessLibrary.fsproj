@@ -124,6 +124,8 @@
 
 		<!-- Deviation analysis (depends on Board, GameAnalysis) -->
 		<Compile Include="Analysis\DeviationAnalysis.fs" />
+		<!-- Tablebase page and tb verb (depends on BoardUtils, TablebaseProbe) -->
+		<Compile Include="Analysis\TablebaseLookup.fs" />
 
 		<!-- Analysis support modules (depend on engine, parser, configuration, GameAnalysis) -->
 		<Compile Include="Analysis\AnalysisHelper.fs" />

@@ -71,6 +71,12 @@ let private ensureLoaded (recheck: bool) (tablebasePath: string) =
         if not added.IsEmpty then load (loaded @ added)
         elif recheck && signature loaded <> loadedSignature then load loaded)
 
+/// The setting's folders made available for a lookup outside a run (the tablebase page and the
+/// `tb` verb); with `recheck`, tables added to a folder since it was loaded are read again - once
+/// when the folder is set, not per lookup (a reload keeps the old tables mapped).
+let useTables (recheck: bool) (tablebasePath: string) =
+    ensureLoaded recheck tablebasePath
+
 /// Set when a probe found no table for its position; cleared by each run, so the WebGUI reports
 /// again for the next tournament.
 let private noAnswerReported = ref 0
@@ -79,7 +85,7 @@ let resetProbeReports () =
     noAnswerReported.Value <- 0
 
 /// The FEN's halfmove clock; 0 when it has none.
-let private halfmoveClock (fen: string) =
+let halfmoveClock (fen: string) =
     match fen.Split(' ', StringSplitOptions.RemoveEmptyEntries) with
     | f when f.Length > 4 -> (match Int32.TryParse f.[4] with | true, n -> n | _ -> 0)
     | _ -> 0

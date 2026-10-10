@@ -1,0 +1,122 @@
+.tb-container {
+    padding: 16px 24px;
+}
+
+.tb-description {
+    opacity: 0.75;
+    font-size: 0.85rem;
+    margin: 4px 0 16px 0;
+    max-width: 720px;
+}
+
+.tb-layout {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+}
+
+/* The moves sit beside the board; below it only on a narrow window. */
+@media (max-width: 1000px) {
+    .tb-layout {
+        flex-wrap: wrap;
+    }
+}
+
+.tb-board-col {
+    flex: 0 0 auto;
+    min-width: 300px;
+}
+
+.tb-panel {
+    flex: 1 1 320px;
+    min-width: 280px;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tb-status {
+    font-size: 1.05rem;
+    font-weight: 600;
+    padding: 8px 10px;
+    border-radius: 4px;
+    border-left: 4px solid transparent;
+    background: rgba(127, 127, 127, 0.08);
+}
+
+.tb-hint {
+    opacity: 0.75;
+    font-size: 0.8rem;
+}
+
+.tb-group-title {
+    margin-top: 10px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid rgba(127, 127, 127, 0.3);
+    padding-bottom: 2px;
+}
+
+.tb-count {
+    opacity: 0.6;
+    font-weight: 400;
+    margin-left: 6px;
+}
+
+.tb-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 10px;
+    border-left: 4px solid transparent;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+
+.tb-row:hover {
+    background: rgba(127, 127, 127, 0.15);
+}
+
+.tb-san {
+    font-weight: 600;
+}
+
+.tb-note {
+    opacity: 0.8;
+}
+
+/* Category colours: the row's left edge and the group title. */
+.tb-win { border-left-color: #4caf50; }
+.tb-cursed { border-left-color: #a5d6a7; }
+.tb-draw { border-left-color: #9e9e9e; }
+.tb-blessed { border-left-color: #ef9a9a; }
+.tb-loss { border-left-color: #e53935; }
+.tb-error { border-left-color: #ff9800; }
+
+.tb-group-title.tb-win { color: #4caf50; }
+.tb-group-title.tb-cursed { color: #81c784; }
+.tb-group-title.tb-draw { color: #9e9e9e; }
+.tb-group-title.tb-blessed { color: #e57373; }
+.tb-group-title.tb-loss { color: #e53935; }
+
+.tb-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.tb-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(127, 127, 127, 0.5);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    align-self: flex-start;
+}
+
+.tb-btn:hover {
+    background: rgba(127, 127, 127, 0.15);
+}

@@ -79,6 +79,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `perft` | | Run perft move generation test |
 | `gui` | | Launch WebGUI |
 | `query` | `q` | Position query as JSON: status, legal moves, attackers, pins, insights, SEE (validator use) |
+| `tb` | `tablebase` | Every move of a position from the Syzygy tablebases: win, draw, loss with DTZ |
 | `mkdef` | `md` | Write an engine def from what the engine answers to `uci` |
 | `gendefs` | `gd` | Defs for training checkpoints, from an existing def as template |
 | `puzzletrend` | `pt` | Per-arm step curves from many puzzle runs |
@@ -640,6 +641,25 @@ edits prune castling and en passant rights), `--pv` renders a move sequence as n
 `--emit-epd` prints an EPD line instead of JSON, `--svg` draws the position with the
 insight shapes, and `--epd <file>` streams one JSON object per position. The worked
 description with field names is in the README. Aliases: `q`.
+
+### tb
+
+```bash
+dotnet run -c release -- tb <fen> [--tb <folder>] [--json] [--ignore-clock]
+```
+
+Every legal move of a position from the Syzygy tablebases, best first, in five groups from
+the side to move's view: win, cursed win (a win the 50-move rule turns into a draw), draw,
+blessed loss and loss. Wins are ordered mate, then zeroing moves (captures and pawn moves),
+then the shortest DTZ; losses by the longest DTZ. The halfmove clock counts: a win that the
+50-move rule turns into a draw from the FEN's clock on is a cursed win, and from 100 a note
+says a draw can be claimed; `--ignore-clock` reads the clock as 0 (what the position is worth if the clock starts now, as lichess shows it). DTZ is counted from the given position, so the best move has the
+position's own DTZ. Without DTZ tables (.rtbz) for the material the moves are grouped from
+the WDL tables alone; those cannot see the clock, so with the clock running a win or loss
+that is not a zeroing move is marked "50-move rule not checked". `--tb` names the folder (several separated by `;` on Windows, `:` elsewhere); without
+it `EB_SYZYGY_PATH` is used. `--json` prints the answer as JSON. Exit 1 when the tables give
+no answer (no folder, too many pieces, castling rights, no table for the material). The
+WebGUI has the same lookup on Tools > Tablebase. Aliases: `tablebase`.
 
 ### mkdef
 

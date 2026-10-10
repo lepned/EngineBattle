@@ -79,6 +79,8 @@ public class GlobalSettings
 
     // Iteration log: show the Nodes/T columns as per-iteration cost instead of totals.
     public bool IterationLogPerIteration { get; set; }
+    // Tablebase page: count the FEN's halfmove clock (off = read it as 0, as lichess does).
+    public bool TablebaseCountClock { get; set; } = true;
     public int CandidateMovesHeight { get; set; } = 320;
 
     // Board width in px on the analysis pages (360-900), set with the slider above the

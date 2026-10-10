@@ -117,6 +117,8 @@ type VerbResult =
     // emitEpd prints an EPD line (with the epdOps "name=value" opcodes) instead of JSON;
     // svgPath additionally writes an insights-overlay board SVG to the given file
     | Query of fen:string * square:string option * epd:string option * pv:string option * edits:(string * string) list * emitEpd:bool * epdOps:(string * string) list * svgPath:string option
+    // every move of a position from the Syzygy tables (the tablebase page); tb = folders, else EB_SYZYGY_PATH
+    | Tablebase of fen:string * tb:string option * json:bool * ignoreClock:bool
 
 
 type CLIArguments =
@@ -773,6 +775,22 @@ module CustomParser =
                         | _ -> stop <- true
                     parseArgs args i (Verb (PuzzleTrend (folder, arm, testType, ratingGroup, csvOut, minSteps)) :: acc)
                 else failwith "Missing folder for puzzletrend"
+            | "tb" | "tablebase" ->
+                if index + 1 < args.Length then
+                    let fen = args.[index + 1]
+                    let mutable i = index + 2
+                    let mutable tb = None
+                    let mutable json = false
+                    let mutable ignoreClock = false
+                    let mutable stop = false
+                    while not stop && i < args.Length do
+                        match args.[i].ToLower() with
+                        | "--tb" -> tb <- Some (valueOf args i); i <- i + 2
+                        | "--json" -> json <- true; i <- i + 1
+                        | "--ignore-clock" -> ignoreClock <- true; i <- i + 1
+                        | _ -> stop <- true
+                    parseArgs args i (Verb (Tablebase (fen, tb, json, ignoreClock)) :: acc)
+                else failwith "Missing FEN for tb: tb <fen> [--tb <folder>] [--json] [--ignore-clock]"
             | "mkdef" | "md" ->
                 // An engine def from a running engine: what `uci` answers is what the def gets.
                 if index + 1 < args.Length then
