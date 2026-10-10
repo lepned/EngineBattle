@@ -78,6 +78,9 @@ module TimeControlTypes =
   /// they always did (TimeControl.PeriodFor).
   type TimeConfig =
     { Id: int; Fixed: TimeSpan; Increment: TimeSpan; NodeLimit: bool; Nodes: int
+      /// Every move from the network's value head alone (Lc0 `go nodes 2`, Ceres `go value`), no
+      /// clock. Takes precedence over the other fields.
+      ValueHead: bool
       MoveTime: TimeSpan; MovesToGo: int }
     with
       /// A time per move rather than a clock (and not a node limit, which takes precedence).
@@ -89,13 +92,14 @@ module TimeControlTypes =
       /// period when the setting has none.
       member x.PgnText (period: int) =
         let seconds (t: TimeSpan) = Math.Round(t.TotalSeconds, 3).ToString("0.###", CultureInfo.InvariantCulture)
-        if x.NodeLimit || x.IsMoveTime then "-"
+        if x.ValueHead || x.NodeLimit || x.IsMoveTime then "-"
         else
           let clock = if x.Increment > TimeSpan.Zero then $"{seconds x.Fixed}+{seconds x.Increment}" else seconds x.Fixed
           let moves = if x.MovesToGo > 0 then x.MovesToGo else period
           if moves > 0 then $"{moves}/{clock}" else clock
       override x.ToString() =
-        if x.NodeLimit then formatNodes x.Nodes
+        if x.ValueHead then "value head"
+        elif x.NodeLimit then formatNodes x.Nodes
         elif x.IsMoveTime then formatMoveTime x.MoveTime
         elif x.MovesToGo > 0 then sprintf "%d/%s" x.MovesToGo (formatTimeControl x.Fixed x.Increment)
         else formatTimeControl x.Fixed x.Increment

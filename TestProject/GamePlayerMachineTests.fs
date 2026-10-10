@@ -12,7 +12,7 @@ let private ms (n: float) = TimeSpan.FromMilliseconds n
 
 let private settings =
   { Player = "E"; CanPing = true; PingTimeout = ms 15000.0; StopWait = ms 10000.0
-    StatusInterval = ms 1000.0; PolicyTest = false }
+    StatusInterval = ms 1000.0 }
 
 let private view = { ShortPv = id; ShortSan = ignore }
 

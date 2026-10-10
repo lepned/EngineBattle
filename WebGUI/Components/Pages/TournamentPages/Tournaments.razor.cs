@@ -397,7 +397,7 @@ public partial class Tournaments
 					wtest = true;
 			}
 
-			if (tournament.PlayMode.IsValue)
+			if (tournament.EngineSetup.Engines.Any(e => tournament.FindTimeControl(e.TimeControlID).ValueHead))
 			{
 				runWithLogLiveStats = false;
 			}

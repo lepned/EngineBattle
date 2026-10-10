@@ -630,34 +630,17 @@ module TypesDef =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
         EngineDefList: string list }
-    /// How the engines play every move: Search (the time control decides), Policy (the policy head
-    /// alone, `go nodes 1`) or Value (the value head alone). Written by name.
-    [<RequireQualifiedAccess>]
-    type PlayMode =
-      | Search
-      | Policy
-      | Value
-
-    type PlayModeConverter() =
-        inherit JsonConverter<PlayMode>()
-        override _.Read(reader: byref<Utf8JsonReader>, _t: Type, _o: JsonSerializerOptions) =
-            match (reader.GetString() |> Option.ofObj |> Option.defaultValue "").Trim().ToLowerInvariant() with
-            | "" | "search" -> PlayMode.Search
-            | "policy" -> PlayMode.Policy
-            | "value" -> PlayMode.Value
-            | other -> raise (JsonException $"PlayMode \"{other}\": expected Search, Policy or Value")
-        override _.Write(writer: Utf8JsonWriter, value: PlayMode, _o: JsonSerializerOptions) =
-            writer.WriteStringValue(match value with PlayMode.Search -> "Search" | PlayMode.Policy -> "Policy" | PlayMode.Value -> "Value")
-
     /// What a tournament written by an older EngineBattle (a file or a live-feed sender) means in
     /// today's shape. Called by every reader of a tournament: the file and the live feed.
     /// - A TestOptions block becomes the top-level NumberOfGamesInParallel (also under its older
-    ///   name NumberOfGamesInParallelConsoleOnly), GPUs and PlayMode (ValueTest wins over PolicyTest,
-    ///   as it did); a top-level key that has a value wins.
+    ///   name NumberOfGamesInParallelConsoleOnly) and GPUs; a top-level key that has a value wins.
+    /// - Value- or policy-head play over the whole tournament (PolicyTest, ValueTest) is a time
+    ///   control now ("ValueHead": true, "Nodes": 1): `strict` (a file) refuses it with that advice;
+    ///   the live feed drops it (a viewer shows the games anyway).
     /// - A draw or win section without "Enabled" is on (written before the switch existed); tablebase
     ///   adjudication without "UseTBAdjudication" is on when it names a folder.
-    /// - No PlayMode is Search.
-    let readOlderShape (file: Nodes.JsonObject) =
+    let readOlderShape (strict: bool) (file: Nodes.JsonObject) =
+      let refuse (message: string) = if strict then raise (JsonException message)
       let missing (key: string) = isNull file.[key]
       match file.["TestOptions"] with
       | :? Nodes.JsonObject as old ->
@@ -673,13 +656,10 @@ module TypesDef =
               |> Option.iter (fun v -> file.["NumberOfGamesInParallel"] <- v.DeepClone())
           if missing "GPUs" then
               first [ "GPUs" ] |> Option.iter (fun v -> file.["GPUs"] <- v.DeepClone())
-          let value, policy = flag "ValueTest", flag "PolicyTest"
-          if missing "PlayMode" then
-              if value then file.["PlayMode"] <- Nodes.JsonValue.Create "Value"
-              elif policy then file.["PlayMode"] <- Nodes.JsonValue.Create "Policy"
+          if flag "ValueTest" then refuse "TestOptions.ValueTest: value-head play is a time control with \"ValueHead\": true (per engine)"
+          elif flag "PolicyTest" then refuse "TestOptions.PolicyTest: policy-head play is a time control: give the engines one with \"Nodes\": 1 (the same go nodes 1, and per engine)"
       | _ -> ()
       file.Remove "TestOptions" |> ignore
-      if missing "PlayMode" then file.["PlayMode"] <- Nodes.JsonValue.Create "Search"
       match file.["Adjudication"] with
       | :? Nodes.JsonObject as adj ->
           for name in [ "DrawOption"; "WinOption" ] do
@@ -735,8 +715,6 @@ module TypesDef =
         NumberOfGamesInParallel: int
         /// The GPU ids the parallel games are spread over; null for none.
         GPUs: int[]
-        [<JsonConverter(typeof<PlayModeConverter>)>]
-        PlayMode: PlayMode
         PauseAfterRound: int
         DelayBetweenGames: TimeSpan
         MoveOverhead: TimeSpan
@@ -1039,7 +1017,6 @@ module TypesDef =
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
           NumberOfGamesInParallel = 1
           GPUs = null
-          PlayMode = PlayMode.Search
           Adjudication =
             {
               DrawOption = DrawOption.Off

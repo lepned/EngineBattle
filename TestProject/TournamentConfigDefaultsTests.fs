@@ -29,7 +29,6 @@ let ``a config without adjudication or mode sections reads, with adjudication of
     Assert.Equal(4, t.LadderOptions.GamePairsPerMatch)
     Assert.Equal(2, t.SwissOptions.GamesPerMatch)
     Assert.Equal(1, t.NumberOfGamesInParallel)
-    Assert.Equal(PlayMode.Search, t.PlayMode)
     Assert.Null t.GPUs
     Assert.Equal("", t.Site)
 
@@ -49,29 +48,37 @@ let ``a section that is given is read as written, field by field`` () =
 
 [<Fact>]
 let ``an old TestOptions block reads as the top-level settings`` () =
-    // both of the parallel setting's old names, the GPUs, and the heads as PlayMode
-    let t = read (minimal """, "TestOptions": { "NumberOfGamesInParallelConsoleOnly": 3, "GPUs": [0, 1], "PolicyTest": true, "WriteToConsole": true }""")
+    // both of the parallel setting's old names and the GPUs
+    let t = read (minimal """, "TestOptions": { "NumberOfGamesInParallelConsoleOnly": 3, "GPUs": [0, 1], "PolicyTest": false, "ValueTest": false, "WriteToConsole": true }""")
     Assert.Equal(3, t.NumberOfGamesInParallel)
     Assert.Equal<int[]>([| 0; 1 |], t.GPUs)
-    Assert.Equal(PlayMode.Policy, t.PlayMode)
     Assert.Equal(2, (read (minimal """, "TestOptions": { "NumberOfGamesInParallel": 2 }""")).NumberOfGamesInParallel)
-    // ValueTest won over PolicyTest, and still does
-    Assert.Equal(PlayMode.Value, (read (minimal """, "TestOptions": { "PolicyTest": true, "ValueTest": true }""")).PlayMode)
     // a top-level key wins over the block
-    let both = read (minimal """, "NumberOfGamesInParallel": 4, "PlayMode": "Search", "TestOptions": { "NumberOfGamesInParallel": 2, "ValueTest": true }""")
-    Assert.Equal((4, PlayMode.Search), (both.NumberOfGamesInParallel, both.PlayMode))
+    Assert.Equal(4, (read (minimal """, "NumberOfGamesInParallel": 4, "TestOptions": { "NumberOfGamesInParallel": 2 }""")).NumberOfGamesInParallel)
 
 [<Fact>]
-let ``PlayMode is read by name, any case, and written by name`` () =
-    Assert.Equal(PlayMode.Value, (read (minimal """, "PlayMode": "value" """)).PlayMode)
-    Assert.Equal(PlayMode.Policy, (read (minimal """, "PlayMode": "Policy" """)).PlayMode)
-    let opts = System.Text.Json.JsonSerializerOptions()
-    let written = System.Text.Json.JsonSerializer.Serialize({ Tournament.Empty with PlayMode = PlayMode.Policy }, opts)
-    Assert.Contains("\"PlayMode\":\"Policy\"", written)
-    Assert.DoesNotContain("TestOptions", written)
-    // a name it does not know is a parse error that says so
-    let ex = Assert.ThrowsAny<exn>(fun () -> read (minimal """, "PlayMode": "fast" """) |> ignore)
-    Assert.Contains("expected Search, Policy or Value", ex.Message)
+let ``policy- and value-head play are time controls; an old file that asks for them is told so`` () =
+    let told (extra: string) = (Assert.ThrowsAny<exn>(fun () -> read (minimal extra) |> ignore)).Message
+    Assert.Contains("\"Nodes\": 1", told """, "TestOptions": { "PolicyTest": true }""")
+    Assert.Contains("\"ValueHead\": true", told """, "TestOptions": { "ValueTest": true }""")
+
+[<Fact>]
+let ``a ValueHead time control has no clock and plays the value head`` () =
+    let path = Path.GetTempFileName()
+    File.WriteAllText(path, """{ "Name": "t", "EngineSetup": { "EngineDefFolder": "", "EngineDefList": [] },
+                                 "TimeControl": { "TimeConfigs": [ { "Id": 1, "Tc": "60+1" }, { "Id": 2, "ValueHead": true } ] } }""")
+    let t = try (match Configuration.JSON.tryReadTournamentJson path with Ok t -> t | Error e -> failwith e) finally File.Delete path
+    let value = t.TimeControl.GetTimeConfig 2
+    Assert.True value.ValueHead
+    Assert.True value.NodeLimit
+    Assert.Equal("value head", string value)
+    Assert.Equal("-", value.PgnText 0)
+    Assert.False (t.TimeControl.GetTimeConfig 1).ValueHead
+    // no clock: a node limit's
+    let side = ChessLibrary.Game.Clock.create t.TimeControl value System.TimeSpan.Zero
+    Assert.True(match side.Limit with ChessLibrary.Game.Clock.Nodes _ -> true | _ -> false)
+    Assert.Equal(ChessLibrary.Game.GoCommand.Value, ChessLibrary.Game.GoCommand.forMove false t.TimeControl value 0 side side)
+    Assert.Equal(ChessLibrary.Game.GoCommand.NodeCount 2, ChessLibrary.Game.GoCommand.forMove true t.TimeControl value 0 side side)
 
 [<Fact>]
 let ``a null in the file is the default`` () =
@@ -122,8 +129,8 @@ let ``a short delay between games is a hint for the WebGUI, and nothing for the 
 
 [<Fact>]
 let ``an older shape: a top-level null is no value, a flag that is not a bool is an error`` () =
-    let t = read (minimal """, "NumberOfGamesInParallel": null, "PlayMode": null, "TestOptions": { "NumberOfGamesInParallel": 3, "ValueTest": true }""")
-    Assert.Equal((3, PlayMode.Value), (t.NumberOfGamesInParallel, t.PlayMode))
+    let t = read (minimal """, "NumberOfGamesInParallel": null, "TestOptions": { "NumberOfGamesInParallel": 3 }""")
+    Assert.Equal(3, t.NumberOfGamesInParallel)
     let ex = Assert.ThrowsAny<exn>(fun () -> read (minimal """, "TestOptions": { "ValueTest": "true" }""") |> ignore)
     Assert.Contains("TestOptions.ValueTest must be true or false", ex.Message)
 

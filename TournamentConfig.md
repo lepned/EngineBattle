@@ -61,16 +61,14 @@ says `"Enabled": false` (or, for tablebases, `"UseTBAdjudication": false`).
     only when they answer: a position with more pieces than the tables hold, a missing table, or a
     win the 50-move rule turns into a draw is left to the evaluation rules above.
 
-### Parallel games and play mode
+### Parallel games
 
-These three are top-level settings. A file from before they moved still has them in a
-`TestOptions` block (`NumberOfGamesInParallel`, `GPUs`, `PolicyTest`, `ValueTest`); it is read as
-these settings, and a setting given at the top level wins.
+These are top-level settings. A file from before they moved still has them in a `TestOptions`
+block; it is read as these settings, and a setting given at the top level wins. The block's
+`PolicyTest` and `ValueTest` are time controls now - `"Nodes": 1` and
+`"ValueHead": true`, see Time Control - and a file that still asks for them is refused with that
+advice.
 
-- **PlayMode**: How the engines play every move. `Search` (the default) plays the time control;
-  `Policy` plays the policy head alone (`go nodes 1`), `Value` the value head alone (Lc0 with
-  `go nodes 2`, other engines with `go value`). Policy and Value compare raw networks; neither
-  ponders.
 - **NumberOfGamesInParallel**: Number of games to run in parallel (console and WebGUI). Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. The number is lowered automatically when one copy of each engine, times that number, does not fit in 70% of the RAM (each engine is started once before play to measure it; a console `match` prints a line saying so when it lowers the number). A `GPUs` list with more than one entry raises it to at least the number of GPUs. PreventMoveDeviation works with parallel play: a game that repeats an earlier game's opening and colours waits until that game has finished and merged its moves, so the parallelism you actually get is bounded by how many distinct opening/engine/colour combinations are ready - a gauntlet with `RandomOpenings: false`, where the challenger plays each opening with the same colour against every opponent, degrades toward sequential. Replay from a reference PGN or a resumed PGN is unaffected (the file is complete before play starts), which is how the tuner uses it. In the WebGUI, starting a tournament with a value above 1 opens the multi-board grid (`/tournament-grid`); user adjudication of the running game is available when this is 1. Engines are started when a game first needs them and stopped after a game unless one of the next few games (as many as run in parallel) needs them again, so a large field never has every engine running at once; a two-engine match keeps both. The old name `NumberOfGamesInParallelConsoleOnly` is still read inside an old `TestOptions` block (see above).
 - **GPUs** (optional): List of GPU device ids for parallel games, e.g. `[0, 1]`. Each engine runs up to one instance per parallel game, and instance *i* (counting from 0) of every engine gets id `GPUs[i % GPUs.Length]`, so with two GPUs the first copy of each engine uses GPU 0 and the second GPU 1. The id is written into the engine's device option as named by `DeviceOption` and `DeviceTemplate` in its engine def (see `EngineDefConfig.md`); an engine def without them starts unchanged. Omitted, `null` or empty = no device assignment.
 
@@ -203,7 +201,9 @@ Write a setting in the short form - the same notation as `match`'s `tc=` and `st
     { "Id": 2, "Tc": "2:30+2" },
     { "Id": 3, "Tc": "40/5:00+2" },
     { "Id": 4, "St": 1 },
-    { "Id": 5, "Nodes": 800 }
+    { "Id": 5, "Nodes": 800 },
+    { "Id": 6, "Nodes": 1 },
+    { "Id": 7, "ValueHead": true }
   ]
 }
 ```
@@ -214,7 +214,8 @@ Write a setting in the short form - the same notation as `match`'s `tc=` and `st
 | base as `m:ss` | minutes and seconds | `"2:30+2"` 2 min 30 s + 2 s, `"90:00+30"` 90 min + 30 s |
 | `"Tc": "moves/base+inc"` | a repeating period: after that many moves the base is added again | `"40/5:00+2"` 5 min per 40 moves + 2 s, `"40/300"` |
 | `"St": seconds` | a fixed time per move, no clock (`go movetime`) | `1`, `0.5`, `"0.5"` |
-| `"Nodes": n` | a node limit per move, no clock (`go nodes`) | `800`, `150000` |
+| `"Nodes": n` | a node limit per move, no clock (`go nodes`) | `800`, `150000`; `1` plays a net's policy head alone |
+| `"ValueHead": true` | every move from a net's value head alone, no clock (Lc0 `go nodes 2`, Ceres `go value`) | Lc0 and Ceres only |
 
 - Seconds are the unit everywhere: the base (or `m:ss`), the increment and `St`. Decimals are fine
   (`"10+0.1"`, `"St": 0.25`); a trailing `s` is allowed (`"60s+1"`). There is no `m` unit - write
@@ -235,7 +236,13 @@ How each kind plays:
   a loss over that says nothing about the engine). The clock in the GUI shows `St` plus the margin
   at every move and counts down while the engine thinks.
 - **Node limit (`Nodes`)**: the engine gets `go nodes`. There is no clock and no loss on time; the
-  GUI shows the limit (`800 nodes`) where a clock would be.
+  GUI shows the limit (`800 nodes`) where a clock would be. `"Nodes": 1` is a network's policy head
+  alone (its top move, no search) - for an engine without a network it is a minimal search.
+- **Value head (`ValueHead`)**: every move is chosen by the network's value head alone - Lc0 with
+  `go nodes 2` and its ValueOnly setting, Ceres with `go value`. No clock, no pondering. Only Lc0
+  and Ceres can play it: the engines with such a setting are checked before the first game, and a
+  run with any other engine there stops and names it. Like every setting it is per engine, so a
+  value-head net can play a searching engine.
 
 The time settings in the GUI's banner and the PGN are written the same way: `1' + 1''`,
 `40/5' + 2''`, `1'' / move`, `800 nodes`.
@@ -291,7 +298,6 @@ setting.
   "Challengers": 1,
   "Rounds": 50,
   "NumberOfGamesInParallel": 2,
-  "PlayMode": "Search",
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",

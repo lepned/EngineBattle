@@ -58,8 +58,7 @@ type Settings =
     CanPing: bool
     PingTimeout: TimeSpan
     StopWait: TimeSpan
-    StatusInterval: TimeSpan
-    PolicyTest: bool }
+    StatusInterval: TimeSpan }
 
 type Waiting =
   | ForBestMove
@@ -149,7 +148,7 @@ let private thinkingLine (settings: Settings) now (t: Thinking) (line: EngineLin
           Thinking { t with Stats = stats; LastStatusAt = now }, flushed @ [ Emit (Status stats.Status) ]
       | Some stats -> Thinking { t with Stats = stats }, flushed
       | None -> Thinking { t with Stats = stats }, flushed
-  | NNStats text when not settings.PolicyTest ->
+  | NNStats text ->
       match onNNLine text stats with
       | stats, Some block ->
           let stats, effects = emitBlock view block stats

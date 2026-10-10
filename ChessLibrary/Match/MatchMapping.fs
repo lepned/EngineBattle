@@ -44,7 +44,7 @@ module MatchMapping =
       let limitedBy = if e.Nodes > 0L then "nodes" elif perMove then "st" else "the clock"
       if e.Plies <> 0L then notes.Add $"{e.Name}: depth={e.Plies} is not applied; the search is limited by {limitedBy} only"
       let none = { Id = 0; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero; NodeLimit = false; Nodes = 0
-                   MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+                   ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
       if e.Nodes > 0L then
         if timed then notes.Add $"{e.Name}: tc= is not applied together with nodes=; the search is limited by nodes only"
         if perMove then notes.Add $"{e.Name}: st= is not applied together with nodes=; the search is limited by nodes only"

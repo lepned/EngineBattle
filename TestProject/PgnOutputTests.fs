@@ -77,7 +77,7 @@ let ``the standard's tags: Elo, time control, termination, opening, variation an
 
 [<Fact>]
 let ``a time setting's PGN TimeControl text`` () =
-  let c : TimeControlTypes.TimeConfig = { Id = 1; Fixed = TimeSpan.FromSeconds 60.0; Increment = TimeSpan.FromSeconds 0.6; NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+  let c : TimeControlTypes.TimeConfig = { Id = 1; Fixed = TimeSpan.FromSeconds 60.0; Increment = TimeSpan.FromSeconds 0.6; NodeLimit = false; Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
   Assert.Equal("60+0.6", c.PgnText 0)
   Assert.Equal("300", { c with Fixed = TimeSpan.FromSeconds 300.0; Increment = TimeSpan.Zero }.PgnText 0)
   Assert.Equal("40/300+2", { c with Fixed = TimeSpan.FromSeconds 300.0; Increment = TimeSpan.FromSeconds 2.0; MovesToGo = 40 }.PgnText 0)

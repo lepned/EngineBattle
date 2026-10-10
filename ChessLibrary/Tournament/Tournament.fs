@@ -233,10 +233,12 @@ module Manager =
         | None -> ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
 
       let mutable validationPassed = true
-      // value head play: every engine checked first
-      if tournament.PlayMode = PlayMode.Value then
-        //validate value tests
-        for engineConfig in tournament.EngineSetup.Engines do
+      let refused = ResizeArray<string>()
+      // value-head play: every engine with such a time control checked first
+      let valueEngines =
+        tournament.EngineSetup.Engines |> List.filter (fun e -> (tournament.FindTimeControl e.TimeControlID).ValueHead)
+      if not valueEngines.IsEmpty then
+        for engineConfig in valueEngines do
           let isLc0 = engineConfig.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
           match PuzzleEngineAnalysis.getPuzzleValueEngine engineConfig with
           |Some engine ->
@@ -247,7 +249,8 @@ module Manager =
                 tournament.EngineSetup.Engines <- tournament.EngineSetup.Engines |> List.map(fun e -> if e.Name = engineConfig.Name then conf else e)
             printfn "Value test engine found: %s" engine.Name
           |_ -> 
-            validationPassed <- false //failwith "Value test engine not found"            
+            validationPassed <- false
+            refused.Add engineConfig.Name
             if isLc0 then
               ConsoleUtils.printInColor ConsoleColor.Yellow $"The Lc0 binary used does not support value head testing: {engineConfig.Name}. Please make sure to use a binary that supports value head tests via an option called ValueOnly or by using command line argument valuehead for Lc0 rewrite"              
             else
@@ -269,8 +272,8 @@ module Manager =
         logger.LogInformation($"Elapsed tournament time in seconds: {(timer.ElapsedMilliseconds/1000L)}")
         res
       else
-        logger.LogInformation("Tournament validation failed, please make sure that all engines in the tournament supports value head tests.")
-        []
+        // the run fails and says why (console exit 1, the GUI's red notice), not 0 games "completed"
+        failwith $"""A ValueHead time control needs an engine with a value head (Lc0 or Ceres): {String.Join(", ", refused)} cannot play it"""
   
   type Runner (logger: ILogger, callback: Action<Update>, reloadTournament:bool) =
     let cts = new CancellationTokenSource()

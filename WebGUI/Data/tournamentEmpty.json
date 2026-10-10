@@ -14,7 +14,6 @@
   "Challengers": 1,
   "Rounds": 50,
   "NumberOfGamesInParallel": 1,
-  "PlayMode": "Search",
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",

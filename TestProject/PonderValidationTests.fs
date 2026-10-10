@@ -42,7 +42,7 @@ open System
 open ChessLibrary.TimeControlTypes
 open ChessLibrary.TypesDef.Tournament
 
-let private clock = { Id = 1; Fixed = TimeSpan.FromSeconds 10.0; Increment = TimeSpan.FromSeconds 0.1; NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+let private clock = { Id = 1; Fixed = TimeSpan.FromSeconds 10.0; Increment = TimeSpan.FromSeconds 0.1; NodeLimit = false; Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
 let private perMove = { clock with Id = 2; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero; MoveTime = TimeSpan.FromSeconds 1.0 }
 
 let private tourny allow preventDeviation =

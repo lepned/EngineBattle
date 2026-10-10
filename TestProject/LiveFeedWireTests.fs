@@ -253,18 +253,18 @@ let ``a tournament from an older sender reads its TestOptions block`` () =
     // the old shape, as a sender before the split writes it
     let node = System.Text.Json.Nodes.JsonNode.Parse(serializeUpdate (Update.EndOfTournament Tournament.Empty)).AsObject()
     let t = node.["tournament"].AsObject()
-    for key in [ "NumberOfGamesInParallel"; "GPUs"; "PlayMode" ] do t.Remove key |> ignore
+    for key in [ "NumberOfGamesInParallel"; "GPUs" ] do t.Remove key |> ignore
+    // a viewer shows a value-head tournament anyway: the feed reads what it can, it does not refuse
     t.["TestOptions"] <- System.Text.Json.Nodes.JsonNode.Parse("""{ "PolicyTest": false, "ValueTest": true, "NumberOfGamesInParallel": 3, "GPUs": null }""")
     match tryParseUpdate (node.ToJsonString()) with
-    | Some (Update.EndOfTournament old) -> Assert.Equal((3, PlayMode.Value), (old.NumberOfGamesInParallel, old.PlayMode))
+    | Some (Update.EndOfTournament old) -> Assert.Equal(3, old.NumberOfGamesInParallel)
     | other -> Assert.Fail $"expected an EndOfTournament, got {other}"
-    // a sender that says nothing of the play mode or the adjudication switches
+    // a sender that says nothing of the adjudication switches
     let adj = t.["Adjudication"].AsObject()
     adj.["DrawOption"].AsObject().Remove "Enabled" |> ignore
     t.["TestOptions"] <- System.Text.Json.Nodes.JsonNode.Parse("""{ "NumberOfGamesInParallel": 1 }""")
     match tryParseUpdate (node.ToJsonString()) with
     | Some (Update.EndOfTournament old) ->
-        Assert.Equal(PlayMode.Search, old.PlayMode)
         Assert.True old.Adjudication.DrawOption.Enabled
     | other -> Assert.Fail $"expected an EndOfTournament, got {other}"
 

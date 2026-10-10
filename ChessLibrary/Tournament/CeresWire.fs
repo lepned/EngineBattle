@@ -168,14 +168,14 @@ let private toTimeControl (o: JsonObject) : TimeControl option =
         let config =
             match kind with
             | "nodesPerMove" | "nodesForAllMoves" ->
-                { Id = 1; Fixed = durationMs 0; Increment = durationMs 0; NodeLimit = true; Nodes = nodes; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+                { Id = 1; Fixed = durationMs 0; Increment = durationMs 0; NodeLimit = true; Nodes = nodes; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
             | "secondsPerMove" ->
                 // Shown as a small 1s fixed base + an increment equal to the per-move time, so each
                 // move effectively gets ~that time. Ceres plays the games; this only labels the feed,
                 // and has not been moved to EB's own per-move mode (MoveTime) yet.
-                { Id = 1; Fixed = durationMs 1000; Increment = durationMs valueMs; NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+                { Id = 1; Fixed = durationMs 1000; Increment = durationMs valueMs; NodeLimit = false; Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
             | _ -> // secondsForAllMoves / other: fixed + increment
-                { Id = 1; Fixed = durationMs valueMs; Increment = durationMs incrMs; NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = movesToGo }
+                { Id = 1; Fixed = durationMs valueMs; Increment = durationMs incrMs; NodeLimit = false; Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = movesToGo }
         Some { TimeConfigs = [ config ]; WmovesToGo = 0; BmovesToGo = 0 }
     | _ -> None
 

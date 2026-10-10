@@ -9,7 +9,7 @@ let private ms (n: float) = TimeSpan.FromMilliseconds n
 let private sec (n: float) = TimeSpan.FromSeconds n
 
 let private config fixedTime increment =
-  { Id = 1; Fixed = fixedTime; Increment = increment; NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+  { Id = 1; Fixed = fixedTime; Increment = increment; NodeLimit = false; Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
 
 let private control (c: TimeConfig) = { TimeConfigs = [ c ]; WmovesToGo = 0; BmovesToGo = 0 }
 

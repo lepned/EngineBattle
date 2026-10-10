@@ -108,7 +108,7 @@ let private mkTc periodW periodB fixedSec incSec : TimeControl =
                 Fixed = TimeSpan.FromSeconds(float fixedSec)
                 Increment = TimeSpan.FromSeconds(float incSec)
                 NodeLimit = false
-                Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+                Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     { TimeConfigs = [cfg]; WmovesToGo = periodW; BmovesToGo = periodB }
 
 [<Fact>]
@@ -176,7 +176,7 @@ let ``a time control past 24 hours survives into the UCI go command`` () =
                 Fixed = TimeSpan.FromHours 30.0
                 Increment = TimeSpan.FromSeconds 30.0
                 NodeLimit = false
-                Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+                Nodes = 0; ValueHead = false; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
     let union = tc.GetTime cfg
     let cmd = TimeControlCommands.uciTimeCommand union cfg.Fixed cfg.Fixed

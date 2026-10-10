@@ -39,7 +39,6 @@ module ConsoleHelper =
     printfn $"{nameof(tournament.Opening.OpeningsTwice)}: {tournament.Opening.OpeningsTwice}"
     printfn $"{nameof(tournament.Opening.OpeningsPly)}: {tournament.Opening.OpeningsPly}"
     printfn $"Win adjudication: {tournament.AdjudicationText()}"
-    printfn $"Play mode: {tournament.PlayMode}"
     printfn $"Number of games in parallel: {tournament.NumberOfGamesInParallel}"
     if tournament.GPUs <> null && tournament.GPUs.Length > 0 then
       let gpuList = String.Join(", ", tournament.GPUs)
@@ -340,13 +339,12 @@ module Validation =
           { config with Options = options }
 
   /// Whether the game loop asks the engine to ponder: only on a clock, and not with deviation
-  /// prevention or the value/policy tests. Its Ponder option is set to this.
+  /// prevention or value-head play. Its Ponder option is set to this.
   let willBeAskedToPonder (tourny: Tournament) (config: EngineConfig) =
       tourny.AllowPondering && not tourny.PreventMoveDeviation
-      && tourny.PlayMode = PlayMode.Search
       && (try
             let tc = tourny.TimeControl.GetTimeConfig config.TimeControlID
-            not tc.IsMoveTime && not tc.NodeLimit
+            not tc.IsMoveTime && not tc.NodeLimit && not tc.ValueHead
           with _ -> false)
 
   /// The engine config with its Ponder option as this tournament runs it (withPonderOption).
@@ -817,6 +815,11 @@ module JSON =
                               | _ -> fail "St is the seconds per move, more than 0 (such as 1 or 0.5)"
                           elif has "Nodes" && not (has "NodeLimit") && given.IsEmpty then
                               c.["NodeLimit"] <- JsonValue.Create true
+                          // value head alone and no time: no clock either (as a node limit)
+                          if (match c.["ValueHead"] with :? JsonValue as v -> v.GetValueKind() = JsonValueKind.True | _ -> false)
+                             && given.IsEmpty && not (has "NodeLimit") then
+                              c.["NodeLimit"] <- JsonValue.Create true
+                              if not (has "Nodes") then c.["Nodes"] <- JsonValue.Create 1
                       | _ -> ()
               | _ -> ()
           | _ -> ()
@@ -842,7 +845,7 @@ module JSON =
   let configOverDefaults (root: JsonNode) (options: JsonSerializerOptions) : unit =
       match root with
       | :? JsonObject as file ->
-          readOlderShape file
+          readOlderShape true file
           let defaults = JsonSerializer.SerializeToNode(Tournament.ConfigDefaults, options) :?> JsonObject
           overDefaults "" defaults file
       | _ -> ()

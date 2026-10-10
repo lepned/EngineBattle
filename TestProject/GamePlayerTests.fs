@@ -45,7 +45,7 @@ type private ScriptedEngine(canPing: bool, silent: bool) =
 
 let private settings =
   { Player = "S"; CanPing = true; PingTimeout = TimeSpan.FromSeconds 5.0; StopWait = TimeSpan.FromSeconds 5.0
-    StatusInterval = TimeSpan.FromSeconds 1.0; PolicyTest = false }
+    StatusInterval = TimeSpan.FromSeconds 1.0 }
 
 let private request lastMove =
   { Position = "position startpos"; LastMove = lastMove; Search = MoveTimeMs 100; StopAfter = None

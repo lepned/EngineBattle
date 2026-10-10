@@ -162,7 +162,7 @@ let private playWith
   let side (engine: ChessEngine) =
     let settings =
       { Player = engine.Name; CanPing = engine.CanPing; PingTimeout = pingTimeout; StopWait = stopWait
-        StatusInterval = statusInterval; PolicyTest = (tourny.PlayMode = PlayMode.Policy) }
+        StatusInterval = statusInterval }
     { Engine = engine; Player = new Player(engineIO engine, settings, callback, logger)
       Config = timeConfig engine; Ponders = canPonder engine }
   let sides = [| side white; side black |]
@@ -179,7 +179,7 @@ let private playWith
 
   let search isWhite (s: Side) =
     let movesDone = board.NextMoveNumber() - 1
-    GoCommand.forMove tourny.PlayMode s.Engine.IsLc0 tourny.TimeControl s.Config movesDone clocks.[0] clocks.[1]
+    GoCommand.forMove s.Engine.IsLc0 tourny.TimeControl s.Config movesDone clocks.[0] clocks.[1]
 
   /// Waits for the search, looking for a user adjudication and a cancel meanwhile.
   let awaitSearch (think: Task<SearchOutcome>) = async {
@@ -271,7 +271,7 @@ let private playWith
     match ponder |> Option.filter (fun _ -> s.Ponders) |> Option.bind (fun move -> afterReply move |> Option.map (fun b -> move, b)) with
     | Some (move, after) ->
         let movesDone = board.NextMoveNumber() - (if isWhite then 0 else 1)
-        let next = GoCommand.forMove tourny.PlayMode s.Engine.IsLc0 tourny.TimeControl s.Config movesDone clocks.[0] clocks.[1]
+        let next = GoCommand.forMove s.Engine.IsLc0 tourny.TimeControl s.Config movesDone clocks.[0] clocks.[1]
         match GoCommand.ponderText next with
         | Some command ->
             let view =

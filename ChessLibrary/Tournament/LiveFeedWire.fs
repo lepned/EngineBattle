@@ -40,7 +40,7 @@ let private tournamentOpts =
 let private tournamentOf (n: JsonNode) =
     try
         match n with
-        | :? JsonObject as o -> readOlderShape o
+        | :? JsonObject as o -> readOlderShape false o
         | _ -> ()
         Some(JsonSerializer.Deserialize<Tournament>(n, tournamentOpts))
     with _ -> None
