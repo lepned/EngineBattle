@@ -20,11 +20,6 @@ module MatchMapping =
       /// settings that are accepted but not (yet) acted on, one line each
       Notes: string list }
 
-  /// Eval adjudication has no off switch in EngineBattle (zeros adjudicate at once), so an
-  /// adjudication the reference leaves off starts at a move number no game reaches: the longest legal
-  /// game is 5949 moves. Kept that small because the tournament's time estimate counts it.
-  let private never = 6_000
-
   let private pawns (cp: int) = float cp / 100.0
 
   /// The engine's path as EngineBattle starts it: dir/cmd made absolute; a bare command name
@@ -147,10 +142,10 @@ module MatchMapping =
     // adjudication
     let draw =
       if t.Draw.Enabled then { MinDrawMove = t.Draw.MoveNumber; DrawMoveLength = t.Draw.MoveCount; MaxDrawScore = pawns t.Draw.Score }
-      else { MinDrawMove = never; DrawMoveLength = 1; MaxDrawScore = 0.0 }
+      else DrawOption.Off
     let win =
       if t.Resign.Enabled then { MinWinMove = 0; WinMoveLength = t.Resign.MoveCount; MinWinScore = pawns t.Resign.Score }
-      else { MinWinMove = never; WinMoveLength = 1; MinWinScore = 1000.0 }
+      else WinOption.Off
     if t.MaxMoves.Enabled then note $"-maxmoves {t.MaxMoves.MoveCount} is not applied"
     let tb = t.TbAdjudication
     let tbDir =

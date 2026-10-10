@@ -595,8 +595,15 @@ module TypesDef =
     open LayoutTypes
     open TimeControlTypes
 
-    type DrawOption = { DrawMoveLength: int; MaxDrawScore: float; MinDrawMove: int }
-    type WinOption = { MinWinMove: int; MinWinScore: float; WinMoveLength: int }
+    type DrawOption =
+      { DrawMoveLength: int; MaxDrawScore: float; MinDrawMove: int }
+      /// No draw adjudication. Zeros would adjudicate at once, so it starts at a move no game reaches
+      /// (the longest legal game is 5949 moves; kept that small because the time estimate counts it).
+      static member Off = { MinDrawMove = 6_000; DrawMoveLength = 1; MaxDrawScore = 0.0 }
+    type WinOption =
+      { MinWinMove: int; MinWinScore: float; WinMoveLength: int }
+      /// No win adjudication (zeros would call every game won at move 0).
+      static member Off = { MinWinMove = 6_000; WinMoveLength = 1; MinWinScore = 1000.0 }
     type TableBaseAdjudication = {TablebaseDirectory:string; UseTBAdjudication: bool; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
     type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool; Seed: int }
@@ -1053,6 +1060,16 @@ module TypesDef =
           TotalGames = 0
           CurrentGameNr = 0
         }
+
+        /// What a tournament config means by a field it leaves out (JSON.tryReadTournamentJson
+        /// reads the file over this). Not Empty: Empty is also the live feed's fallback, with a
+        /// broadcast layout. TimeControl has no default; LayoutOption has its own merge.
+        static member ConfigDefaults =
+          { Tournament.Empty with
+              Adjudication =
+                { DrawOption = DrawOption.Off
+                  WinOption = WinOption.Off
+                  TBAdj = { TablebaseDirectory = ""; UseTBAdjudication = false; TBMen = 6 } } }
 
     type StartOfTournamentInfo =
       {

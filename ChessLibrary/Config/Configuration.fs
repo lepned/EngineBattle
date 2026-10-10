@@ -805,6 +805,29 @@ module JSON =
       | _ -> ()
       List.ofSeq errors
 
+  /// These sections are taken whole: a missing one is the default, a given one as written. Their
+  /// fields' zeros mean something (MinDrawMove 0: from the first move), unlike the section's default (off).
+  let private wholeSections = set [ "Adjudication.DrawOption"; "Adjudication.WinOption"; "Adjudication.TBAdj"; "TestOptions" ]
+
+  /// Fills in what the file leaves out (or sets to null) from `defaults`, section by section.
+  /// LayoutOption has its own merge (layoutOverDefault); TimeControl has no default.
+  let rec private overDefaults (path: string) (defaults: JsonObject) (file: JsonObject) =
+      for kv in List.ofSeq defaults do
+          let at = if path = "" then kv.Key else path + "." + kv.Key
+          if at <> "LayoutOption" && not (isNull kv.Value) then
+              match file.[kv.Key], kv.Value with
+              | null, d -> file.[kv.Key] <- d.DeepClone()
+              | (:? JsonObject as given), (:? JsonObject as d) when not (wholeSections.Contains at) -> overDefaults at d given
+              | _ -> ()
+
+  /// The tournament file over Tournament.ConfigDefaults: a config needs only what has no default.
+  let configOverDefaults (root: JsonNode) (options: JsonSerializerOptions) : unit =
+      match root with
+      | :? JsonObject as file ->
+          let defaults = JsonSerializer.SerializeToNode(Tournament.ConfigDefaults, options) :?> JsonObject
+          overDefaults "" defaults file
+      | _ -> ()
+
   /// A file that is missing and a file that will not parse are different problems for the
   /// person who has to fix them, and the second used to be reported as the first: the parse
   /// error went to a console nobody was watching and the caller got None, which loadTournament
@@ -820,6 +843,7 @@ module JSON =
               let options = createJsonOptions()
               let node = JsonNode.Parse(json, Nullable(), JsonDocumentOptions(AllowTrailingCommas = true))
               layoutOverDefault node options
+              configOverDefaults node options
               match timeConfigShortForms node options with
               | (_ :: _) as problems ->
                   Error (sprintf "tournament.json (%s): %s" path (String.Join("; ", problems)))
