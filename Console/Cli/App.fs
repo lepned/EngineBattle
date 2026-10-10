@@ -44,8 +44,10 @@ let run (entries: Entry list) (tokens: string list) : int =
     | UsageError(message, c) -> usageError tokens message c
     | Run p ->
         let entry = entries |> List.find (fun e -> e.Spec.Path = p.Command.Path)
+        // with --json, stdout is the JSON and nothing else
+        let runIt () = if has p "json" then withJsonStdout (fun () -> entry.Run p) else entry.Run p
         try
-            entry.Run p
+            runIt ()
         with
         | Usage message -> usageError tokens message (Some p.Command)
         | ex ->

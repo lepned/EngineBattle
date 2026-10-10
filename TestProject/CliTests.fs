@@ -92,7 +92,7 @@ let ``help, version and a bad number`` () =
 
 [<Fact>]
 let ``the help of every real command names every option it has`` () =
-  for e in Commands.all (fun _ -> 0) do
+  for e in Registry.all (fun _ -> 0) do
     let text = Cli.Help.command e.Spec
     for o in e.Spec.Options do
       Assert.Contains("--" + o.Name, text)
@@ -113,3 +113,42 @@ let ``every outcome has its exit code`` () =
   Assert.Equal(2, Cli.App.run entries [ "pgn"; "check" ])
   // an exception nobody planned for is a failure, not a crash
   Assert.Equal(1, Cli.App.run entries [ "analyze"; "sf" ])
+
+// ---------------------------------------------------------------- the real commands (phase 2)
+
+let private real = Registry.all (fun _ -> 0) |> List.map (fun e -> e.Spec)
+
+let private runReal (tokens: string list) =
+  match parse real tokens with
+  | Run p -> p
+  | other -> failwithf "expected a command to run, got %A" other
+
+[<Fact>]
+let ``tablebase takes an unquoted FEN whole, and refuses what it does not know`` () =
+  let p = runReal [ "tablebase"; "8/8/8/8/8/2k5/8/K6Q"; "b"; "-"; "-"; "0"; "1"; "--json"; "--syzygy"; "D:/t" ]
+  Assert.Equal(Some "8/8/8/8/8/2k5/8/K6Q b - - 0 1", argOf p "fen")
+  Assert.Equal(Some "D:/t", valueOf p "syzygy")
+  Assert.True(has p "json")
+  match parse real [ "tablebase"; "startpos"; "--jsn" ] with
+  | UsageError(message, _) -> Assert.Contains("did you mean '--json'", message)
+  | other -> Assert.Fail $"{other}"
+
+[<Fact>]
+let ``engine, limit and position options read the same in every command`` () =
+  let p = runReal [ "analyze"; "sf.json"; "startpos"; "--moves"; "e4 e5"; "--uci"; "Threads=8"; "--uci"; "Hash=64"; "--depth"; "12" ]
+  Assert.Equal(Cli.Groups.Depth 12, Cli.Groups.limit p 1_000_000)
+  Assert.Equal<(string * string) list>([ "Threads", "8"; "Hash", "64" ], Cli.Groups.uciPairs "uci" (valuesOf p "uci"))
+  Assert.Equal<string list>([ "e2e4"; "e7e5" ], Cli.Groups.movesFrom p (Cli.Groups.fen p "fen"))
+  // the default limit is the command's own
+  Assert.Equal(Cli.Groups.Nodes 1, Cli.Groups.limit (runReal [ "values"; "position"; "sf.json" ]) 1)
+  // two limits, a bad number, a bad option value, illegal moves: usage errors that say so
+  match parse real [ "analyze"; "sf.json"; "--nodes"; "5"; "--depth"; "3" ] with
+  | UsageError(message, _) -> Assert.Contains("give only one of", message)
+  | other -> Assert.Fail $"{other}"
+  let bad = runReal [ "analyze"; "sf.json"; "--nodes"; "0"; "--uci"; "Threads"; "--moves"; "e5" ]
+  Assert.Contains("must be above 0", (Assert.Throws<Usage>(fun () -> Cli.Groups.limit bad 1 |> ignore)).Data0)
+  Assert.Contains("NAME=VALUE", (Assert.Throws<Usage>(fun () -> Cli.Groups.uciPairs "uci" (valuesOf bad "uci") |> ignore)).Data0)
+  Assert.Contains("not a legal line", (Assert.Throws<Usage>(fun () -> Cli.Groups.movesFrom bad Cli.Groups.startFen |> ignore)).Data0)
+  // a FEN that is not one
+  let notFen = runReal [ "tablebase"; "8/8/8/9/8/8/8/8"; "w" ]
+  Assert.Contains("not a valid FEN", (Assert.Throws<Usage>(fun () -> Cli.Groups.fen notFen "fen" |> ignore)).Data0)

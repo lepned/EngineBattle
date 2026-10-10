@@ -68,6 +68,22 @@ let envelope (command: string) (ok: bool) (result: obj) (errors: JsonError list)
       Result = result
       Errors = errors }
 
+/// Where the JSON goes: the real stdout, kept here while Console.Out points at stderr during a
+/// --json command (the library prints its own notices with printfn; they must not land in the JSON).
+let mutable private jsonWriter: IO.TextWriter = null
+
+/// Runs `f` with everything printed sent to stderr, and the JSON to the real stdout.
+let withJsonStdout (f: unit -> 'a) =
+    let real = Console.Out
+    jsonWriter <- real
+    Console.SetOut Console.Error
+    try f ()
+    finally
+        Console.SetOut real
+        jsonWriter <- null
+
 /// The envelope on stdout.
 let printJson (e: Envelope) =
-    Console.Out.WriteLine(JsonSerializer.Serialize(e, jsonOptions))
+    let w = if isNull jsonWriter then Console.Out else jsonWriter
+    w.WriteLine(JsonSerializer.Serialize(e, jsonOptions))
+    w.Flush()

@@ -1,12 +1,12 @@
 /// Every command of eb-cli, in the order the help lists them. A command that has not moved to the
 /// new parser yet takes the old verb's arguments and runs it (docs/EbCliRewrite.md, phases 2-6).
-module Commands
+module Registry
 
 open Cli.Spec
 open Cli.App
 
 [<Literal>]
-let private Positions = "Engines and positions"
+let private Positions = Commands.Positions.Group
 
 [<Literal>]
 let private Engines = "Engine definitions"
@@ -34,12 +34,15 @@ let private legacy (runLegacy: string list -> int) (path: string list) group sum
 
 let all (runLegacy: string list -> int) : Entry list =
     let l = legacy runLegacy
-    [ l [ "analyze" ] Positions "Analyze a position with an engine" "analyze"
-      l [ "compare" ] Positions "Compare two engines on one or more positions" "compare"
-      l [ "position" ] Positions "Facts about a position as JSON: legal moves, attacks, pins, insights" "query"
-      l [ "tablebase" ] Positions "Every move of a position from the Syzygy tables" "tb"
-      l [ "values"; "position" ] Positions "Piece values from an engine's evaluations" "piecevalues"
-      l [ "values"; "fit" ] Positions "Piece values fitted over many positions" "piecevaluefit"
+    // the moved commands, by name
+    let moved = Commands.Positions.entries @ Commands.Values.entries
+    let m (path: string list) = moved |> List.find (fun e -> e.Spec.Path = path)
+    [ m [ "analyze" ]
+      m [ "compare" ]
+      m [ "position" ]
+      m [ "tablebase" ]
+      m [ "values"; "position" ]
+      m [ "values"; "fit" ]
       l [ "values"; "batch" ] Positions "Piece values for a folder of nets" "pvbatch"
       l [ "engine"; "check" ] Engines "Check that an engine follows the UCI protocol" "enginecheck"
       l [ "engine"; "new" ] Engines "Write an engine def from what the engine answers to 'uci'" "mkdef"
@@ -52,7 +55,7 @@ let all (runLegacy: string list -> int) : Entry list =
       l [ "pgn"; "elo" ] Pgn "Ratings and results" "elo"
       l [ "pgn"; "speed" ] Pgn "Speed statistics" "speed"
       l [ "pgn"; "deviations" ] Pgn "Where engines deviated from each other and from themselves" "deviations"
-      l [ "pgn"; "imbalance" ] Pgn "Results by material imbalance" "pvcombo"
+      m [ "pgn"; "imbalance" ]
       l [ "book"; "eval" ] Runs "Keep the openings every engine scores in an eval window" "bookeval"
       l [ "puzzle"; "run" ] Runs "Run a puzzle test from a config" "puzzlejson"
       l [ "puzzle"; "eret" ] Runs "Run an ERET test from a config" "eretjson"

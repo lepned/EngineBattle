@@ -20,12 +20,16 @@
 		<Compile Include="Cli\Help.fs" />
 		<Compile Include="Cli\Output.fs" />
 		<Compile Include="Cli\App.fs" />
+		<Compile Include="Cli\Groups.fs" />
+		<Compile Include="Engines.fs" />
+		<Compile Include="Commands\Positions.fs" />
+		<Compile Include="Commands\Values.fs" />
 		<Compile Include="BenchmarkRunner.fs" />
 		<Compile Include="TunerRunner.fs" />
 		<Compile Include="BayesianOptimizer.fs" />
 		<Compile Include="MatchMode.fs" />
 		<Compile Include="EngineCheck.fs" />
-		<Compile Include="Commands.fs" />
+		<Compile Include="Registry.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
