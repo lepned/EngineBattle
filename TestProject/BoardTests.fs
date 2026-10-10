@@ -26,6 +26,23 @@ let ``LoadFen should set position from FEN string`` () =
     Assert.Equal(fen, board.FEN())
 
 [<Fact>]
+let ``a castling right without its rook is dropped`` () =
+    let fenOf fen =
+        let board = Board()
+        board.LoadFen fen
+        board.FEN()
+    // "w Kkq" with no rook for any of them read back as "w Ppp"
+    Assert.Equal("4k3/8/8/8/8/8/8/R3K3 w - - 0 1", fenOf "4k3/8/8/8/8/8/8/R3K3 w Kkq - 0 1")
+    Assert.Equal("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1", fenOf "4k3/8/8/8/8/8/8/R3K3 w KQkq - 0 1")
+    Assert.Equal("4k3/8/8/8/8/8/8/R3K3 b Q - 0 1", fenOf "4k3/8/8/8/8/8/8/R3K3 b KQkq - 0 1")
+    Assert.Equal("r3k3/8/8/8/8/8/8/4K2R b Kq - 0 1", fenOf "r3k3/8/8/8/8/8/8/4K2R b KQkq - 0 1")
+    // a rook off the back rank backs no right
+    Assert.Equal("4k3/8/8/7R/8/8/8/R3K3 w - - 0 1", fenOf "4k3/8/8/7R/8/8/8/R3K3 w K - 0 1")
+    // unchanged: the outermost back-rank rook is the castle rook (X-FEN), and full rights stay
+    Assert.Equal("4k3/8/8/8/8/8/8/R3K1R1 w G - 0 1", fenOf "4k3/8/8/8/8/8/8/R3K1R1 w K - 0 1")
+    Assert.Equal("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1", fenOf "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1")
+
+[<Fact>]
 let ``PlaySanMove should make a legal move and update FEN`` () =
     let board = Board()
     board.PlaySanMove "e4"

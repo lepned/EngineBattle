@@ -154,14 +154,19 @@ module BoardHelper =
     if fen.[cursor] <> '-' then  
         let mutable i = cursor
         let len = fen.Length
+        // A KQkq right needs its castle rook on that side of the king. Without one the placement is
+        // the 15 sentinel; setting the flag anyway made the position look like Chess960 and FEN()
+        // print the sentinel as file letter 'p' ("w Kkq" read back as "w Ppp"). Dropped, as an
+        // unbacked Shredder letter is below.
+        let hasRook (placement: byte) = placement <> 15uy
         if normalCastle |> Set.contains fen.[i] then
             while i < len && fen.[i] <> ' ' do
                 let cur = fen.[i]
                 match cur with
-                | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
-                | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
-                | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
+                | 'K' when hasRook pos.RookInfo.WhiteKRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
+                | 'Q' when hasRook pos.RookInfo.WhiteQRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
+                | 'k' when hasRook pos.RookInfo.BlackKRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
+                | 'q' when hasRook pos.RookInfo.BlackQRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
                 | _ -> ()
                 i <- i + 1
             cursor <- i + 1
@@ -182,10 +187,10 @@ module BoardHelper =
           while i < len && fen.[i] <> ' ' do
             let cur = fen.[i]
             match cur with
-            | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
-            | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-            | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
-            | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
+            | 'K' when hasRook pos.RookInfo.WhiteKRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
+            | 'Q' when hasRook pos.RookInfo.WhiteQRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
+            | 'k' when hasRook pos.RookInfo.BlackKRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
+            | 'q' when hasRook pos.RookInfo.BlackQRInitPlacement -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
             | _ when cur >= 'A' && cur <= 'H' -> // white file letter
                 let file = int cur - int 'A'
                 let hasRook = (rooks &&& pos.PM &&& (1UL <<< file)) <> 0UL
