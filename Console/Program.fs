@@ -785,6 +785,7 @@ module Program =
                HasDtz = r.HasDtz
                Uncertain = r.Uncertain
                Note = (ChessLibrary.TablebaseLookup.clockNote r |> Option.toObj)
+               WdlNote = (ChessLibrary.TablebaseLookup.wdlOnlyNote r |> Option.toObj)
                Moves =
                 r.Moves
                 |> Array.map (fun m ->

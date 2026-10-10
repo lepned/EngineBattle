@@ -657,7 +657,7 @@ says a draw can be claimed; `--ignore-clock` reads the clock as 0 (what the posi
 position's own DTZ. Without DTZ tables (.rtbz) for the material the moves are grouped from
 the WDL tables alone; those cannot see the clock, so with the clock running a win or loss
 that is not a zeroing move is marked "50-move rule not checked". `--tb` names the folder (several separated by `;` on Windows, `:` elsewhere); without
-it `EB_SYZYGY_PATH` is used. `--json` prints the answer as JSON. Exit 1 when the tables give
+it `EB_SYZYGY_PATH` is used - set it once for your user, e.g. in PowerShell `[Environment]::SetEnvironmentVariable('EB_SYZYGY_PATH', 'D:/syzygy', 'User')` (new windows see it), or `export EB_SYZYGY_PATH=/data/syzygy` in your shell profile. `--json` prints the answer as JSON. Exit 1 when the tables give
 no answer (no folder, too many pieces, castling rights, no table for the material). The
 WebGUI has the same lookup on Tools > Tablebase. Aliases: `tablebase`.
 

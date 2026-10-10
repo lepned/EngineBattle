@@ -156,3 +156,16 @@ let ``every answer matches Fathom's, also from the WDL tables alone`` () =
             else Some $"{line}  ours {String.Join(';', got)} wdl-only agrees {sameWdl}"
         | s -> Some $"{line}  ours {s}")
   Assert.True(wrong.Length = 0, String.Join("\n", wrong |> Array.truncate 10))
+
+// ------------------------------------------------------------------ the tb verb's command line
+
+[<Fact>]
+let ``tb takes an unquoted FEN whole, and refuses what it does not know`` () =
+  let parsed (args: string list) = CliParser.CustomParser.parse (Array.ofList ("eb-cli" :: args))
+  match parsed [ "tb"; "8/8/8/8/8/2k5/8/K6Q"; "b"; "-"; "-"; "0"; "1"; "--json" ] with
+  | [ CliParser.Verb(CliParser.Tablebase(fen, None, true, false)) ] -> Assert.Equal("8/8/8/8/8/2k5/8/K6Q b - - 0 1", fen)
+  | other -> Assert.Fail $"{other}"
+  match parsed [ "tb"; "8/8/8/8/8/2k5/8/K6Q b - - 0 1"; "--tb"; "D:/t"; "--ignore-clock" ] with
+  | [ CliParser.Verb(CliParser.Tablebase(fen, Some "D:/t", false, true)) ] -> Assert.Equal("8/8/8/8/8/2k5/8/K6Q b - - 0 1", fen)
+  | other -> Assert.Fail $"{other}"
+  Assert.ThrowsAny<exn>(fun () -> parsed [ "tb"; "8/8/8/8/8/2k5/8/K6Q b - - 0 1"; "--jsn" ] |> ignore) |> ignore

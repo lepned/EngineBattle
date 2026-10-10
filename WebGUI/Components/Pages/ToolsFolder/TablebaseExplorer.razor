@@ -39,6 +39,11 @@
                            title="Off: the clock is read as 0 - what the position is worth if the clock starts now, as lichess shows it" />
             }
 
+            @if (linkError != null)
+            {
+                <div class="tb-status tb-error">@linkError</div>
+            }
+
             <div class="tb-status @RootClass">
                 @if (busy)
                 {
@@ -104,7 +109,6 @@
 @code {
     [SupplyParameterFromQuery(Name = "fen")] public string FenParam { get; set; }
 
-    private const string EmptyBoardFen = "8/8/8/8/8/8/8/8 w - - 0 1";
     private const string DefaultFen = "8/8/8/8/8/2k5/8/K6Q w - - 0 1";
 
     private ModernChessboard chessBoardRazor;
@@ -119,21 +123,40 @@
     private bool countClock = true;
     // What the shown answer is for: the board raises more than one event for some changes.
     private (string Fen, string Folder, bool CountClock) lookedUp;
+    // The ?fen= last applied: a link to this page while it is open changes only the parameter.
+    private bool started;
+    private string appliedFenParam;
+    private string linkError;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         folder = SettingsService.Settings.TablebaseFolder ?? "";
         countClock = SettingsService.Settings.TablebaseCountClock;
-        // The board shows the probed form: the castling rights as the board reads them, the clock kept.
-        if (!string.IsNullOrEmpty(FenParam) && BoardUtils.validateFen(FenParam).IsValid)
-            fen = TablebaseLookup.probeFen(FenParam);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (started && FenParam == appliedFenParam) return;
+        var first = !started;
+        started = true;
+        appliedFenParam = FenParam;
+        linkError = null;
+        if (!string.IsNullOrEmpty(FenParam))
+        {
+            var validation = BoardUtils.validateFen(FenParam);
+            // The board shows the probed form: the castling rights as the board reads them, the clock kept.
+            if (validation.IsValid) fen = TablebaseLookup.probeFen(FenParam);
+            else linkError = $"The FEN in the link is not valid ({string.Join("; ", validation.Errors)}); showing {fen}";
+        }
         board.ResetBoardStateFromFen(fen);
-        await Lookup(recheckFolder: true);
+        if (!first && chessBoardRazor != null) await chessBoardRazor.OnReceivedFen(fen);
+        await Lookup(recheckFolder: first);
     }
 
     // Not awaited: the board finishes its own move update while the tables are probed.
     private Task PositionChanged()
     {
+        linkError = null;
         fen = board.FEN();
         _ = Lookup(recheckFolder: false);
         return Task.CompletedTask;

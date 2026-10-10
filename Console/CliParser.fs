@@ -777,18 +777,24 @@ module CustomParser =
                 else failwith "Missing folder for puzzletrend"
             | "tb" | "tablebase" ->
                 if index + 1 < args.Length then
-                    let fen = args.[index + 1]
-                    let mutable i = index + 2
+                    // An unquoted FEN arrives as up to six arguments ("-" is a field, "--" a flag):
+                    // taking only the first would answer for the wrong side to move.
+                    let mutable i = index + 1
+                    let fields = ResizeArray<string>()
+                    while i < args.Length && fields.Count < 6 && not (args.[i].StartsWith "--") do
+                        fields.Add args.[i]
+                        i <- i + 1
+                    let fen = String.Join(" ", fields)
                     let mutable tb = None
                     let mutable json = false
                     let mutable ignoreClock = false
-                    let mutable stop = false
-                    while not stop && i < args.Length do
+                    while i < args.Length do
                         match args.[i].ToLower() with
                         | "--tb" -> tb <- Some (valueOf args i); i <- i + 2
                         | "--json" -> json <- true; i <- i + 1
                         | "--ignore-clock" -> ignoreClock <- true; i <- i + 1
-                        | _ -> stop <- true
+                        // said here, not left to the top level, whose notice would land in --json's stdout
+                        | _ -> failwithf "tb: unknown argument '%s' (tb <fen> [--tb <folder>] [--json] [--ignore-clock])" args.[i]
                     parseArgs args i (Verb (Tablebase (fen, tb, json, ignoreClock)) :: acc)
                 else failwith "Missing FEN for tb: tb <fen> [--tb <folder>] [--json] [--ignore-clock]"
             | "mkdef" | "md" ->
