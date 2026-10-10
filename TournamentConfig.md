@@ -137,7 +137,7 @@ own numbers.
 second, from outside the engine: nothing is sent to it, nothing is charged to its clock, and a
 reading costs about 2.5 ms of EngineBattle's own time. *Appearance > Engine resources* shows it
 on the tournament page as a row under Speed (off by default): the cores each engine keeps busy
-(1.0 = one core) and its memory. A console tournament (`tournamentjson`) ends with a table of
+(1.0 = one core) and its memory. A console tournament (`eb-cli tournament run`) ends with a table of
 each engine's cores while it is to move, peak memory and memory at its first and last game,
 with a warning when the memory kept growing from game to game; `match` writes the table to its
 `-log` file. The measuring itself has no switch - turning the row off only hides it.

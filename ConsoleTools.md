@@ -1,40 +1,29 @@
-# Console Tools
+# Console Tools (eb-cli)
 
-This document provides a comprehensive guide to using the EngineBattle Console CLI tools for running chess engine tournaments, puzzle tests, and benchmarks.
+`eb-cli` is EngineBattle on the command line: engine analysis and comparison, tablebase lookups,
+PGN tools, puzzle tests, book evaluation, tournaments, tuning, and engine matches.
 
-## Overview
-
-The Console project is the command-line interface for EngineBattle. It provides tools for running tournaments, testing engines against puzzles, benchmarking UCI options, verifying move generation, and launching the WebGUI.
+## Getting it
 
 ### In the download
 
 Every EngineBattle download has the console next to the WebGUI, as `eb-cli` (`eb-cli.exe` on
-Windows): `eb-cli <command> [arguments]` is the same as `dotnet run -c Release -- <command>
-[arguments]` below. Run without arguments, it lists the commands. `gui` needs a source checkout;
-in the download, start `EngineBattle` instead.
+Windows). Run without arguments, it lists the commands. `gui` needs a source checkout; in the
+download, start `EngineBattle` instead.
 
-### Building and Running
+### From source
 
 Needs the [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later.
 
 ```bash
-# Get the source
 git clone https://github.com/lepned/EngineBattle.git
 cd EngineBattle
-
-# Open the Console folder
-cd Console
-
-# Build the Console project
-dotnet build -c Release
-
-# Run with a command
-dotnet run -c Release -- <command> [arguments]
+dotnet run --project Console -c Release -- <command> [arguments]
 ```
 
 ### Build eb-cli yourself
 
-One executable, as in the download, from the root of the clone (`EngineBattle`, not `Console`):
+One executable, as in the download, from the root of the clone:
 
 ```bash
 dotnet publish Console -c Release -r win-x64 --no-self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/eb-cli
@@ -43,16 +32,64 @@ mv publish/eb-cli/EngineBattle.Console.exe publish/eb-cli/eb-cli.exe
 ```
 
 - `-r` is required for a single file: `win-x64`, `win-arm64`, `linux-x64`, `osx-x64` or `osx-arm64`.
-- `--no-self-contained` gives a file of about 13 MB that needs the .NET 10 runtime on the machine.
-  `--self-contained` bundles the runtime instead: a much larger file that runs without .NET installed.
-- The file is all there is: tablebase adjudication probes the Syzygy tables in process, so nothing
-  has to sit next to it.
+- `--no-self-contained` gives a file of about 13 MB that needs the .NET 10 runtime;
+  `--self-contained` bundles the runtime in a much larger file.
+- The file is all there is: tablebases are probed in process, so nothing has to sit next to it.
+
+## How the commands work
+
+The same rules hold for every command (`match` excepted - see below).
+
+- **Shape:** `eb-cli <command> [<subcommand>] <subject> [options]`. The subject - the engine, the
+  position, the PGN, the config - is a positional argument; everything else is a named option.
+  Commands are grouped: `pgn check`, `engine new`, `puzzle run`.
+- **Options** are `--kebab-case` and case-sensitive; only `-h` (help) and `-o` (output) have a
+  short form. `--name value` and `--name=value` are the same. `--` ends the options.
+- **Mistakes** are said, with a suggestion, and exit 2: `eb-cli pgn chek x.pgn` gives
+  `'pgn chek' is not a command (did you mean 'check'?)`.
+- **Help:** `eb-cli` or `eb-cli help` lists the commands; `eb-cli help <command>` or
+  `<command> --help` shows one command's arguments, options with their defaults, and examples.
+  The help is made from the same specification the parser reads, so it is always what the
+  program does; the reference below is that help.
+- **Engines:** an engine def (`.json`, with its network, backend, arguments and options), an engine
+  executable, or the name of a def in `engineDefsFolder` ([eb-cli.json](#eb-clijson)).
+  `--uci NAME=VALUE` sets a UCI option (repeatable), `--args "..."` replaces the def's arguments.
+- **Positions:** a FEN - quoted, or its six fields as they come - or `startpos`.
+  `--moves "e4 e5 Nf3"` plays moves first, in SAN or UCI.
+- **Search limits:** at most one of `--nodes N`, `--movetime MS`, `--depth N`; each command shows
+  its default.
+- **Evals** are in pawns from White's view (0.35), as engines report them, unless an option says
+  centipawns.
+- **Files written:** `-o, --out FILE` is always a file and `--out-dir DIR` always a folder. A file
+  that exists is not written over without `--force`.
+- **Output:** the result goes to stdout; progress, warnings and errors go to stderr. `--json`
+  prints the result as one JSON document on stdout, and nothing else goes there:
+
+  ```json
+  { "command": "pgn validate", "ok": true, "ebVersion": "1.10.1", "result": { },
+    "errors": [ { "code": "invalid-games", "message": "..." } ] }
+  ```
+
+  `result` has each command's own fields; `puzzle run`'s is the document of
+  [Console/PuzzleJsonSchema.md](Console/PuzzleJsonSchema.md).
+- **Exit codes:**
+
+  | Code | Meaning |
+  |---|---|
+  | 0 | success |
+  | 1 | the command ran and failed, or found problems (a check failed, no tablebase answer, invalid games, an engine died) |
+  | 2 | usage: an unknown command or option, a bad value, a missing input file, an invalid config |
+  | 130 | interrupted with Ctrl+C |
+
+- **Long runs** (tournament, puzzle and ERET tests, book evaluation, values batch): the first
+  Ctrl+C stops the run and keeps what it has (finished games, positions that passed); a second
+  stops at once. A tournament goes on from the games already in its PGN.
+- **EB_DEBUG=1** prints the stack trace of an unexpected failure.
 
 ### eb-cli.json
 
-Settings eb-cli reads from `eb-cli.json` next to the executable (next to `eb-cli.exe` in the
-download; `Console/bin/Release/net10.0/` when run from source with `dotnet run`). The file is
-optional and so is every key. They save typing - none of them changes what a command computes:
+Optional settings next to the executable (next to `eb-cli.exe`; `Console/bin/Release/net10.0/`
+from source). They save typing; none of them changes what a command computes.
 
 ```json
 {
@@ -64,704 +101,729 @@ optional and so is every key. They save typing - none of them changes what a com
 
 | Key | Used by | What it does |
 |---|---|---|
-| `engineDefsFolder` | `analyze`, `compare`, `bookeval`, `enginecheck`, `piecevalues`, `piecevaluefit` | A bare engine name (`eb-cli a Lc0_BT4_332`) is looked up here as `<name>` or `<name>.json` - the whole EB engine def, with its network, backend, arguments and options. A path that exists is used as given. |
-| `syzygyPath` | `tb` | The Syzygy folders when neither `--tb` nor `EB_SYZYGY_PATH` is given (several separated by `;` on Windows, `:` elsewhere). |
-| `puzzleResultsFolder` | `puzzletrend` | The folder read when none is given (`eb-cli pt --arm srv_deg4`). |
+| `engineDefsFolder` | every command that takes an engine | a bare name (`eb-cli analyze Lc0_BT4_332`) is looked up here as `<name>.json`, then `<name>` |
+| `syzygyPath` | `tablebase` | the tables when neither `--syzygy` nor `EB_SYZYGY_PATH` is given |
+| `puzzleResultsFolder` | `puzzle trend` | the folder when none is given |
 
-Relative folders are relative to the file. An unknown key (a misspelt `syzygypath`) is reported
-on stderr; a file that is not valid JSON stops only a command that needs a value from it, with the
-reason. Comments and a trailing comma are allowed. `match` does not read it: its folders and
-engines are part of the match, as in fastchess, and `config.json` is the state of one match (in
-fastchess's format) to resume it.
-### General Syntax
-
-```
-dotnet run -c Release -- <command> <path-or-arguments>
-```
-
-### Command Summary
-
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| `match` | (any first argument starting with `-`) | An engine match from one command line, with rating reports, SPRT and resume - see [MatchMode.md](MatchMode.md) |
-| `tournamentjson` | `tournament`, `t` | Run a tournament from JSON config |
-| `puzzlejson` | `puzzle`, `p` | Run puzzle evaluation from JSON config |
-| `eretjson` | `eret` | Run ERET evaluation from JSON config |
-| `analyze` | `a` | Analyze a position with an engine |
-| `compare` | `cmp` | Compare two engines side-by-side |
-| `benchmark` | `bench`, `b` | Run engine benchmark |
-| `tune` | | Run Bayesian parameter tuner |
-| `redash` | | Regenerate BO dashboard from saved state |
-| `pgnsummary` | `pgn`, `ps` | Analyze PGN game terminations |
-| `pgncheck` | `pc` | Parser health check on a PGN file (no analysis) |
-| `pgnvalidate` | `pgnv` | Replay every game of a PGN: illegal or ambiguous moves, non-standard SAN |
-| `pgnstrip` | `strip` | Write a PGN's games without comments, variations or NAGs |
-| `bookeval` | `be` | Keep the openings of a PGN/EPD book that every engine scores in an eval window (see BookEvaluation.md) |
-| `deviations` | `dev` | Engine self-consistency and position deviations from a PGN |
-| `elo` | `e` | Show Elo ratings and results from PGN |
-| `speed` | `sp` | Show speed statistics from PGN |
-| `validate` | `v` | Validate a tournament config without running |
-| `perft` | | Run perft move generation test |
-| `gui` | | Launch WebGUI |
-| `query` | `q` | Position query as JSON: status, legal moves, attackers, pins, insights, SEE (validator use) |
-| `tb` | `tablebase` | Every move of a position from the Syzygy tablebases: win, draw, loss with DTZ |
-| `mkdef` | `md` | Write an engine def from what the engine answers to `uci` |
-| `gendefs` | `gd` | Defs for training checkpoints, from an existing def as template |
-| `puzzletrend` | `pt` | Per-arm step curves from many puzzle runs |
-| `piecevalues` | `pv`, `values` | Piece values from a network's evaluations (see PieceValues.md) |
-| `piecevaluefit` | `pvfit` | Piece-value regression over a PGN/EPD |
-| `pvbatch` | | Piece values for a folder of nets |
-| `pvcombo` | | Material-imbalance report by material signature |
-| `help` | `h` | Show help message |
-
-**Diagnostics**
-
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| `enginecheck` | `ec` | Check that an engine follows the UCI protocol and behaves in the analysis pages |
-
----
-
-## Commands
+Relative folders are relative to the file; keys may be in any case; an unknown key is reported.
 
 ### match
 
-An engine match from a single command line, reported as it runs: a line per game, rating
-reports, an SPRT that can stop it, a final summary and an exit code. It takes the fastchess
-command line (written in cutechess-cli's style) and writes fastchess or cutechess output, so tools
-written for those can run EngineBattle.
+`eb-cli match ...` (or a first argument that starts with `-`) plays an engine match with
+fastchess's command line - `-engine cmd=... name=...`, `-each tc=10+0.1`, `-rounds`, `-sprt` - and
+its output. It keeps fastchess's own conventions and its `config.json`; see
+[MatchMode.md](MatchMode.md) and `eb-cli match -help`.
 
-```bash
-dotnet run -c Release -- match -engine cmd=sf-dev name=dev -engine cmd=sf-base name=base     -each tc=10+0.1 option.Threads=1 -rounds 1000 -concurrency 4 -openings file=UHO.epd     -pgnout file=dev-vs-base.pgn -sprt elo0=0 elo1=5 alpha=0.05 beta=0.05
-dotnet run -c Release -- match -help
+## Commands
+
+```text
+Usage: eb-cli <command> [arguments] [options]
+
+Engines and positions
+  analyze <engine>                Analyze a position with an engine
+  compare <engine1> <engine2>     Compare two engines on one or more positions
+  position                        Facts about a position: status, legal moves, attacks, pins, insights
+  tablebase <fen>                 Every move of a position from the Syzygy tables
+  values position <engine>        Piece values from an engine's evaluations in one position
+  values fit <positions>          Piece values fitted over many positions
+  values batch <template> <nets>  Piece values for a folder of nets
+
+Engine definitions
+  engine check <engine>           Check that an engine follows the UCI protocol
+  engine new <exe>                Write an engine def from what the engine answers to 'uci'
+  engine gen <template>           Write defs for training checkpoints, from an existing def
+  engine bench <config>           Benchmark an engine from a config
+
+PGN files
+  pgn check <pgn>                 Parse every game: counts, empty games, speed
+  pgn validate <pgn>              Replay every game: illegal or ambiguous moves, non-standard SAN
+  pgn strip <pgn>                 Write the games without comments, variations or NAGs
+  pgn summary <pgn>               How the games ended
+  pgn elo <pgn>                   Ratings and results
+  pgn speed <pgn>                 Speed statistics per engine
+  pgn deviations <pgn>            Where engines deviated from each other and from themselves
+  pgn imbalance <pgn>             Results by material imbalance
+
+Puzzles, books, tournaments and tuning
+  book eval <book>                Keep the openings every engine scores in an eval window
+  puzzle run <config>             Run a puzzle test from a config
+  puzzle eret <config>            Run an ERET test from a config
+  puzzle trend                    Step curves per training arm from many puzzle runs
+  tournament run <config>         Run a tournament from a config
+  tournament validate <config>    Check a tournament config without running it
+  tune run <config>               Tune engine parameters (Bayesian optimisation)
+  tune dashboard <config>         Write the tuning dashboard again from the saved state
+
+Other
+  perft <depth>                   Count the move tree on the 960 Chess960 test positions
+  gui                             Start the WebGUI of a source checkout
 ```
-
-The full guide - output, resume, what EngineBattle does its own way - is [MatchMode.md](MatchMode.md).
-
-### tournamentjson
-
-Runs a chess engine tournament using a JSON configuration file.
-
-**Syntax:**
-```bash
-dotnet run -c Release -- tournamentjson <path-to-tournament.json> [--append]
-```
-
-`--append`: a cup, Swiss or ladder with no state file to resume from may start in a PGN that
-already has games. Without it the run stops and says so, so two tournaments are not mixed in one file.
-
-**Example:**
-```bash
-dotnet run -c Release -- tournamentjson C:/Dev/Chess/Tournaments/my_tournament.json
-```
-
-**Description:**
-- Loads tournament configuration from the specified JSON file
-- Initializes engines from the `EngineDefFolder` using files listed in `EngineDefList`
-- Runs games according to the tournament mode (RR, Swiss, Cup, Gauntlet or Ladder)
-- Outputs PGN to the configured `PgnOutPath`
-- Displays live standings and results in the console
-
-**Configuration:** See [TournamentConfig.md](TournamentConfig.md) for full configuration reference.
-
----
-
-### puzzlejson
-
-Runs Lichess puzzle tests against one or more chess engines.
-
-**Syntax:**
-```bash
-dotnet run -c Release -- puzzlejson <path-to-puzzle-config.json>
-```
-
-**Example:**
-```bash
-dotnet run -c Release -- puzzlejson C:/Dev/Chess/Puzzles/PuzzleConfig.json
-```
-
-**Description:**
-- Tests engines against puzzles from the Lichess puzzle database (CSV format)
-- Test types: `policy`, `policytop<N>`, `value`, `search` and `solve` (see PuzzleConfig.md)
-- Groups results by rating ranges and puzzle themes
-- Calculates performance ratings and accuracy percentages
-- Saves failed puzzles and summary to the configured output folder
-
-**Output:**
-- Console table showing engine performance by puzzle type and rating group
-- EPD file of failed puzzles (for further analysis)
-- Summary text file with detailed statistics
-
-**Configuration:** See [PuzzleConfig.md](PuzzleConfig.md) for full configuration reference.
-
----
-
-### eretjson
-
-Runs ERET (Engine Rapid Evaluation Tests) using EPD puzzle files.
-
-**Syntax:**
-```bash
-dotnet run -c Release -- eretjson <path-to-eret-config.json>
-```
-
-**Example:**
-```bash
-dotnet run -c Release -- eretjson C:/Dev/Chess/ERET/EretConfig.json
-```
-
-**Description:**
-- Tests engines against tactical puzzles in EPD format
-- Supports both time-limited and node-limited searches
-- Reports per-engine accuracy and failed puzzle details
-- Saves failed puzzles to the configured output folder
-
-**Output:**
-- Per-puzzle result (correct/incorrect)
-- Per-engine summary (correct count, failed count, accuracy)
-- EPD file containing all failed puzzles
-- Summary text file
-
-**Configuration:** See [EretConfig.md](EretConfig.md) for full configuration reference.
-
----
-
-### gui
-
-Launches the WebGUI (Blazor Server) from the console.
-
-**Syntax:**
-```bash
-dotnet run -c Release -- gui [page] [port]
-```
-
-**Examples:**
-```bash
-# Launch with default page (tournament) on default port (5018)
-dotnet run -c Release -- gui
-
-# Launch with specific page
-dotnet run -c Release -- gui analysis/single
-
-# Launch on custom port
-dotnet run -c Release -- gui 5020
-
-# Launch with specific page and port
-dotnet run -c Release -- gui help 5020
-```
-
-**Arguments:**
-- `page` (optional): The page route to open in the browser. Default: `tournament`
-- `port` (optional): The port to run the server on. Default: `5018`
-
-**Available Pages:**
-- `/tournament` - Tournament runner and results
-- `/analysis/single` - Single engine analysis
-- `/analysis/dual` - Dual engine comparison
-- `/analysis/game-review` - Game review and accuracy analysis
-- `/EngineDef` - Engine definition overview
-- `/tournamentSetup` - Tournament setup
-- `/play-vs-computer` - Play against engine
-- `/LichessPuzzles` - Lichess puzzle tests
-- `/EretPuzzleTest` - ERET puzzle tests
-- `/tools/pgn-tools` - PGN and EPD tools
-- `/tools/book-evaluation` - Out-of-book position evaluation
-- `/help` - Help and documentation
-- `/speed` - Speed calculator
-- `/ordo` - Ordo rating results
-- `/deviationFinder` - Move deviation finder
-- `/settings` - Global settings
-
-**Description:**
-- Starts the WebGUI Blazor Server application
-- Opens the default browser at the specified page
-- Press Ctrl+C or Enter to stop the server
-- The server and all child processes are properly terminated on exit
-
-**Running Multiple Instances:**
-
-When one instance is running, `dotnet run` will fail to build due to locked DLLs. Use one of these workarounds:
-
-```bash
-# Option 1: Run from the built executable (faster)
-.\bin\release\net10.0\EngineBattle.Console.exe gui analysis/single 5021
-
-# Option 2: Skip the build step
-dotnet run -c Release --no-build -- gui analysis/single 5021
-```
-
----
-
-### perft
-
-Verifies Chess960 move generation correctness using PERFT (performance test).
-
-**Syntax:**
-```bash
-dotnet run -c Release -- perft <depth> <sample-size>
-```
-
-**Example:**
-```bash
-# Test 10 random Chess960 positions at depth 5
-dotnet run -c Release -- perft 5 10
-```
-
-**Arguments:**
-- `depth`: Search depth (number of plies to explore)
-- `sample-size`: Number of random Chess960 starting positions to test
-
-**Description:**
-- Generates random Chess960 starting positions
-- Counts all legal move sequences to the specified depth
-- Compares against known-correct node counts
-- Reports any discrepancies (useful for debugging move generators)
-
----
+## Command reference
 
 ### analyze
 
-Analyzes a single position with a chess engine. Accepts engine JSON configs or bare exe paths.
+```text
+Analyze a position with an engine
 
-It runs the engine the way the analysis pages do (the same analysis engine): the engine's move overhead is 0, so `--movetime` is searched in full; Winboard engines work too (use `--movetime`); an engine that exits or stops answering ends the command with an error instead of leaving it waiting. `compare` and the piece-value commands search the same way.
+Usage: eb-cli analyze <engine> [<fen>] [options]
 
-**Aliases:** `a`
+Searches the position once and prints the engine's info lines as they come, then a summary. With --json, only the result, on stdout.
 
-**Syntax:**
-```bash
-dotnet run -c Release -- analyze <engine> [fen] [options]
+Arguments:
+  <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  [<fen>]   a FEN (quoted, or its six fields as they come) or startpos (default startpos)
+
+Options:
+      --moves "MOVES"   Moves played from the position first, SAN or UCI ("e4 e5 Nf3" or "e2e4 e7e5")
+      --nodes N         Search this many nodes (default 1000000)
+      --movetime MS     Search this many milliseconds
+      --depth N         Search to this depth
+      --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
+      --args "..."      The engine's command-line arguments, instead of the def's
+      --list-options    List the engine's UCI options and their defaults instead of searching
+      --json            Print the result as JSON on stdout (everything else goes to stderr)
+  At most one of --nodes, --movetime, --depth.
+
+Examples:
+  eb-cli analyze Stockfish19
+      Search the start position, 1,000,000 nodes
+  eb-cli analyze lc0.json "8/8/8/8/8/2k5/2Q5/K7 b - - 0 1" --movetime 2000
+      Two seconds on a position
+  eb-cli analyze sf.exe --moves "e4 e5 Nf3" --depth 20 --uci Threads=8
+      After three moves, to depth 20, with 8 threads
+  eb-cli analyze lc0.json --list-options
+      The engine's UCI options
 ```
-
-**Arguments:**
-- `engine`: Path to an engine definition JSON file or a bare engine executable
-- `fen` (optional): FEN string or `startpos` (default: `startpos`)
-
-**Options:**
-- `--fen S` — Set position (quoted FEN string)
-- `--moves M...` — Append UCI moves to position (e.g. `--moves d2d4 d7d5 c2c4`). Consumes all subsequent non-`--` arguments.
-- `--nodes N` — Search N nodes (default: 1000000)
-- `--movetime N` — Search for N milliseconds
-- `--depth N` — Search to depth N
-- `--args S` — Override engine command-line arguments (e.g. `dag-preview`)
-- `--uci K V` — Set any UCI option (repeatable, e.g. `--uci Backend onnx-trt`)
-- `--options` — Show all UCI options supported by the engine and exit
-
-**Examples:**
-```bash
-# Analyze with engine JSON config
-dotnet run -c Release -- a engine.json startpos --nodes 100000
-
-# Analyze with bare exe
-dotnet run -c Release -- a C:/path/to/engine.exe startpos --depth 15
-
-# Analyze specific position with UCI overrides
-dotnet run -c Release -- a engine.json "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1" --nodes 10000
-
-# Analyze with moves from startpos
-dotnet run -c Release -- a engine.json --moves d2d4 d7d5 c2c4 --depth 20
-
-# Show engine's UCI options
-dotnet run -c Release -- a engine.json --options
-```
-
-**Output:**
-- Raw UCI `info` lines with depth, eval, nodes, NPS, WDL, PV
-- `info string` lines (e.g. Lc0's LogLiveStats)
-- Raw `bestmove` line
-- Summary: depth, eval, nodes, NPS, time, TBHits, WDL, bestmove, PV (UCI + SAN notation)
-
----
-
 ### compare
 
-Side-by-side comparison of two engines across one or more positions. Creates both engines once and reuses them via `ucinewgame` between positions.
+```text
+Compare two engines on one or more positions
 
-**Aliases:** `cmp`
+Usage: eb-cli compare <engine1> <engine2> [options]
 
-**Syntax:**
-```bash
-dotnet run -c Release -- compare <engine1> <engine2> [options]
+Both engines search each position with the same limit; a table of evals, speed and best moves, then a summary. The position is the start position unless --fen or --positions says otherwise.
+
+Arguments:
+  <engine1>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  <engine2>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+
+Options:
+      --fen "FEN"        One position (quoted)
+      --positions FILE   An EPD file: every position in it
+      --nodes N          Search this many nodes (default 1000000)
+      --movetime MS      Search this many milliseconds
+      --depth N          Search to this depth
+      --uci1 NAME=VALUE  Set a UCI option of engine 1 (repeatable)
+      --uci2 NAME=VALUE  Set a UCI option of engine 2 (repeatable)
+      --threshold PAWNS  Show only positions where the evals differ by at least this many pawns, e.g. 0.5 (the summary counts all)
+      --json             Print the result as JSON on stdout (everything else goes to stderr)
+  At most one of --nodes, --movetime, --depth.
+  At most one of --fen, --positions.
+
+Examples:
+  eb-cli compare lc0_a.json lc0_b.json --nodes 1000
+      Speed and eval on the start position
+  eb-cli compare sf.json lc0.json --positions suite.epd --movetime 500 --threshold 0.5
+      Only the positions where they disagree by half a pawn or more
 ```
+### position
 
-**Arguments:**
-- `engine1`, `engine2`: Path to engine definition JSON files or bare engine executables
+```text
+Facts about a position: status, legal moves, attacks, pins, insights
 
-**Options:**
-- `--fen S` — Set position (quoted FEN string)
-- `--positions F` — EPD file with multiple positions
-- `--nodes N` — Search N nodes (default: 1000000)
-- `--movetime N` — Search for N milliseconds
-- `--depth N` — Search to depth N
-- `--threshold CP` — Only display positions where eval diff >= CP (summary still counts all)
-- `--uci1 K V` — Set UCI option for engine 1 (repeatable)
-- `--uci2 K V` — Set UCI option for engine 2 (repeatable)
+Usage: eb-cli position [<fen>] [options]
 
-**Examples:**
-```bash
-# Compare two engines on startpos
-dotnet run -c Release -- cmp engine1.json engine2.json --nodes 100000
+Prints the position's status and legal moves; --json gives everything (attackers, pins, hanging pieces, forks and the other insights) for tools and validators. Edits change the position first, in the order set-piece, remove, side, castling, ep.
 
-# Compare across multiple positions
-dotnet run -c Release -- cmp engine1.json engine2.json --positions test.epd --depth 20
+Arguments:
+  [<fen>]  a FEN (quoted, or its six fields as they come) or startpos
 
-# Only show positions with large disagreements
-dotnet run -c Release -- cmp engine1.exe engine2.exe --positions test.epd --threshold 0.5
+Options:
+      --moves "MOVES"    Moves played from the position first, SAN or UCI ("e4 e5 Nf3" or "e2e4 e7e5")
+      --square SQ        Also the attackers, attacks, pin ray and safe squares of this square
+      --pv "LINE"        Write this line (SAN or UCI) in SAN
+      --set-piece SQ=P   Put a piece on a square (e4=Q, e4=n) (repeatable)
+      --remove SQ        Take the piece off a square (repeatable)
+      --side w|b         Set the side to move
+      --castling RIGHTS  Set the castling rights (KQkq, -)
+      --ep SQ            Set the en passant square
+      --epd              Print the position as an EPD line instead
+      --op NAME=VALUE    An EPD operation for --epd (bm=e4, id="test 1") (repeatable)
+      --svg FILE         Also draw the position with its insights as an SVG
+      --force            Write over a file that exists
+      --positions FILE   Every position of an EPD file instead of one FEN
+      --json             Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli position startpos
+      Status and legal moves
+  eb-cli position "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1" --square e1 --json
+      Everything, with the king's square
+  eb-cli position startpos --set-piece e4=Q --remove d2 --epd --op id=edited
+      An edited position as an EPD line
+  eb-cli position --positions suite.epd --json
+      Every position of a file
 ```
+### tablebase
 
-**Output:**
-- Table with FEN, per-engine eval and NPS, bestmove (agreed = single move, disagreed = `move1/move2`)
-- Summary: move agreement %, avg/max eval diff with position #, NPS ratio
+```text
+Every move of a position from the Syzygy tables
 
----
+Usage: eb-cli tablebase <fen> [options]
 
-### benchmark
+Wins, cursed wins, draws, blessed losses and losses, best first, with DTZ counted from the position. The halfmove clock counts unless --ignore-clock. The tables: --syzygy, else EB_SYZYGY_PATH, else syzygyPath in eb-cli.json.
 
-Runs engine benchmarks from a JSON configuration file.
+Arguments:
+  <fen>  a FEN (quoted, or its six fields as they come) or startpos
 
-**Aliases:** `bench`, `b`
+Options:
+      --syzygy DIR    Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
+      --ignore-clock  Read the halfmove clock as 0: what the position is worth if the clock starts now
+      --json          Print the result as JSON on stdout (everything else goes to stderr)
 
-**Syntax:**
-```bash
-dotnet run -c Release -- benchmark <path-to-config.json>
+Examples:
+  eb-cli tablebase 8/8/8/8/8/2k5/2Q5/K7 b - - 0 1 --syzygy D:/syzygy
+      Black to move: the one draw first, then the losses
+  eb-cli tablebase "8/8/8/8/8/2k5/8/K6Q w - - 99 1" --json
+      A cursed win, as JSON
 ```
+### values position
 
----
+```text
+Piece values from an engine's evaluations in one position
 
-### tune
+Usage: eb-cli values position <engine> [<fen>] [options]
 
-Runs the Bayesian parameter tuner.
+Removes each piece in turn and measures how much the eval drops, from the piece owner's view: a ranked table, the board, and the average per piece type. The default search is one node, a pure network eval.
 
-**Syntax:**
-```bash
-dotnet run -c Release -- tune <path-to-tuner-config.json>
+Arguments:
+  <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  [<fen>]   a FEN (quoted, or its six fields as they come) or startpos (default startpos)
+
+Options:
+      --moves "MOVES"   Moves played from the position first, SAN or UCI ("e4 e5 Nf3" or "e2e4 e7e5")
+      --nodes N         Search this many nodes (default 1)
+      --movetime MS     Search this many milliseconds
+      --depth N         Search to this depth
+      --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
+      --args "..."      The engine's command-line arguments, instead of the def's
+  At most one of --nodes, --movetime, --depth.
+
+Examples:
+  eb-cli values position lc0.json "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+      What each piece is worth to the net
+  eb-cli values position ceres.json --moves "e4 e5 Nf3 Nc6" --nodes 100
+      After four moves, with a 100-node search
 ```
+### values fit
 
-**Description:**
-- Bayesian optimization with GP surrogate (Matern 5/2 ARD kernel)
-- SPRT-based evaluation for each candidate
-- Multi-phase tuning with parameter subsets
-- Press Ctrl+C to gracefully stop
+```text
+Piece values fitted over many positions
 
-**Configuration:** See [Console/ConsoleTuner.md](Console/ConsoleTuner.md) for full configuration reference.
+Usage: eb-cli values fit <positions> [options]
 
----
+Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments.
 
-### redash
+Arguments:
+  <positions>  an EPD or PGN file
 
-Regenerates the Bayesian optimizer HTML dashboard from a saved tuner state.
+Options:
+      --from eval|outcome|pgn-eval
+                                  What is fitted (default eval)
+      --engine ENGINE             an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+      --sample N                  Use this many positions (default: all of an EPD, 500 of a PGN for eval, 20000 for outcome and pgn-eval)
+      --nodes N                   Nodes per position for --from eval (default 1)
+      --by-phase                  Also fit middlegame and endgame separately
+      --player NAME               Only the games of this player (pgn-eval)
+      --bootstrap N               Confidence intervals from N bootstrap samples (outcome, pgn-eval)
+      --uci NAME=VALUE            Set a UCI option of the engine (repeatable)
+      --args "..."                The engine's command-line arguments, instead of the def's
 
-**Syntax:**
-```bash
-dotnet run -c Release -- redash <path-to-tuner-config.json>
+Examples:
+  eb-cli values fit quiet.epd --engine lc0.json
+      The net's piece values over an EPD
+  eb-cli values fit games.pgn --from outcome --by-phase
+      Values implied by the results
 ```
+### values batch
 
----
+```text
+Piece values for a folder of nets
 
-### pgnsummary
+Usage: eb-cli values batch <template> <nets> [options]
 
-Analyzes PGN game terminations and displays a summary.
+For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The first Ctrl+C stops after the net being played.
 
-**Aliases:** `pgn`, `ps`
+Arguments:
+  <template>  a tournament config whose first engine def is the template
+  <nets>      a folder of .onnx networks
 
-**Syntax:**
-```bash
-dotnet run -c Release -- pgnsummary <path-to-pgn-file>
+Options:
+      --rounds N     Self-play games per net (default 1000)
+      --out-dir DIR  Where the PGNs and summary.csv go (default <nets>/pv_batch)
+
+Examples:
+  eb-cli values batch template.json C:/Nets/arm --rounds 400
+      400 games per net
 ```
+### engine check
 
----
+```text
+Check that an engine follows the UCI protocol
 
-### pgncheck
+Usage: eb-cli engine check <engine> [options]
 
-Streams a PGN file through the parser and reports what it found: game and ply counts,
-the longest game, games without moves, games without a result tag, games carrying a FEN
-tag, throughput and peak memory. Deliberately does **no** analysis — `pgnsummary`, `elo`
-and `speed` all replay boards or build statistics, so none of them tells you how the
-parser itself behaves on a large file. Exits with code 1 if any game fails to parse.
+Start-up, options, positions, search limits, info lines, stop and isready, ponder, edge cases and quit, and how it behaves in EngineBattle's analysis pages. PASS, WARN, FAIL or SKIP per check, then a summary. Exit 1 when a check fails. Groups: startup, options, positions, limits, info, stop, ponder, edge, quit, analysis.
 
-Useful for validating a downloaded database before working with it, and as a regression
-check after changes to the PGN parser.
+Arguments:
+  <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
 
-**Aliases:** `pc`
+Options:
+      --nodes N         Nodes for the search checks (default 2000)
+      --movetime MS     Milliseconds for the search checks, instead of nodes
+      --only GROUPS     Run only these groups, comma-separated (startup,positions,stop)
+      --delay MS        Wait between commands to the engine (default 30)
+      --stop-delay MS   Wait before each stop (default 0)
+      --rounds N        Repeat the stop and isready checks (default 3)
+      --moves "MOVES"   The game the position checks play (SAN or UCI; default a 30-ply Ruy Lopez)
+      --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
+      --args "..."      The engine's command-line arguments, instead of the def's
+  At most one of --nodes, --movetime.
 
-**Syntax:**
-```bash
-dotnet run -c Release -- pgncheck <path-to-pgn-file>
+Examples:
+  eb-cli engine check myengine.exe
+      Every check
+  eb-cli engine check lc0.json --only startup,positions,limits,stop
+      Only these groups
+  eb-cli engine check ceres.json --delay 50 --stop-delay 50
+      A slower engine
 ```
+### engine new
 
----
+```text
+Write an engine def from what the engine answers to 'uci'
 
-### pgnvalidate
+Usage: eb-cli engine new <exe> [options]
 
-Replays every game of a PGN on a board and checks each move against the legal moves of its
-position. Streams the file one game at a time, so memory stays flat however large it is (the
-whole TCEC archive, 54,000 games and 7.6 million plies, in about 11 seconds). Results and comments are not
-looked at - only whether the moves can be played.
+Starts the engine, reads its id and options, and writes <name>.json (the name without spaces) with every option at its default, overridden by --uci, --net and --syzygy. The same as the GUI's Engine creator. A def that exists is not written over without --force.
 
-- **Errors** (the rest of that game is not checked): a move that fits no legal move, a move that
-  fits more than one (`Nd2` when two knights can go there), a FEN tag that cannot be set up.
-- **Warnings** (the game goes on): a legal move written otherwise than standard SAN - a missing
-  `x`, needless disambiguation (`Ngf3`), coordinates (`e2e4`). The standard form is given.
+Arguments:
+  <exe>  the engine executable
 
-Check and annotation marks, `O-O` versus `0-0` and `=` in promotions are not counted as
-differences. Every finding names the game, round, players, ply, move and the FEN it was played
-in; the first 20 are printed, `--csv` writes them all. Exits with code 1 if there is an error.
+Options:
+      --out-dir DIR      The folder to write the def into (default: the working directory)
+      --net FILE         The network file, set in the engine's own network option
+      --syzygy DIR       Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
+      --base DEF         An existing def whose settings the new one starts from
+      --uci NAME=VALUE   Set a UCI option of the engine (repeatable)
+      --print            Print the def instead of writing it
+      --force            Write over a file that exists
+      --timeout SECONDS  How long the engine has to answer (default 15)
 
-The summary also counts games without moves (an abandoned game, say) and records the parser
-skipped - `[Event` lines it made no game of, such as an `[Event]` tag with nothing after it. Neither
-is an error. A game without an `[Event]` tag is not counted as a line, so skipped records are a
-lower bound.
-
-**Aliases:** `pgnv`
-
-**Syntax:**
-```bash
-dotnet run -c Release -- pgnvalidate <path-to-pgn-file> [--csv findings.csv] [--threads N]
+Examples:
+  eb-cli engine new C:/Engines/sf/stockfish.exe --uci Threads=8 --uci Hash=4096 --out-dir defs
+      A Stockfish def with 8 threads
+  eb-cli engine new lc0.exe --net BT4.onnx --print
+      Show the def without writing it
 ```
+### engine gen
 
-`--threads N` checks the games on N threads (one by default) - the findings, the CSV and the
-summary are the same however many. It helps compact files most (TCEC: 2 threads -30%, 4 threads
--40%); on comment-heavy files like CCC's the parser's allocations keep the garbage collector busy
-and more threads gain little.
+```text
+Write defs for training checkpoints, from an existing def
 
----
+Usage: eb-cli engine gen <template> [options]
 
-### pgnstrip
+The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force.
 
-Writes every game of a PGN file again without comments, variations or NAGs (`$1` as well as `!`
-and `?`), streamed one game at a time, so a file of any size works. Each game keeps all its tags
-as written and in their order; the main line is numbered as the PGN standard wants it (`30...` when
-the game starts with Black to move from a FEN) and wrapped at 80 characters. The summary counts the
-games, plies, comments and variations removed, and any `[Event` record the parser made no game of
-(those are not in the output). The output is written to a temporary file and moved into place at
-the end, so a failed run leaves no half-written file.
+Arguments:
+  <template>  an existing def of the arm (a full path)
 
-**Aliases:** `strip`
+Options:
+      --net FILE     Write the def of this one network only
+      --nets DIR     Look for networks here (default: the folder of the template's network)
+      --out-dir DIR  Write the defs here (default: the template's folder)
+      --dry-run      Show what would be written, write nothing
+      --force        Write over a file that exists
+  At most one of --net, --nets.
 
-**Syntax:**
-```bash
-dotnet run -c Release -- pgnstrip <path-to-pgn-file> [--out stripped.pgn] [--force] [--skip-empty] [--skip-invalid]
+Examples:
+  eb-cli engine gen C:/Defs/Ceres_srv_deg4_400M.json
+      Defs for the arm's new checkpoints
+  eb-cli engine gen C:/Defs/Ceres_srv_deg4_400M.json --net C:/Nets/srv_deg4_800M.onnx --dry-run
+      What one checkpoint's def would be
 ```
+### engine bench
 
-`--skip-empty` leaves out games without moves. `--skip-invalid` leaves out games `pgnvalidate` finds
-an error in - an illegal or ambiguous move, or a FEN that cannot be set up; a move written in
-non-standard SAN is kept. The summary counts what was left out.
+```text
+Benchmark an engine from a config
 
-Without `--out` the output is `<name>_stripped.pgn` next to the input. An existing output is only
-overwritten with `--force`, and the input never. The GUI's Minimal PGN (Tools, Create Opening Book)
-writes the same game text.
+Usage: eb-cli engine bench <config>
 
----
+Runs the benchmark config (engine, option sets, positions, duration; see Console/ConsoleBenchmark.md) and writes the summary to its SummaryOutputPath, or logs/benchmark-summary-<time>.txt.
 
-### bookeval
+Arguments:
+  <config>  a benchmark config (JSON)
 
-The Book Evaluation page from the command line: every engine searches the final position of
-each opening, and the openings whose evals all lie within `--min`..`--max` centipawns (either
-side may be better) with the engines agreeing within `--maxdiff` are written to a new book.
-Runs on the analysis engine, like `analyze`. Details and the filter in
-[BookEvaluation.md](BookEvaluation.md).
-
-**Aliases:** `be`
-
-**Syntax:**
-```bash
-dotnet run -c Release -- bookeval <book.pgn|book.epd> --engine <def|exe> [--nodes N|--movetime MS] [--engine ...] [--min CP] [--max CP] [--maxdiff CP] [--count N] [--out F]
+Examples:
+  eb-cli engine bench benchmark-options.json
+      Run the benchmark
 ```
+### pgn check
 
-A limit right after an `--engine` is that engine's own; one before the first `--engine` is the
-default for all (10000 nodes if none is given). The run ends with the page's Results table.
-Ctrl+C stops and writes what passed; the exit code is 1 when an engine stopped the run.
+```text
+Parse every game: counts, empty games, speed
 
----
+Usage: eb-cli pgn check <pgn> [options]
 
-### deviations
+A health check of the parser on a file: games, plies, games without moves or a result, speed and memory. It replays no moves (pgn validate does). Exit 1 when a game could not be read.
 
-Runs the same position-keyed analysis as the Move Deviation page in the GUI and prints it:
-every game is replayed once and each move is bucketed by
-the position it was played from. A position reached in more than one game where the games
-did not all play the same move is a deviation; when one engine played two different moves
-there it is a *self* deviation, otherwise *cross*. Opening moves are excluded — identified
-per move from the search data EngineBattle and CCC record, or from TCEC's `{ Book exit }`
-marker — and the report says how many games it could do that for. The per-engine table gives
-self-deviations over positions the engine reached more than once, with the rate beside it;
-the size of the denominator is the measure of what that rate is worth. Reverse-colour
-pairings such as a superfinal give an empty denominator, which the report says outright.
+Arguments:
+  <pgn>  a PGN file
 
-**Syntax:**
-```bash
-dotnet run -c Release -- deviations <path-to-pgn-file>
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli pgn check big.pgn
+      How many games, and how fast they parse
 ```
+### pgn validate
 
----
+```text
+Replay every game: illegal or ambiguous moves, non-standard SAN
 
-### elo
+Usage: eb-cli pgn validate <pgn> [options]
 
-Shows Elo ratings, results, and standings from a PGN file.
+Every move is matched against the legal moves of its position. A move that fits none (or more than one) is an error and ends that game's check; a legal move written otherwise than standard SAN is a warning. The first 20 findings are shown; --out writes them all to a CSV. Exit 1 when there are errors.
 
-**Aliases:** `e`
+Arguments:
+  <pgn>  a PGN file
 
-**Syntax:**
-```bash
-dotnet run -c Release -- elo <path-to-pgn-file>
+Options:
+  -o, --out FILE   Write every finding to this CSV file
+      --force      Write over a file that exists
+      --threads N  Check games on N threads (up to the core count) (default 1)
+      --json       Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli pgn validate games.pgn
+      Errors and warnings, with a summary
+  eb-cli pgn validate big.pgn -o findings.csv --threads 8
+      Every finding to a CSV, on 8 threads
 ```
+### pgn strip
 
----
+```text
+Write the games without comments, variations or NAGs
 
-### speed
+Usage: eb-cli pgn strip <pgn> [options]
 
-Shows each engine's speed from a PGN file's move comments: **medians per move** over all of the
-engine's moves - nodes per move (`npm`), nodes per second (`nps`), depth, selective depth and move
-time. The table says so on its first line. Medians, not averages: a few very long or very short
-searches move an average a long way. The GUI's speed calculator shows the averages beside them
-(outliers outside 1.5 x the interquartile range left out).
+Every game written again: its tags as they were, the main line numbered and wrapped at 80 characters, the result. The output goes to a temporary file first, so a failed run leaves no half file; the input is never written over.
 
-**Aliases:** `sp`
+Arguments:
+  <pgn>  a PGN file
 
-**Syntax:**
-```bash
-dotnet run -c Release -- speed <path-to-pgn-file>
+Options:
+  -o, --out FILE      The output PGN (default <name>_stripped.pgn next to the input)
+      --force         Write over a file that exists
+      --skip-empty    Leave out games without moves
+      --skip-invalid  Leave out games with an illegal or ambiguous move or a bad start FEN
+      --json          Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli pgn strip games.pgn
+      games_stripped.pgn next to it
+  eb-cli pgn strip games.pgn -o clean.pgn --skip-empty --skip-invalid --force
+      Only playable games, over clean.pgn
 ```
+### pgn summary
 
----
+```text
+How the games ended
 
-### validate
+Usage: eb-cli pgn summary <pgn>
 
-Validates a tournament configuration file without running the tournament.
+Terminations (mate, adjudication, time, repetition, ...) per engine and overall.
 
-**Aliases:** `v`
+Arguments:
+  <pgn>  a PGN file
 
-**Syntax:**
-```bash
-dotnet run -c Release -- validate <path-to-tournament.json>
+Examples:
+  eb-cli pgn summary games.pgn
+      How the games ended
 ```
+### pgn elo
 
----
+```text
+Ratings and results
 
-### help
+Usage: eb-cli pgn elo <pgn>
 
-Displays available commands and their usage.
+Elo, score and results per engine pair from the games.
 
-**Aliases:** `h`
+Arguments:
+  <pgn>  a PGN file
 
-**Syntax:**
-```bash
-dotnet run -c Release -- help
+Examples:
+  eb-cli pgn elo match.pgn
+      The rating table
 ```
+### pgn speed
 
----
+```text
+Speed statistics per engine
 
-### query
+Usage: eb-cli pgn speed <pgn> [options]
 
-```bash
-dotnet run -c release -- query <fen|startpos> [square] [--pv "<san|uci>"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] [--emit-epd [--op name=value]...] [--svg out.svg]
-dotnet run -c release -- query --epd <file.epd>
+Nodes per second (median and average) and other speed figures per engine, from the PGN's comments.
+
+Arguments:
+  <pgn>  a PGN file
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli pgn speed match.pgn
+      NPS per engine
 ```
+### pgn deviations
 
-Machine-readable JSON on stdout (diagnostics on stderr) for validators and tooling: the
-position's `status`, `insufficientMaterial`, every legal move as UCI + SAN with predicates
-(capture, castling, en passant, gives check), and both sides' insights - checkers, pins,
-king danger, hanging pieces by static exchange evaluation, forks, skewers, overloaded and
-removable defenders, discovered attacks. A square argument adds that square's attackers,
-attack set, pin ray and safe destinations. The edit flags transform the FEN first (piece
-edits prune castling and en passant rights), `--pv` renders a move sequence as numbered SAN,
-`--emit-epd` prints an EPD line instead of JSON, `--svg` draws the position with the
-insight shapes, and `--epd <file>` streams one JSON object per position. The worked
-description with field names is in the README. Aliases: `q`.
+```text
+Where engines deviated from each other and from themselves
 
-### tb
+Usage: eb-cli pgn deviations <pgn>
 
-```bash
-dotnet run -c release -- tb <fen> [--tb <folder>] [--json] [--ignore-clock]
+The position-keyed view of the deviation page: positions reached more than once and the moves played in them, with the opening coverage.
+
+Arguments:
+  <pgn>  a PGN file
+
+Examples:
+  eb-cli pgn deviations gauntlet.pgn
+      Self and cross deviations
 ```
+### pgn imbalance
 
-Every legal move of a position from the Syzygy tablebases, best first, in five groups from
-the side to move's view: win, cursed win (a win the 50-move rule turns into a draw), draw,
-blessed loss and loss. Wins are ordered mate, then zeroing moves (captures and pawn moves),
-then the shortest DTZ; losses by the longest DTZ. The halfmove clock counts: a win that the
-50-move rule turns into a draw from the FEN's clock on is a cursed win, and from 100 a note
-says a draw can be claimed; `--ignore-clock` reads the clock as 0 (what the position is worth if the clock starts now, as lichess shows it). DTZ is counted from the given position, so the best move has the
-position's own DTZ. Without DTZ tables (.rtbz) for the material the moves are grouped from
-the WDL tables alone; those cannot see the clock, so with the clock running a win or loss
-that is not a zeroing move is marked "50-move rule not checked". `--tb` names the folder (several separated by `;` on Windows, `:` elsewhere); without
-it `EB_SYZYGY_PATH`, then `syzygyPath` in [eb-cli.json](#eb-clijson). `--json` prints the answer as JSON. Exit 1 when the tables give
-no answer (no folder, too many pieces, castling rights, no table for the material). The
-WebGUI has the same lookup on Tools > Tablebase. Aliases: `tablebase`.
+```text
+Results by material imbalance
 
-### mkdef
+Usage: eb-cli pgn imbalance <pgn>
 
-```bash
-dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--base def.json] [--uci name value]... [--print] [--force] [--timeout seconds]
+How the games went when one side had, for instance, a bishop for a knight, the bishop pair, or a rook for a minor piece: the score and the PGN evals per matchup, from the positions past ply 16.
+
+Arguments:
+  <pgn>  the games
+
+Examples:
+  eb-cli pgn imbalance games.pgn
+      The matchups and how they scored
 ```
+### book eval
 
-An engine def from the engine itself: starts it, reads its `uci` answer (name, author, every
-option with its default) and writes `<Name without spaces>.json` into `--out` (default: the
-current folder). Same code as Setup & Settings > Engine creator in the GUI. `--net` goes into the
-engine's own network option (Lc0's `WeightsFile`, Ceres' `Network`) and its folder into
-`NetworkPath`; `--tb` fills `SyzygyPath`; `--uci` overrides a default; `--base` carries an
-existing def's values over; nothing is overwritten without `--force`. Aliases: `md`. Details
-in [EngineDefConfig.md](EngineDefConfig.md).
+```text
+Keep the openings every engine scores in an eval window
 
-### gendefs
+Usage: eb-cli book eval <book> [options]
 
-```bash
-dotnet run -c release -- gendefs <fullPathTo/templateDef.json> [--net <one.onnx>|--nets <folder>] [--out folder] [--dry-run] [--force]
+Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (centipawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
+
+Arguments:
+  <book>  an opening book (.pgn or .epd)
+
+Options:
+      --engine ENGINE[,nodes=N|,movetime=MS]
+                                  An engine, with its own limit after a comma if it has one; at least one (repeatable)
+      --nodes N                   The limit of every engine without its own (default 10000)
+      --movetime MS               A time limit for every engine without its own, instead of nodes
+      --min CP                    The smallest |eval| kept (default 80)
+      --max CP                    The largest |eval| kept (default 100)
+      --max-diff CP               The largest spread between the engines (default 40)
+      --count N                   Only the first N openings
+  -o, --out FILE                  The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)
+      --force                     Write over a file that exists
+  At most one of --nodes, --movetime.
+
+Examples:
+  eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000
+      Two engines, lc0 with its own limit
+  eb-cli book eval book.epd --engine sf.json --movetime 300 --min 30 --max 120 -o balanced.epd
+      A wider window, to a file of its own
 ```
+### puzzle run
 
-Defs for training checkpoints that have none yet. An existing def is the template: its file
-name carries the naming convention (`<prefix>_<step>M[_ema].json`) and its content
-everything else. The net folder is scanned for `.onnx` files of the same arm and variant,
-nets already referenced by a def are skipped, and the step label is substituted wherever it
-occurs. `--dry-run` lists what would be written. Aliases: `gd`.
+```text
+Run a puzzle test from a config
 
-### puzzletrend
+Usage: eb-cli puzzle run <config> [options]
 
-```bash
-dotnet run -c release -- puzzletrend <folder> [--arm S] [--type S] [--rg N] [--min-steps N] [--csv out.csv]
+Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. Exit 1 when an engine failed or nothing was scored.
+
+Arguments:
+  <config>  a puzzle config (JSON)
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli puzzle run PuzzleConfig.json
+      The test, with the tables
+  eb-cli puzzle run PuzzleConfig.json --json > result.json
+      The result for a script
 ```
+### puzzle eret
 
-Consolidates many puzzle runs into per-training-arm step curves, from the
-`LichessSummary_<stamp>.json` files every puzzle run writes. Net names are split into arm +
-step; repeated measurements of one checkpoint collapse to the largest sample. Series with
-fewer than `--min-steps` (default 3) steps are hidden. The GUI equivalent is
-`/puzzles/trend`. Aliases: `pt`.
+```text
+Run an ERET test from a config
 
-### piecevalues, piecevaluefit, pvbatch, pvcombo
+Usage: eb-cli puzzle eret <config>
 
-What a network thinks a piece is worth, from its evaluations of material imbalances:
-`piecevalues` (`pv`) for one engine and position, `piecevaluefit` (`pvfit`) as a regression
-over a PGN or EPD, `pvbatch` over a folder of nets, and `pvcombo <games.pgn>` for a report
-by absolute material signature. Method and options in [PieceValues.md](PieceValues.md).
+Runs the ERET test of an ERET config (EretPuzzles.md); the failed puzzles and the summary go to its FailedPuzzlesOutputFolder. Exit 1 when an engine failed.
 
-## Diagnostics
+Arguments:
+  <config>  an ERET config (JSON)
 
-### enginecheck
-
-Checks that a UCI engine follows the protocol, and that it behaves in EngineBattle's analysis pages. Use it on a new engine, or when an engine misbehaves in a tournament or an analysis page: it tells the engine's fault from EngineBattle's. Each check prints PASS, WARN (EngineBattle copes, but the engine strays from the UCI spec), FAIL or SKIP. Exit code 1 when a check fails.
-
-**Aliases:** `ec`
-
-**Syntax:**
-```bash
-dotnet run -c Release -- enginecheck <engine> [--only <groups>] [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--stop-delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
+Examples:
+  eb-cli puzzle eret EretConfig.json
+      The test
 ```
+### puzzle trend
 
-**Groups** (all by default; `--only startup,stop,ponder` picks some - `startup` runs with any UCI group, since the others need it; an unknown name is refused):
-- `startup` - `uci` answered with id name, id author, options EngineBattle understands and `uciok`; the def's options, then `isready`; `ucinewgame` + `isready`
-- `options` - every option the def does not set, set to its own default: the engine stays ready
-- `positions` - `startpos` and `fen`, with `moves` containing castling, en passant and (under)promotion, black to move, and Chess960 positions and castling (king takes rook) when the engine has `UCI_Chess960` (switched for each variant whatever the def says, as EngineBattle does, then set back): each bestmove must be legal
-- `limits` - `go depth`, `go nodes` (warns when far over), `go movetime 500`, 2 s on the clock (fails when the engine would lose on time), `movestogo 1`
-- `info` - the info lines of the `positions` and `limits` searches (so it needs one of them): a score is reported and each last pv is legal
-- `stop` - `go infinite` keeps searching until `stop`; `isready` is answered during a search; `stop` gets a prompt bestmove, also when it follows `go` at once (20 times)
-- `ponder` - with a Ponder option: a ponder move with the bestmove; `go ponder` gives no bestmove before `ponderhit`, then one in time; `stop` ends a ponder search
-- `edge` - `searchmoves` is respected; `MultiPV 3` gives three lines; positions with no legal move (checkmate, stalemate) answer `bestmove 0000` or `(none)` - last, since some engines hang or crash there
-- `quit` - the process exits
-- `analysis` - drives EngineBattle's analysis engine (the one behind the analysis pages, the kibitzer, Play vs computer and Game Review) as the GUI does: every position of a game in turn (as Game Review); fast moves through the game with `go infinite`, `--rounds` times - one bestmove, for the last position; MultiPV changed during a search; stop. Runs on its own engine process.
+```text
+Step curves per training arm from many puzzle runs
 
-Under a FAIL line come the last commands EngineBattle sent and what the engine answered, with their times (a run of info lines as one line); the analysis group also names its full I/O log. Once the engine stops answering, its last stderr lines are printed (a crash usually says why there) and it is restarted for the next group (and in the edge group for the next edge case), up to five times, so one failure does not hide the checks after it; in the analysis group the rest is skipped with the reason. The run ends with a summary of every FAIL and WARN, with its group, and why checks were skipped: an early failure has scrolled away by then.
+Usage: eb-cli puzzle trend [<folder>] [options]
 
-**Options:** `--nodes` (default 2000) or `--movetime` for the searches; `--delay` between navigation requests (default 30 ms); `--stop-delay` between `go` and `stop` in the "stop right after go" check (default 0, the race itself; with a pause the check reports as "stop N ms after go"); `--moves` replaces the built-in 30-ply game of the analysis group. A Winboard engine gets only the `analysis` group (use `--movetime`: CECP has no node limit).
+Reads the LichessSummary_<stamp>.json of every puzzle run in the folder and lines each arm's checkpoints up by training step. Series with fewer steps than --min-steps are hidden (most nets are one-offs). The folder: the argument, else puzzleResultsFolder in eb-cli.json.
 
----
+Arguments:
+  [<folder>]  the folder of puzzle results
 
+Options:
+      --arm TEXT        Only arms whose name contains this
+      --type TEXT       Only test types that contain this (policy, value)
+      --rating-group N  Only this rating group
+      --min-steps N     Hide series with fewer steps (default 3)
+  -o, --out FILE        Also write the rows as CSV
+      --force           Write over a file that exists
+      --json            Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli puzzle trend C:/Dev/Chess/EB --arm srv_deg4
+      One arm's curve
+  eb-cli puzzle trend --type policy -o trend.csv
+      Every arm's policy rows, to a CSV
+```
+### tournament run
+
+```text
+Run a tournament from a config
+
+Usage: eb-cli tournament run <config> [options]
+
+Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. Exit 1 when the run failed.
+
+Arguments:
+  <config>  a tournament config (JSON)
+
+Options:
+      --append  Let a new cup, Swiss or ladder start in a PGN that already has games
+
+Examples:
+  eb-cli tournament run tournament.json
+      Play it (or go on with it)
+```
+### tournament validate
+
+```text
+Check a tournament config without running it
+
+Usage: eb-cli tournament validate <config>
+
+Reads the config and its engine defs and checks the key settings; warnings for settings that will not do what they seem to. Exit 1 when the config has errors.
+
+Arguments:
+  <config>  a tournament config (JSON)
+
+Examples:
+  eb-cli tournament validate tournament.json
+      Is it ready to run?
+```
+### tune run
+
+```text
+Tune engine parameters (Bayesian optimisation)
+
+Usage: eb-cli tune run <config>
+
+Runs the tuner config (Console/ConsoleTuner.md): Bayesian optimisation with SPRT matches, phase by phase; the state, history, best options and the dashboard go to its OutputDir. "Resume": true in the config goes on from the saved state. Ctrl+C stops at once.
+
+Arguments:
+  <config>  a tuner config (JSON)
+
+Examples:
+  eb-cli tune run tuner-config.json
+      Tune
+```
+### tune dashboard
+
+```text
+Write the tuning dashboard again from the saved state
+
+Usage: eb-cli tune dashboard <config>
+
+Writes bo-dashboard.html in the config's OutputDir again from tune-state.json, without running anything.
+
+Arguments:
+  <config>  the tuner config of the run
+
+Examples:
+  eb-cli tune dashboard tuner-config.json
+      The dashboard again
+```
+### perft
+
+```text
+Count the move tree on the 960 Chess960 test positions
+
+Usage: eb-cli perft <depth> [options]
+
+Counts every legal move sequence to the depth and compares it with the known count for each position (Chess960 start positions with castling rights, from the published perft table). Exit 1 when a count is wrong.
+
+Arguments:
+  <depth>  1 to 6
+
+Options:
+      --count N  Test the first N positions (1-960) (default 10)
+      --json     Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli perft 5
+      Depth 5 on the first 10 positions
+  eb-cli perft 5 --count 960
+      All of them (about a minute)
+```
+### gui
+
+```text
+Start the WebGUI of a source checkout
+
+Usage: eb-cli gui [<page>] [options]
+
+Runs the WebGUI project with `dotnet run` and opens the browser on the page. Enter or Ctrl+C stops it. A download has no project to run: start EngineBattle instead.
+
+Arguments:
+  [<page>]  the page to open (default tournament)
+
+Options:
+      --port N  Listen on this port (default the WebGUI's own, 5018)
+
+Examples:
+  eb-cli gui
+      The tournament page
+  eb-cli gui analysis/single --port 5100
+      Single-engine analysis on port 5100
+```
 ## Configuration File Examples
 
 ### Minimal Tournament Configuration

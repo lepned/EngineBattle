@@ -66,22 +66,22 @@ The results summary shows:
 
 ## From the Command Line
 
-The same run is the `bookeval` verb (alias `be`), for books too large to babysit in the browser:
+The same run is `eb-cli book eval`, for books too large to babysit in the browser:
 
 ```bash
-eb-cli bookeval book.pgn --engine Stockfish19.json --movetime 300 --engine Lc0.json --nodes 2000
-eb-cli bookeval book.epd --engine Stockfish19.json --min 30 --max 120 --count 1000 --out balanced.epd
+eb-cli book eval book.pgn --engine Stockfish19.json,movetime=300 --engine Lc0.json,nodes=2000
+eb-cli book eval book.epd --engine Stockfish19.json --min 30 --max 120 --count 1000 -o balanced.epd
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--engine <def.json\|exe>` | (required) | An engine; repeat for more |
-| `--nodes N` / `--movetime MS` | 10000 nodes | Right after an `--engine`: that engine's limit. Before the first `--engine`: every engine's default |
-| `--min`, `--max`, `--maxdiff` | 80, 100, 40 | The filter above, in centipawns |
+| `--engine ENGINE[,nodes=N\|,movetime=MS]` | (required) | An engine (a def, an exe or a def name), with its own limit after a comma; repeat for more |
+| `--nodes N` / `--movetime MS` | 10000 nodes | The limit of every engine without its own |
+| `--min`, `--max`, `--max-diff` | 80, 100, 40 | The filter above, in centipawns |
 | `--count N` | the whole book | Openings to read from the book |
-| `--out F` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file |
+| `-o, --out FILE` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file; an existing one needs `--force` |
 
-When the run ends, the verb prints the same Results table as the page. Ctrl+C stops the run and writes what passed (a second Ctrl+C ends it at once). The exit code is 1 when an engine stopped the run.
+When the run ends, the command prints the same Results table as the page. Ctrl+C stops the run and writes what passed (a second Ctrl+C ends it at once). The exit code is 1 when an engine stopped the run.
 
 ## Tips
 

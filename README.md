@@ -175,53 +175,49 @@ git pull origin main
 
 ### Console Commands
 
-The Console project is developer and server tooling - matches, batch runs, engine probing, PGN and position queries. In the release zip it is `eb-cli` (`eb-cli <command> [arguments]`); from a source clone, run it with `dotnet run` from the `Console` folder:
+The Console project is developer and server tooling - matches, batch runs, engine probing, PGN and position queries. In the release zip it is `eb-cli` (`eb-cli <command> [arguments]`); from a source clone, run it with `dotnet run --project Console -c Release -- <command> [arguments]`:
 
 ```bash
-cd Console
-dotnet run -c release -- tournamentjson <fullPathToTournament.json>
-dotnet run -c release -- puzzlejson <fullPathToPuzzleConfig.json>
-dotnet run -c release -- eretjson <fullPathToEretConfig.json>
-dotnet run -c release -- analyze <engine> [fen] [options]
-dotnet run -c release -- compare <engine1> <engine2> [options]
-dotnet run -c release -- match -engine cmd=A -engine cmd=B -each tc=10+0.1 -rounds 100
-dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--uci name value]...
-dotnet run -c release -- tune <fullPathToTunerConfig.json>
-dotnet run -c release -- query <fen|startpos> [square] [--pv "<uci moves>"]
-dotnet run -c release -- query --epd <file.epd>
-dotnet run -c release -- deviations <file.pgn>
-dotnet run -c release -- pgncheck <file.pgn>
-dotnet run -c release -- gui [page] [port]
+eb-cli tournament run <tournament.json>
+eb-cli puzzle run <PuzzleConfig.json> [--json]
+eb-cli puzzle eret <EretConfig.json>
+eb-cli analyze <engine> [<fen>] [--nodes N | --movetime MS | --depth N]
+eb-cli compare <engine1> <engine2> [--positions suite.epd]
+eb-cli match -engine cmd=A -engine cmd=B -each tc=10+0.1 -rounds 100
+eb-cli engine new <engine.exe> [--out-dir DIR] [--net FILE] [--syzygy DIR] [--uci NAME=VALUE]...
+eb-cli tune run <tuner-config.json>
+eb-cli position <fen|startpos> [--square SQ] [--pv "<line>"] [--json]
+eb-cli tablebase <fen> [--syzygy DIR]
+eb-cli pgn deviations <file.pgn>
+eb-cli pgn check <file.pgn>
+eb-cli gui [<page>] [--port N]
 ```
 
-See [ConsoleTools.md](ConsoleTools.md) for the full list.
+`eb-cli` alone lists every command, `eb-cli help <command>` explains one. Every command follows the same rules - options, `--json`, exit codes, Ctrl+C - described in [ConsoleTools.md](ConsoleTools.md), with the full reference.
 
-#### Position queries (`query`)
+#### Position queries (`position`)
 
-Machine-readable JSON on stdout (diagnostics go to stderr), intended for validator and
-tooling use — e.g. differential testing against python-chess by piping positions through
-EB as an oracle. For a FEN it emits `status` (`checkmate`/`stalemate`/`check`/`ok`),
-`insufficientMaterial` (dead-position approximation: kings only, kings plus one minor,
-or kings plus same-colored bishops), the full `legalMoves` list as UCI + SAN pairs
-(castling SAN is spelled `0-0`) with per-move predicates (`isCapture`, `isCastling`,
-`isEnPassant`, `givesCheck` — python-chess `gives_check()` parity), and both colors' insights (king, checkers, check-block
-squares, pins as attacker/pinned/king triples, king danger/escape squares, hanging
-pieces judged by static exchange evaluation, and the tactics family: `forks` (a safe
-piece attacking two or more losable targets or the king), `skewers` (kind `skewer` or
-`relativePin` for two enemy pieces on one slider ray), `overloadedDefenders`
-(sole defenders of two or more pieces that hang without them), `discoveredAttacks`
-(a slider unveils check or a winning attack when its own blocker moves), and
-`removableDefenders` (an enemy sole defender that can be captured without loss,
-winning what it defended)). With a square argument it adds per-square
-data: `attackersWhite`/`attackersBlack`, the piece's attack set (`attacks`), `isPinned`
-and the `pinRay` (full king–pinner line), and `safeDestinations` — every legal move of
-that piece with its net material outcome (`net` > 0 wins material, 0 safe, < 0 the piece
-can be won on that square). `--pv "e2e4 e7e5 ..."` adds `sanPv`, the numbered SAN
-rendering of a UCI move sequence (diffable against python-chess `variation_san`).
-`--epd` streams one compact JSON object per EPD position (NDJSON) including `status`
-and `legalMoves` — a full movegen + SAN differential test in one pipe. All squares are
-absolute names like `e4`; field names are camelCase.
-
+For validator and tooling use - e.g. differential testing against python-chess with EB as an
+oracle - `eb-cli position <fen> --json` prints the position's facts as JSON on stdout
+(diagnostics go to stderr; without `--json` a short text summary). It has `status`
+(`checkmate`/`stalemate`/`check`/`ok`), `insufficientMaterial` (dead-position approximation:
+kings only, kings plus one minor, or kings plus same-colored bishops), the full `legalMoves` list
+as UCI + SAN pairs (castling SAN is spelled `0-0`) with per-move predicates (`isCapture`,
+`isCastling`, `isEnPassant`, `givesCheck` - python-chess `gives_check()` parity), and both colors'
+insights (king, checkers, check-block squares, pins as attacker/pinned/king triples, king
+danger/escape squares, hanging pieces judged by static exchange evaluation, and the tactics
+family: `forks` (a safe piece attacking two or more losable targets or the king), `skewers` (kind
+`skewer` or `relativePin` for two enemy pieces on one slider ray), `overloadedDefenders` (sole
+defenders of two or more pieces that hang without them), `discoveredAttacks` (a slider unveils
+check or a winning attack when its own blocker moves), and `removableDefenders` (an enemy sole
+defender that can be captured without loss, winning what it defended)). `--square e4` adds
+`squareFacts`: `attackersWhite`/`attackersBlack`, the piece's attack set (`attacks`),
+`isPinned` and the `pinRay` (full king-pinner line), and `safeDestinations` - every legal move of
+that piece with its net material outcome (`net` > 0 wins material, 0 safe, < 0 the piece can be
+won on that square). `--pv "e2e4 e7e5 ..."` adds `sanPv`, the numbered SAN rendering of a line
+(diffable against python-chess `variation_san`). `--positions file.epd --json` gives every
+position of a file, a full movegen + SAN differential test in one run. All squares are absolute
+names like `e4`; field names are camelCase.
 ---
 
 ## Configuration
@@ -329,9 +325,9 @@ It is recommended to run policy tests in Console Mode for optimal performance by
 The console mode is designed for quick and efficient testing, allowing users to run multiple games in parallel for benchmarking purposes. This mode is ideal for policy matches and very quick time controls, such as 20 + 0.3 seconds or less.
 In order to use the console mode, run `eb-cli` from the release folder (or, from a source clone, start the application from the Console folder) with the following command:
 
-` eb-cli tournamentjson <fullPathToYourTournament.json> `
+` eb-cli tournament run <fullPathToYourTournament.json> `
 
-` dotnet run -c release tournamentjson <fullPathToYourTournament.json> `
+` dotnet run --project Console -c Release -- tournament run <fullPathToYourTournament.json> `
 
 There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This setting is called `NumberOfGamesInParallel` (the old name `NumberOfGamesInParallelConsoleOnly` is still accepted) and can be set to any number you like; it is lowered automatically when one copy of each engine times that number does not fit in 70% of the available memory. Values up to 4 games can be recommended for a strong GPU.
 

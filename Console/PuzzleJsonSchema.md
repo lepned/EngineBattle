@@ -1,16 +1,27 @@
-# `puzzlejson --json` output schema
+# `puzzle run --json` output schema
 
-This document describes the JSON file written by EngineBattle's `puzzlejson` CLI command when invoked with the `--json <path>` flag. The schema is the **stable public contract** for external tooling that consumes EngineBattle puzzle results without parsing stdout (e.g. the Python SPSA tuner).
+This document describes the result of `eb-cli puzzle run <config> --json`. The schema is the **stable public contract** for external tooling that consumes EngineBattle puzzle results (e.g. the Python SPSA tuner).
 
 ## Invocation
 
 ```bash
-dotnet run --project Console -c Release -- puzzlejson <config.json> --json <output.json>
+eb-cli puzzle run <config.json> --json > result.json
+dotnet run --project Console -c Release -- puzzle run <config.json> --json > result.json
 ```
 
-The `--json` flag is **optional** and **does not change** the existing stdout/file output. It writes one more copy of the document to the path you name.
+With `--json`, stdout carries one JSON document and nothing else (the tables and progress go to
+stderr). It is eb-cli's envelope, the same for every command (ConsoleTools.md), and **the document
+this page describes is its `result`**:
 
-Every run also writes the same document on its own, with or without `--json`: `LichessSummary_<stamp>.json` beside the text summary `LichessSummary_<stamp>.txt` and the failed-puzzles CSVs, in the config's `FailedPuzzlesOutputFolder` (`<stamp>` is the local time the results are written, as `yyyy-MM-dd_HH-mm`; nothing is written when the folder is empty). Runs started from the WebGUI puzzle page write the same file. These files are what `puzzletrend` and the `/puzzles/report` and `/puzzles/trend` pages read.
+```json
+{ "command": "puzzle run", "ok": true, "ebVersion": "...", "result": { "schemaVersion": 1, "scores": [ ] }, "errors": [ ] }
+```
+
+`ok` is false, with an `incomplete` error, when an engine failed or nothing was scored (the exit
+code is then 1); `paired-failed` says the `paired` section is empty because the paired comparison
+failed. The exit code is 2 for a config that cannot be used (a missing file, an unknown `Type`
+token, a bad `Nodes` value).
+Every run also writes the same document on its own, with or without `--json`: `LichessSummary_<stamp>.json` beside the text summary `LichessSummary_<stamp>.txt` and the failed-puzzles CSVs, in the config's `FailedPuzzlesOutputFolder` (`<stamp>` is the local time the results are written, as `yyyy-MM-dd_HH-mm`; nothing is written when the folder is empty). Runs started from the WebGUI puzzle page write the same file. These files are what `eb-cli puzzle trend` and the `/puzzles/report` and `/puzzles/trend` pages read.
 
 ## File format
 
@@ -250,7 +261,7 @@ def primary_signal(data: dict, score_type: str = "Policy") -> dict:
     total   = sum(r["totalNumber"] for r in rows)
     correct = sum(r["correct"]     for r in rows)
     avg_kld = sum(r["avgKLD"] * r["totalNumber"] for r in rows) / total
-    # avgRankWeightedKld is additive — fall back to 0.0 for older puzzlejson outputs
+    # avgRankWeightedKld is additive — fall back to 0.0 for older outputs
     avg_rank_wt_kld = sum(
         r.get("avgRankWeightedKld", 0.0) * r["totalNumber"] for r in rows
     ) / total
@@ -276,7 +287,6 @@ If a future need requires per-puzzle detail in the JSON, it will go behind a sep
 
 ## Compatibility notes
 
-- The `puzzlejson` command without `--json` still writes this document as `LichessSummary_<stamp>.json` in `FailedPuzzlesOutputFolder` (see Invocation). The flag is purely additive: it adds a copy at the path you give.
-- The flag is recognized in any position after the config arg (e.g. `puzzlejson cfg.json --json out.json` works; future flags can also appear).
+- `puzzle run` without `--json` still writes this document as `LichessSummary_<stamp>.json` in `FailedPuzzlesOutputFolder` (see Invocation).
 - Aliases `puzzle` and `p` accept the flag identically.
 - `paired` was added without a `schemaVersion` bump, per the stability rules: it is a new optional field, and a consumer that does not know it ignores it. Files written before it exist simply have no `paired` key — read it defensively.

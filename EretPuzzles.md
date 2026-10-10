@@ -1,4 +1,4 @@
-﻿# How to Run ERET Tests in EngineBattle (Console Mode)
+# How to Run ERET Tests in EngineBattle (Console Mode)
 
 EngineBattle supports ERET (Eigenmann Rapid Engine Test) mode, allowing you to benchmark engine versions, networks, or settings across a suite of test positions. The `EretConfig.json` configuration file defines which engines to test, which ERET suite to use, and how the evaluation should be performed.
 
@@ -89,14 +89,13 @@ Engines/
 
 ## Step 3: Run ERET Mode from Console
 
-Open a terminal and navigate to the `Console` folder inside your EngineBattle project. Then run:
+Open a terminal and run (`eb-cli` from the download, or `dotnet run --project Console -c Release --` from the root of a source clone):
 
-`dotnet run -c release -- eretjson c:/Dev/Chess/EB/eretconfig.json`
+`eb-cli puzzle eret c:/Dev/Chess/EB/eretconfig.json`
 
 Replace `c:/Dev/Chess/EB/eretconfig.json` with the path to your `EretConfig.json`.
 
-- `-c release` runs the app in Release mode for best performance.
-- `eretjson` tells EngineBattle to use ERET mode.
+- `puzzle eret` runs the ERET test.
 - The last argument is the full path to your `EretConfig.json`.
 
 ---

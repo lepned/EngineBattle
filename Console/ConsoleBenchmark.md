@@ -1,11 +1,9 @@
 # Console Benchmarking
 
-Important: run these commands from the `Console` folder. Open a terminal in the `Console` directory (or change into it from the repo root) before running the example below.
-
-Use the console benchmark verb to run a set of UCI option combinations against an engine configuration and a batch of positions:
+Use `eb-cli engine bench` to run a set of UCI option combinations against an engine configuration and a batch of positions:
 
 ```
-dotnet run -c release benchmark benchmark-options.json
+eb-cli engine bench benchmark-options.json
 ```
 
 The JSON file describes:

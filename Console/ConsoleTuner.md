@@ -1,12 +1,10 @@
 # Console Tuner (Bayesian Optimizer + SPRT / Puzzle / ERET)
 
-Run from the `Console` folder:
-
 ```bash
-dotnet run -c Release -- tune tuner-config.json
+eb-cli tune run tuner-config.json
 ```
 
-`dotnet run -c Release -- redash tuner-config.json` regenerates `bo-dashboard.html` from the saved `tune-state.json` without running anything.
+`eb-cli tune dashboard tuner-config.json` regenerates `bo-dashboard.html` from the saved `tune-state.json` without running anything.
 
 The tuner optimizes UCI `setoption` values at a fixed node budget using a **Bayesian Optimizer** — Gaussian Process surrogate with Expected Improvement acquisition, more sample-efficient for typical parameter counts (5-10 parameters).
 

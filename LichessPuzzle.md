@@ -1,4 +1,4 @@
-﻿# How to Run Lichess Puzzles in EngineBattle (Console Mode)
+# How to Run Lichess Puzzles in EngineBattle (Console Mode)
 
 EngineBattle is a powerful tool for chess engine developers and enthusiasts, offering advanced features for engine testing, tournaments, and puzzle-based benchmarking. One of its standout capabilities is the ability to run large sets of Lichess puzzles against multiple engines or networks, providing deep insights into engine performance on tactical and strategic positions.
 
@@ -111,14 +111,13 @@ Engines/
 
 ## Step 3: Run the Puzzle Test from Console
 
-Open a terminal and navigate to the `Console` folder inside your EngineBattle project. Then run:
+Open a terminal and run (`eb-cli` from the download, or `dotnet run --project Console -c Release --` from the root of a source clone):
 
-`dotnet run -c release -- puzzlejson c:/Dev/Chess/EB/puzzleconfig.json`
+`eb-cli puzzle run c:/Dev/Chess/EB/puzzleconfig.json`
 
 Replace `c:/Dev/Chess/EB/puzzleconfig.json` with the path to your `PuzzleConfig.json`.
 
-- `-c release` runs the app in Release mode for best performance.
-- `puzzlejson` tells EngineBattle to use puzzle testing mode.
+- `puzzle run` runs the puzzle test (`--json` prints the result as JSON, see [Console/PuzzleJsonSchema.md](Console/PuzzleJsonSchema.md)).
 - The last argument is the full path to your `PuzzleConfig.json`.
 
 ---
