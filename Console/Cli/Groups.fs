@@ -150,6 +150,17 @@ let after (fenText: string) (uciMoves: string list) =
 
 let syzygy = value "syzygy" "DIR" "Syzygy folders (several separated by ';' on Windows, ':' elsewhere)"
 
+/// eb-cli's tablebase folder for a tournament that turns tablebase adjudication on without a
+/// folder: EB_SYZYGY_PATH, then syzygyPath in eb-cli.json. A settings file that does not parse is
+/// said, not swallowed; "" when there is none.
+let appSyzygyFolder () =
+    match CliSettings.resolveSyzygyPath None (Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj) (fun () -> CliSettings.current.Force()) with
+    | Result.Ok(Some folder) -> folder
+    | Result.Ok None -> ""
+    | Result.Error message ->
+        Cli.Output.warn message
+        ""
+
 /// --syzygy, then EB_SYZYGY_PATH, then syzygyPath in eb-cli.json; "" when none is set.
 let syzygyPath (p: Parsed) =
     match CliSettings.resolveSyzygyPath (valueOf p "syzygy") (Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj) (fun () -> CliSettings.current.Force()) with

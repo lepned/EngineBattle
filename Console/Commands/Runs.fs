@@ -979,7 +979,7 @@ type BatchParams =
 /// keeps the rows of nets this run did not reach and replaces those it did. Ctrl+C stops the net
 /// being played without fitting it; the next run plays it on from its PGN.
 let runPvBatch (p: BatchParams) (ct: CancellationToken) =
-    match JSON.readTournamentJson p.Template with
+    match JSON.readTournamentJson p.Template |> Option.map (JSON.withAppTablebaseFolder Cli.Groups.appSyzygyFolder) with
     | None -> raise (Cli.Parse.Usage $"cannot read the template tournament: {p.Template}")
     | Some templateTourny ->
         let templateEngines = JSON.readEngineDefs templateTourny.EngineSetup.EngineDefFolder templateTourny.EngineSetup.EngineDefList
@@ -1284,11 +1284,7 @@ let private loadTournament (path: string) =
     | Result.Error message -> raise (Usage message)
     | Result.Ok tourny ->
         // tablebase adjudication without a folder: eb-cli's own (syzygyPath, EB_SYZYGY_PATH)
-        let appFolder =
-            match CliSettings.resolveSyzygyPath None (Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj) (fun () -> CliSettings.current.Force()) with
-            | Result.Ok(Some folder) -> folder
-            | _ -> ""
-        let tourny = JSON.withAppTablebaseFolder appFolder tourny
+        let tourny = JSON.withAppTablebaseFolder Cli.Groups.appSyzygyFolder tourny
         let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList
         Some(tourny, engineList)
 

@@ -954,12 +954,18 @@
         var tbDir = root["Adjudication"]?["TBAdj"]?["TablebaseDirectory"]?.GetValue<string>() ?? "";
         var useTB = root["Adjudication"]?["TBAdj"]?["UseTBAdjudication"]?.GetValue<bool>() ?? !string.IsNullOrWhiteSpace(tbDir);
         // no folder in the file: the run uses the one in Settings
+        var tbSource = "Adjudication.TBAdj.TablebaseDirectory";
         if (useTB && string.IsNullOrWhiteSpace(tbDir))
+        {
             tbDir = SettingsService.Settings.TablebaseFolder ?? "";
-        if (useTB && !ChessLibrary.TablebaseProbe.tablebasesExist(tbDir))
-            errors.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" — directory not found (tablebase adjudication is on; the tournament page refuses to start it)");
+            tbSource = "the tablebase folder in Settings (TablebaseDirectory is empty)";
+        }
+        if (useTB && string.IsNullOrWhiteSpace(tbDir))
+            errors.Add("Tablebase adjudication is on, but there is no tablebase folder: give one here, or in Settings");
+        else if (useTB && !ChessLibrary.TablebaseProbe.tablebasesExist(tbDir))
+            errors.Add($"{tbSource} = \"{tbDir}\" — directory not found (tablebase adjudication is on; the tournament page refuses to start it)");
         else if (useTB && ChessLibrary.TablebaseProbe.largestTable(tbDir) == 0)
-            errors.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" holds no Syzygy tables (.rtbw)");
+            errors.Add($"{tbSource} = \"{tbDir}\" holds no Syzygy tables (.rtbw)");
 
         return (errors, warnings);
     }

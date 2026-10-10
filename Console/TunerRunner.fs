@@ -942,7 +942,7 @@ module TunerRunner =
 
     let baseTournament =
       match JSON.readTournamentJson tournamentPath with
-      | Some t -> t
+      | Some t -> JSON.withAppTablebaseFolder Cli.Groups.appSyzygyFolder t
       | None -> failwithf "Unable to load tournament config: %s" tournamentPath
 
     let statePath = Path.Combine(outputDir, "tune-state.json")

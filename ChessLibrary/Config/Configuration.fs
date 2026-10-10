@@ -401,9 +401,9 @@ module Validation =
       elif String.IsNullOrWhiteSpace tb.TablebaseDirectory then
           Errors [ "Tablebase adjudication is on, but there is no tablebase folder: give TablebaseDirectory, or set the tablebase folder in Settings (WebGUI) / syzygyPath in eb-cli.json or EB_SYZYGY_PATH (eb-cli)" ]
       elif not (TablebaseProbe.tablebasesExist tb.TablebaseDirectory) then
-          Errors [ sprintf "Tablebase adjudication is on, but TablebaseDirectory \"%s\" is not a folder that exists" tb.TablebaseDirectory ]
+          Errors [ sprintf "Tablebase adjudication is on, but the tablebase folder \"%s\" (TablebaseDirectory, or the app's tablebase folder when the file leaves it empty) is not a folder that exists" tb.TablebaseDirectory ]
       elif TablebaseProbe.largestTable tb.TablebaseDirectory = 0 then
-          Errors [ sprintf "Tablebase adjudication is on, but TablebaseDirectory \"%s\" holds no Syzygy tables (.rtbw)" tb.TablebaseDirectory ]
+          Errors [ sprintf "Tablebase adjudication is on, but the tablebase folder \"%s\" (TablebaseDirectory, or the app's tablebase folder when the file leaves it empty) holds no Syzygy tables (.rtbw)" tb.TablebaseDirectory ]
       else Ok
 
   let validateEnginesPresent (engines: EngineConfig seq) nChallengers =
@@ -850,10 +850,14 @@ module JSON =
   /// Tablebase adjudication that is on without a TablebaseDirectory uses the app's tablebase folder
   /// (the WebGUI's Settings; eb-cli's syzygyPath or EB_SYZYGY_PATH). A folder in the file wins; the
   /// file itself is not changed.
-  let withAppTablebaseFolder (folder: string) (tourny: Tournament) =
+  let withAppTablebaseFolder (folder: unit -> string) (tourny: Tournament) =
       let tb = tourny.Adjudication.TBAdj
-      if tb.UseTBAdjudication && String.IsNullOrWhiteSpace tb.TablebaseDirectory && not (String.IsNullOrWhiteSpace folder) then
-          { tourny with Adjudication = { tourny.Adjudication with TBAdj = { tb with TablebaseDirectory = folder } } }
+      if tb.UseTBAdjudication && String.IsNullOrWhiteSpace tb.TablebaseDirectory then
+          // asked only here: eb-cli's settings file is read when a tournament needs it
+          match folder () with
+          | f when not (String.IsNullOrWhiteSpace f) ->
+              { tourny with Adjudication = { tourny.Adjudication with TBAdj = { tb with TablebaseDirectory = f } } }
+          | _ -> tourny
       else tourny
 
   /// A file that is missing and a file that will not parse are different problems for the

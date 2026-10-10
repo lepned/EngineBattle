@@ -123,7 +123,7 @@ module Manager =
         let tournament = 
           match tournyFromJson with
           |Ok tourny ->
-            let tourny = JSON.withAppTablebaseFolder appTablebaseFolder tourny
+            let tourny = JSON.withAppTablebaseFolder (fun () -> appTablebaseFolder) tourny
             let tourny =           
               if tourny.EngineSetup.EngineDefList.Length > 0 then
                 let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList            

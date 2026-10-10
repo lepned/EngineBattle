@@ -749,6 +749,14 @@ public partial class Tournaments
 		// tournament.json as the run will read it, not this page's copy: a config with errors does
 		// not start (as Ctrl+V and the console's tournament run say)
 		var runConfig = ChessLibrary.Tournament.Manager.loadTournament() ?? tournament;
+		// a file that does not load comes back empty: its own error, not what an empty one lacks
+		var loadError = ChessLibrary.Tournament.Manager.lastLoadError;
+		if (!string.IsNullOrEmpty(loadError))
+		{
+			Snackbar.Add(new MarkupString("<b>Tournament not started - tournament.json could not be read:</b><br/>" + System.Net.WebUtility.HtmlEncode(loadError)),
+				Severity.Error, o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+			return;
+		}
 		if (!await PassesValidation(runConfig))
 			return;
 		await PrepareRun();

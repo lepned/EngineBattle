@@ -32,16 +32,23 @@ let largestTable (tablebasePath: string) =
 /// it again, so tables added between runs are seen.
 let private largestKnown = Collections.Concurrent.ConcurrentDictionary<string, int>()
 
+/// A folder without tables (or not reachable from here: a live-feed sender's path) is asked again
+/// after a minute, not on every move - a share that does not answer can hang each look.
+let private noTablesUntil = Collections.Concurrent.ConcurrentDictionary<string, DateTime>()
+
 let largestTableCached (tablebasePath: string) =
     if String.IsNullOrWhiteSpace tablebasePath then 0
     else
         match largestKnown.TryGetValue tablebasePath with
         | true, n -> n
         | _ ->
-            // a folder with no tables (or not on this machine) is asked again, not remembered as 0
-            let n = largestTable tablebasePath
-            if n > 0 then largestKnown.[tablebasePath] <- n
-            n
+            match noTablesUntil.TryGetValue tablebasePath with
+            | true, until when DateTime.UtcNow < until -> 0
+            | _ ->
+                let n = largestTable tablebasePath
+                if n > 0 then largestKnown.[tablebasePath] <- n
+                else noTablesUntil.[tablebasePath] <- DateTime.UtcNow.AddMinutes 1.0
+                n
 
 /// <summary>
 /// The tables are probed in this process (Syzygy, a C# port of Fathom), which holds one set of
@@ -149,7 +156,9 @@ let startRun (useTablebases: bool) (men: int) (tablebasePath: string) =
     if useTablebases && tablebasesExist tablebasePath then
         ensureLoaded true tablebasePath
         let largest = largestTable tablebasePath
-        if largest > 0 then largestKnown.[tablebasePath] <- largest
+        if largest > 0 then
+            largestKnown.[tablebasePath] <- largest
+            noTablesUntil.TryRemove tablebasePath |> ignore
         // men 0: as many as the tables hold
         if men > 0 && largest < men then
             Console.Error.WriteLine(
