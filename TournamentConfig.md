@@ -61,11 +61,17 @@ says `"Enabled": false` (or, for tablebases, `"UseTBAdjudication": false`).
     only when they answer: a position with more pieces than the tables hold, a missing table, or a
     win the 50-move rule turns into a draw is left to the evaluation rules above.
 
-### Test Options
+### Parallel games and play mode
 
-- **PolicyTest**: Enable or disable policy tests.
-- **ValueTest**: Enable or disable value tests - WIP.
-- **NumberOfGamesInParallel**: Number of games to run in parallel (console and WebGUI). Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. The number is lowered automatically when one copy of each engine, times that number, does not fit in 70% of the RAM (each engine is started once before play to measure it; a console `match` prints a line saying so when it lowers the number). A `GPUs` list with more than one entry raises it to at least the number of GPUs. PreventMoveDeviation works with parallel play: a game that repeats an earlier game's opening and colours waits until that game has finished and merged its moves, so the parallelism you actually get is bounded by how many distinct opening/engine/colour combinations are ready - a gauntlet with `RandomOpenings: false`, where the challenger plays each opening with the same colour against every opponent, degrades toward sequential. Replay from a reference PGN or a resumed PGN is unaffected (the file is complete before play starts), which is how the tuner uses it. In the WebGUI, starting a tournament with a value above 1 opens the multi-board grid (`/tournament-grid`); user adjudication of the running game is available when this is 1. Engines are started when a game first needs them and stopped after a game unless one of the next few games (as many as run in parallel) needs them again, so a large field never has every engine running at once; a two-engine match keeps both. The old name `NumberOfGamesInParallelConsoleOnly` is still accepted when loading.
+These three are top-level settings. A file from before they moved still has them in a
+`TestOptions` block (`NumberOfGamesInParallel`, `GPUs`, `PolicyTest`, `ValueTest`); it is read as
+these settings, and a setting given at the top level wins.
+
+- **PlayMode**: How the engines play every move. `Search` (the default) plays the time control;
+  `Policy` plays the policy head alone (`go nodes 1`), `Value` the value head alone (Lc0 with
+  `go nodes 2`, other engines with `go value`). Policy and Value compare raw networks; neither
+  ponders.
+- **NumberOfGamesInParallel**: Number of games to run in parallel (console and WebGUI). Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. The number is lowered automatically when one copy of each engine, times that number, does not fit in 70% of the RAM (each engine is started once before play to measure it; a console `match` prints a line saying so when it lowers the number). A `GPUs` list with more than one entry raises it to at least the number of GPUs. PreventMoveDeviation works with parallel play: a game that repeats an earlier game's opening and colours waits until that game has finished and merged its moves, so the parallelism you actually get is bounded by how many distinct opening/engine/colour combinations are ready - a gauntlet with `RandomOpenings: false`, where the challenger plays each opening with the same colour against every opponent, degrades toward sequential. Replay from a reference PGN or a resumed PGN is unaffected (the file is complete before play starts), which is how the tuner uses it. In the WebGUI, starting a tournament with a value above 1 opens the multi-board grid (`/tournament-grid`); user adjudication of the running game is available when this is 1. Engines are started when a game first needs them and stopped after a game unless one of the next few games (as many as run in parallel) needs them again, so a large field never has every engine running at once; a two-engine match keeps both. The old name `NumberOfGamesInParallelConsoleOnly` is still read inside an old `TestOptions` block (see above).
 - **GPUs** (optional): List of GPU device ids for parallel games, e.g. `[0, 1]`. Each engine runs up to one instance per parallel game, and instance *i* (counting from 0) of every engine gets id `GPUs[i % GPUs.Length]`, so with two GPUs the first copy of each engine uses GPU 0 and the second GPU 1. The id is written into the engine's device option as named by `DeviceOption` and `DeviceTemplate` in its engine def (see `EngineDefConfig.md`); an engine def without them starts unchanged. Omitted, `null` or empty = no device assignment.
 
 ### LiveFeed (optional)
@@ -284,6 +290,8 @@ setting.
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
+  "NumberOfGamesInParallel": 2,
+  "PlayMode": "Search",
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",
@@ -305,11 +313,6 @@ setting.
     }
   },
 
-  "TestOptions": {
-    "PolicyTest": false,
-    "ValueTest": false,
-    "NumberOfGamesInParallel": 2
-  },
 
   "Opening": {
     "OpeningsPath": "C:/Dev/Chess/Openings/sufi25.pgn",

@@ -34,8 +34,16 @@ let private inv = System.Globalization.CultureInfo.InvariantCulture
 let private tournamentOpts =
     let o = JsonSerializerOptions(AllowTrailingCommas = true)
     o.Converters.Add(TimeControlStrategyConverter())
-    o.Converters.Add(TestOptionsConverter())
     o
+
+/// A tournament as a sender wrote it; an older sender's shape reads as an older file's does.
+let private tournamentOf (n: JsonNode) =
+    try
+        match n with
+        | :? JsonObject as o -> readOlderShape o
+        | _ -> ()
+        Some(JsonSerializer.Deserialize<Tournament>(n, tournamentOpts))
+    with _ -> None
 
 let private js (s: string) : JsonNode = (JsonValue.Create(if isNull s then "" else s) :> JsonNode)
 let private ji (i: int) : JsonNode = (JsonValue.Create(i) :> JsonNode)
@@ -410,7 +418,7 @@ let private nodeToSot (o: JsonObject) : StartOfTournamentInfo =
       Tournament =
         (match o["tournament"] with
          | null -> None
-         | n -> (try Some(JsonSerializer.Deserialize<Tournament>(n, tournamentOpts)) with _ -> None)) }
+         | n -> tournamentOf n) }
 
 // ---------------------------------------------------------------------------------------------
 // Public API
@@ -507,7 +515,7 @@ let tryParseUpdate (json: string) : Update option =
             | "EndOfTournament" ->
                 match o["tournament"] with
                 | null -> None
-                | n -> (try Some(Update.EndOfTournament(JsonSerializer.Deserialize<Tournament>(n, tournamentOpts))) with _ -> None)
+                | n -> tournamentOf n |> Option.map Update.EndOfTournament
             | "MessagesFromEngine" -> Some(Update.MessagesFromEngine(getStr o "player" "", getStr o "message" ""))
             | "PairingList" ->
                 let r = ResizeArray<Pairing>()

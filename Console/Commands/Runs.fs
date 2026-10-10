@@ -918,7 +918,7 @@ let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensio
         let endTime = Stopwatch.GetElapsedTime start
         let gamesPlayed = results |> Seq.length
         let how = if ct.IsCancellationRequested then "stopped (Ctrl+C)" else "completed"
-        let msg = $"Tournament {how} - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallel}"
+        let msg = $"Tournament {how} - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.NumberOfGamesInParallel}"
         Console.WriteLine msg
         logger.LogInformation(msg)
         if File.Exists tourny.PgnOutPath then
@@ -1037,7 +1037,7 @@ let runPvBatch (p: BatchParams) (ct: CancellationToken) =
                                     // Self-play loads two copies of the net per concurrency level, so concurrency 2
                                     // means 4 simultaneous TensorRT engines - big nets OOM the GPU. Clamp to 1
                                     // regardless of the template; this also enables PreventMoveDeviation.
-                                    TestOptions = { templateTourny.TestOptions with NumberOfGamesInParallel = 1 }
+                                    NumberOfGamesInParallel = 1
                                     PreventMoveDeviation = true }
                             printfn "  running %d-game self-play at %s..." p.Rounds (tourny.TimeControlTextForPlayer engA.TimeControlID)
                             runTournament tourny logger ct

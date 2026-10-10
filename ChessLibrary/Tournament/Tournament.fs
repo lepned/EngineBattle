@@ -228,8 +228,8 @@ module Manager =
         | None -> ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
 
       let mutable validationPassed = true
-      //check for value head tests
-      if tournament.TestOptions.ValueTest then
+      // value head play: every engine checked first
+      if tournament.PlayMode = PlayMode.Value then
         //validate value tests
         for engineConfig in tournament.EngineSetup.Engines do
           let isLc0 = engineConfig.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
@@ -432,7 +432,7 @@ module Manager =
     /// concurrent game (RR/Gauntlet only) — the GUI uses this to route to the grid
     /// view and to disable single-game user adjudication.
     member _.IsParallelRun =
-      tournament.TestOptions.NumberOfGamesInParallel > 1 && isParallelCapableMode tournament
+      tournament.NumberOfGamesInParallel > 1 && isParallelCapableMode tournament
 
     member _.AdjudicateGame(gameNr: int, result: string) =
       let isValid =

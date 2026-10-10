@@ -38,59 +38,6 @@ let private readLineChecked (engine: ChessEngine) =
         failwithf "Engine %s closed its output (process exited) during analysis" engine.Name
     line
 
-let run (engine:ChessEngine) (tourny:Tournament) (board:Board) (name, fen) =
-  let mutable status = EngineStatus.Empty
-  let tc = tourny.FindTimeControl engine.Config.TimeControlID
-  let startEngine (engine : ChessEngine) =
-    if tourny.TestOptions.PolicyTest then
-      engine.GoNodes 1
-    elif tourny.TestOptions.ValueTest then
-      engine.GoValue()
-    else
-      if tc.NodeLimit then
-        engine.GoNodes tc.Nodes
-      else
-        let fTime = tourny.TimeControl.GetUnion(1).GetFixedtime()
-        engine.Go(tourny.TimeControl.GetUnion(1),fTime,fTime)
-
-  let rec start _ =  task {
-    let! line = engine.ReadLineAsync()
-    if isNull line then
-      // EOF: the engine process exited mid-analysis — return what was collected
-      printfn "\n%s closed its output (process exited) during analysis of %s" engine.FullName name
-      return status
-    elif line.StartsWith "bestmove" then
-      printfn "\n%s\n\t%s FEN %s  Move: %s" engine.FullName name fen line
-      return status
-    elif line.StartsWith "info depth" then
-      let isWhite = board.Position.STM = 0uy
-      match EngineProtocol.Regex.getEssentialData line isWhite with
-      |Some (d, eval, nodes, nps, pvLine, tbHits, wdl, sd, mPv ) ->
-        let info =
-          {
-            PlayerName = engine.Name
-            Eval = eval
-            Depth = d
-            SD = sd
-            Nodes = nodes
-            NPS = float nps
-            EPS = 0.0
-            TBhits = tbHits
-            WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
-            PV = pvLine
-            PVLongSAN = pvLine
-            MultiPV = mPv  }
-        status <- info
-
-      |None -> ()
-      return! start ()
-    else
-      return! start ()
-    }
-
-  startEngine engine
-  start () |> Async.AwaitTask |> Async.RunSynchronously
-
 let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
       let replayBoard = Board()
       replayBoard.PlayCommands pos

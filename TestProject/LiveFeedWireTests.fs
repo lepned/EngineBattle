@@ -249,6 +249,26 @@ let ``EndOfTournament decodes to the EndOfTournament case`` () =
     | _ -> Assert.True(false, "expected an EndOfTournament")
 
 [<Fact>]
+let ``a tournament from an older sender reads its TestOptions block`` () =
+    // the old shape, as a sender before the split writes it
+    let node = System.Text.Json.Nodes.JsonNode.Parse(serializeUpdate (Update.EndOfTournament Tournament.Empty)).AsObject()
+    let t = node.["tournament"].AsObject()
+    for key in [ "NumberOfGamesInParallel"; "GPUs"; "PlayMode" ] do t.Remove key |> ignore
+    t.["TestOptions"] <- System.Text.Json.Nodes.JsonNode.Parse("""{ "PolicyTest": false, "ValueTest": true, "NumberOfGamesInParallel": 3, "GPUs": null }""")
+    match tryParseUpdate (node.ToJsonString()) with
+    | Some (Update.EndOfTournament old) -> Assert.Equal((3, PlayMode.Value), (old.NumberOfGamesInParallel, old.PlayMode))
+    | other -> Assert.Fail $"expected an EndOfTournament, got {other}"
+    // a sender that says nothing of the play mode or the adjudication switches
+    let adj = t.["Adjudication"].AsObject()
+    adj.["DrawOption"].AsObject().Remove "Enabled" |> ignore
+    t.["TestOptions"] <- System.Text.Json.Nodes.JsonNode.Parse("""{ "NumberOfGamesInParallel": 1 }""")
+    match tryParseUpdate (node.ToJsonString()) with
+    | Some (Update.EndOfTournament old) ->
+        Assert.Equal(PlayMode.Search, old.PlayMode)
+        Assert.True old.Adjudication.DrawOption.Enabled
+    | other -> Assert.Fail $"expected an EndOfTournament, got {other}"
+
+[<Fact>]
 let ``malformed or unknown input returns None`` () =
     Assert.True((tryParseUpdate "{\"type\":\"NopeNotReal\"}").IsNone)
     Assert.True((tryParseUpdate "not json at all").IsNone)

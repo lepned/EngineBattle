@@ -622,12 +622,6 @@ module TunerRunner =
           RandomOpenings = false }
 
     let hasDeviation = preventDeviationFor <> null && preventDeviationFor.Length > 0
-    let testOptions =
-      { baseTournament.TestOptions with
-          PolicyTest = false
-          ValueTest = false
-          NumberOfGamesInParallel = cfg.ParallelGames
-          GPUs = if cfg.GPUs <> null then cfg.GPUs else baseTournament.TestOptions.GPUs }
 
     let eA = { engineA with TimeControlID = tcIdA }
     let eB = { engineB with TimeControlID = tcIdB }
@@ -650,7 +644,9 @@ module TunerRunner =
         OrdoExePath = ""
         PgnOutPath = pgnPath
         ReferencePGNPath = if String.IsNullOrWhiteSpace referencePgnPath then "" else referencePgnPath
-        TestOptions = testOptions
+        PlayMode = PlayMode.Search
+        NumberOfGamesInParallel = cfg.ParallelGames
+        GPUs = if cfg.GPUs <> null then cfg.GPUs else baseTournament.GPUs
         Opening = opening
         TimeControl = tc
         EngineSetup = setup }

@@ -57,22 +57,23 @@ let isConsecutiveLowEvalSufficient (evals: EvalType list) drawPlies maxDrawScore
     let res = consecutiveNumberOfLowEvalsLeft evals drawPlies maxDrawScore
     res <= 0
 
-/// Most pieces a position may have to be adjudicated from tablebases. TBMen 0: as many as the
-/// tables hold - the probe never asks for more than they do (Syzygy.MaxPieces), so 7 is "all".
-let tablebaseMen (tourny: Tournament) =
-    let tb = tourny.Adjudication.TBAdj
-    if not tb.UseTBAdjudication then 2
-    elif tb.TBMen > 0 then tb.TBMen
-    else 7
-
-/// The piece count tablebase adjudication starts at, for showing: TBMen, or what the tables hold
-/// when it is 0 (or more than they hold); 0 when tablebase adjudication is off.
+/// The piece count tablebase adjudication starts at: TBMen, capped by what this tournament's
+/// folder holds; TBMen 0 is all it holds. A folder this machine cannot read (a live-feed viewer's)
+/// leaves TBMen, or 7 for "all". 0 when tablebase adjudication is off.
 let adjudicatedMen (tourny: Tournament) =
     let tb = tourny.Adjudication.TBAdj
     if not tb.UseTBAdjudication then 0
     else
-        let largest = TablebaseProbe.largestTableCached tb.TablebaseDirectory
-        if tb.TBMen > 0 && tb.TBMen < largest then tb.TBMen else largest
+        match TablebaseProbe.largestTableCached tb.TablebaseDirectory, tb.TBMen with
+        | 0, men when men > 0 -> men
+        | 0, _ -> 7
+        | largest, men when men > 0 && men < largest -> men
+        | largest, _ -> largest
+
+/// Most pieces a position may have to be adjudicated from tablebases: from this tournament's tables
+/// only (the prober also holds the tables of other runs in the process).
+let tablebaseMen (tourny: Tournament) =
+    if tourny.Adjudication.TBAdj.UseTBAdjudication then adjudicatedMen tourny else 2
 
 /// The probe this position needs - directory, FEN and piece count - or None: too many pieces,
 /// castling rights (tablebases have none), or a game already over by the rules.

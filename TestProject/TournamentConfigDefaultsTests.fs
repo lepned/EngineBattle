@@ -28,7 +28,9 @@ let ``a config without adjudication or mode sections reads, with adjudication of
     Assert.False t.Adjudication.TBAdj.UseTBAdjudication
     Assert.Equal(4, t.LadderOptions.GamePairsPerMatch)
     Assert.Equal(2, t.SwissOptions.GamesPerMatch)
-    Assert.Equal(1, t.TestOptions.NumberOfGamesInParallel)
+    Assert.Equal(1, t.NumberOfGamesInParallel)
+    Assert.Equal(PlayMode.Search, t.PlayMode)
+    Assert.Null t.GPUs
     Assert.Equal("", t.Site)
 
 [<Fact>]
@@ -46,9 +48,30 @@ let ``a section that is given is read as written, field by field`` () =
     Assert.Equal("Oslo", t.Site)
 
 [<Fact>]
-let ``TestOptions keep the old name of the parallel setting`` () =
-    let t = read (minimal """, "TestOptions": { "NumberOfGamesInParallelConsoleOnly": 3 }""")
-    Assert.Equal(3, t.TestOptions.NumberOfGamesInParallel)
+let ``an old TestOptions block reads as the top-level settings`` () =
+    // both of the parallel setting's old names, the GPUs, and the heads as PlayMode
+    let t = read (minimal """, "TestOptions": { "NumberOfGamesInParallelConsoleOnly": 3, "GPUs": [0, 1], "PolicyTest": true, "WriteToConsole": true }""")
+    Assert.Equal(3, t.NumberOfGamesInParallel)
+    Assert.Equal<int[]>([| 0; 1 |], t.GPUs)
+    Assert.Equal(PlayMode.Policy, t.PlayMode)
+    Assert.Equal(2, (read (minimal """, "TestOptions": { "NumberOfGamesInParallel": 2 }""")).NumberOfGamesInParallel)
+    // ValueTest won over PolicyTest, and still does
+    Assert.Equal(PlayMode.Value, (read (minimal """, "TestOptions": { "PolicyTest": true, "ValueTest": true }""")).PlayMode)
+    // a top-level key wins over the block
+    let both = read (minimal """, "NumberOfGamesInParallel": 4, "PlayMode": "Search", "TestOptions": { "NumberOfGamesInParallel": 2, "ValueTest": true }""")
+    Assert.Equal((4, PlayMode.Search), (both.NumberOfGamesInParallel, both.PlayMode))
+
+[<Fact>]
+let ``PlayMode is read by name, any case, and written by name`` () =
+    Assert.Equal(PlayMode.Value, (read (minimal """, "PlayMode": "value" """)).PlayMode)
+    Assert.Equal(PlayMode.Policy, (read (minimal """, "PlayMode": "Policy" """)).PlayMode)
+    let opts = System.Text.Json.JsonSerializerOptions()
+    let written = System.Text.Json.JsonSerializer.Serialize({ Tournament.Empty with PlayMode = PlayMode.Policy }, opts)
+    Assert.Contains("\"PlayMode\":\"Policy\"", written)
+    Assert.DoesNotContain("TestOptions", written)
+    // a name it does not know is a parse error that says so
+    let ex = Assert.ThrowsAny<exn>(fun () -> read (minimal """, "PlayMode": "fast" """) |> ignore)
+    Assert.Contains("expected Search, Policy or Value", ex.Message)
 
 [<Fact>]
 let ``a null in the file is the default`` () =
@@ -96,3 +119,17 @@ let ``a short delay between games is a hint for the WebGUI, and nothing for the 
     Assert.DoesNotContain(errorsOf t, fun m -> m.Contains "Delay")
     Assert.NotEmpty(Configuration.Validation.delayWarning t)
     Assert.Empty(Configuration.Validation.delayWarning { t with ConsoleOnly = true })
+
+[<Fact>]
+let ``an older shape: a top-level null is no value, a flag that is not a bool is an error`` () =
+    let t = read (minimal """, "NumberOfGamesInParallel": null, "PlayMode": null, "TestOptions": { "NumberOfGamesInParallel": 3, "ValueTest": true }""")
+    Assert.Equal((3, PlayMode.Value), (t.NumberOfGamesInParallel, t.PlayMode))
+    let ex = Assert.ThrowsAny<exn>(fun () -> read (minimal """, "TestOptions": { "ValueTest": "true" }""") |> ignore)
+    Assert.Contains("TestOptions.ValueTest must be true or false", ex.Message)
+
+[<Fact>]
+let ``a gauntlet is a gauntlet in any case`` () =
+    let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
+    let t = { read (minimal "") with TournamentMode = "gauntlet"; Challengers = 2 }
+    let t = { t with EngineSetup = { t.EngineSetup with Engines = [ engine "A"; engine "B" ] } }
+    Assert.Contains(errorsOf t, fun m -> m.Contains "challengers")

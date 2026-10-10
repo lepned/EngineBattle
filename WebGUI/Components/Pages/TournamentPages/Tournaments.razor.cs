@@ -397,7 +397,7 @@ public partial class Tournaments
 					wtest = true;
 			}
 
-			if (tournament.TestOptions.ValueTest)
+			if (tournament.PlayMode.IsValue)
 			{
 				runWithLogLiveStats = false;
 			}
@@ -444,9 +444,9 @@ public partial class Tournaments
 		}
 	}
 
-	private (bool ok, string errors) ValidateTournamentJson()
+	private (bool ok, string errors) ValidateTournamentJson(TypesDef.Tournament.Tournament config = null)
 	{
-		var result = ChessLibrary.Configuration.Validation.validateTournament(tournament);
+		var result = ChessLibrary.Configuration.Validation.validateTournament(config ?? tournament);
 		if (result is ChessLibrary.Configuration.Validation.ValidationResult.Errors errResult)
 		{
 			var msgs = errResult.Item;
@@ -455,16 +455,21 @@ public partial class Tournaments
 		return (true, "");
 	}
 
+	/// The validation errors as a notice like the warnings (red: the tournament does not start);
+	/// false when there were any.
+	private Task<bool> PassesValidation(TypesDef.Tournament.Tournament config = null)
+	{
+		var (jsonOk, errors) = ValidateTournamentJson(config);
+		if (!jsonOk)
+			Snackbar.Add(new MarkupString("<b>Tournament not started - the config has errors:</b><br/>" + System.Net.WebUtility.HtmlEncode(errors).Replace("\n", "<br/>")),
+				Severity.Error, o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+		return Task.FromResult(jsonOk);
+	}
+
 	private async Task ValidateTournamentInput()
 	{
-		var (jsonOk, errors) = ValidateTournamentJson();
-		if (!jsonOk)
-		{
-			var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
-			var title = "Tournament validation failed!";
-			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", errors } }, opt);
+		if (!await PassesValidation())
 			return;
-		}
 
 		ShowOpeningWarnings();
 
@@ -741,12 +746,15 @@ public partial class Tournaments
 				return;
 			}
 		}
+		// tournament.json as the run will read it, not this page's copy: a config with errors does
+		// not start (as Ctrl+V and the console's tournament run say)
+		var runConfig = ChessLibrary.Tournament.Manager.loadTournament() ?? tournament;
+		if (!await PassesValidation(runConfig))
+			return;
 		await PrepareRun();
 		ShowOpeningWarnings();
 		if (!await CheckPonderingEngines())
 			return;
-		// the state files of tournament.json as the run will read it, not this page's copy
-		var runConfig = ChessLibrary.Tournament.Manager.loadTournament() ?? tournament;
 		ChessLibrary.Tournament.Manager.setAppendToPgn(false);
 		if (!await ConfirmCupResumeOrNew(runConfig))
 			return;

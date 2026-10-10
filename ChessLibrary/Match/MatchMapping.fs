@@ -187,7 +187,7 @@ module MatchMapping =
           MoveOverhead = TimeSpan.FromMilliseconds(float moveOverhead)
           EngineStartupTimeoutInSec = int (Math.Ceiling(float t.StartupMs / 1000.0))
           Adjudication = { DrawOption = draw; WinOption = win; TBAdj = tbAdj }
-          TestOptions = { Tournament.Empty.TestOptions with NumberOfGamesInParallel = max 1 t.Concurrency }
+          NumberOfGamesInParallel = max 1 t.Concurrency
           Opening =
             { OpeningsPath = (if o.File = "" then None else Some o.File)
               OpeningsTwice = (t.Games = 2)

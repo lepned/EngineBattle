@@ -630,57 +630,68 @@ module TypesDef =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
         EngineDefList: string list }
-    // NumberOfGamesInParallel was called NumberOfGamesInParallelConsoleOnly before parallel
-    // play reached the WebGUI; TestOptionsConverter below still accepts the old JSON name on load.
-    type TestOptions = { PolicyTest: bool; ValueTest: bool; NumberOfGamesInParallel: int; GPUs: int[] }
+    /// How the engines play every move: Search (the time control decides), Policy (the policy head
+    /// alone, `go nodes 1`) or Value (the value head alone). Written by name.
+    [<RequireQualifiedAccess>]
+    type PlayMode =
+      | Search
+      | Policy
+      | Value
 
-    /// JSON converter for TestOptions: reads NumberOfGamesInParallelConsoleOnly (pre-rename)
-    /// as an alias for NumberOfGamesInParallel; always writes the new name.
-    type TestOptionsConverter() =
-        inherit JsonConverter<TestOptions>()
+    type PlayModeConverter() =
+        inherit JsonConverter<PlayMode>()
+        override _.Read(reader: byref<Utf8JsonReader>, _t: Type, _o: JsonSerializerOptions) =
+            match (reader.GetString() |> Option.ofObj |> Option.defaultValue "").Trim().ToLowerInvariant() with
+            | "" | "search" -> PlayMode.Search
+            | "policy" -> PlayMode.Policy
+            | "value" -> PlayMode.Value
+            | other -> raise (JsonException $"PlayMode \"{other}\": expected Search, Policy or Value")
+        override _.Write(writer: Utf8JsonWriter, value: PlayMode, _o: JsonSerializerOptions) =
+            writer.WriteStringValue(match value with PlayMode.Search -> "Search" | PlayMode.Policy -> "Policy" | PlayMode.Value -> "Value")
 
-        override _.Read(reader: byref<Utf8JsonReader>, _typeToConvert: Type, _options: JsonSerializerOptions) =
-            if reader.TokenType <> JsonTokenType.StartObject then
-                failwith $"Unexpected token for TestOptions: {reader.TokenType}"
-            let mutable policyTest = false
-            let mutable valueTest = false
-            let mutable parallelGames = 1
-            let mutable gpus : int[] = null
-            while reader.Read() && reader.TokenType <> JsonTokenType.EndObject do
-                let name = reader.GetString()
-                reader.Read() |> ignore
-                match name with
-                | "PolicyTest" -> policyTest <- reader.GetBoolean()
-                | "ValueTest" -> valueTest <- reader.GetBoolean()
-                | "NumberOfGamesInParallel" | "NumberOfGamesInParallelConsoleOnly" ->
-                    parallelGames <- reader.GetInt32()
-                | "GPUs" ->
-                    if reader.TokenType = JsonTokenType.Null then gpus <- null
-                    else
-                        let items = ResizeArray<int>()
-                        while reader.Read() && reader.TokenType <> JsonTokenType.EndArray do
-                            items.Add(reader.GetInt32())
-                        gpus <- items.ToArray()
-                // WriteToConsole (removed) and anything else unknown
-                | _ -> reader.Skip()
-            { PolicyTest = policyTest
-              ValueTest = valueTest
-              NumberOfGamesInParallel = parallelGames
-              GPUs = gpus }
-
-        override _.Write(writer: Utf8JsonWriter, value: TestOptions, _options: JsonSerializerOptions) =
-            writer.WriteStartObject()
-            writer.WriteBoolean("PolicyTest", value.PolicyTest)
-            writer.WriteBoolean("ValueTest", value.ValueTest)
-            writer.WriteNumber("NumberOfGamesInParallel", value.NumberOfGamesInParallel)
-            if isNull value.GPUs then
-                writer.WriteNull("GPUs")
-            else
-                writer.WritePropertyName("GPUs")
-                writer.WriteStartArray()
-                for g in value.GPUs do writer.WriteNumberValue(g)
-                writer.WriteEndArray()
-            writer.WriteEndObject()
+    /// What a tournament written by an older EngineBattle (a file or a live-feed sender) means in
+    /// today's shape. Called by every reader of a tournament: the file and the live feed.
+    /// - A TestOptions block becomes the top-level NumberOfGamesInParallel (also under its older
+    ///   name NumberOfGamesInParallelConsoleOnly), GPUs and PlayMode (ValueTest wins over PolicyTest,
+    ///   as it did); a top-level key that has a value wins.
+    /// - A draw or win section without "Enabled" is on (written before the switch existed); tablebase
+    ///   adjudication without "UseTBAdjudication" is on when it names a folder.
+    /// - No PlayMode is Search.
+    let readOlderShape (file: Nodes.JsonObject) =
+      let missing (key: string) = isNull file.[key]
+      match file.["TestOptions"] with
+      | :? Nodes.JsonObject as old ->
+          let flag (key: string) =
+              match old.[key] with
+              | null -> false
+              | :? Nodes.JsonValue as v when v.GetValueKind() = JsonValueKind.True -> true
+              | :? Nodes.JsonValue as v when v.GetValueKind() = JsonValueKind.False -> false
+              | v -> raise (JsonException $"TestOptions.{key} must be true or false, not {v.ToJsonString()}")
+          let first (keys: string list) = keys |> List.tryPick (fun k -> match old.[k] with null -> None | v -> Some v)
+          if missing "NumberOfGamesInParallel" then
+              first [ "NumberOfGamesInParallel"; "NumberOfGamesInParallelConsoleOnly" ]
+              |> Option.iter (fun v -> file.["NumberOfGamesInParallel"] <- v.DeepClone())
+          if missing "GPUs" then
+              first [ "GPUs" ] |> Option.iter (fun v -> file.["GPUs"] <- v.DeepClone())
+          let value, policy = flag "ValueTest", flag "PolicyTest"
+          if missing "PlayMode" then
+              if value then file.["PlayMode"] <- Nodes.JsonValue.Create "Value"
+              elif policy then file.["PlayMode"] <- Nodes.JsonValue.Create "Policy"
+      | _ -> ()
+      file.Remove "TestOptions" |> ignore
+      if missing "PlayMode" then file.["PlayMode"] <- Nodes.JsonValue.Create "Search"
+      match file.["Adjudication"] with
+      | :? Nodes.JsonObject as adj ->
+          for name in [ "DrawOption"; "WinOption" ] do
+              match adj.[name] with
+              | :? Nodes.JsonObject as section when isNull section.["Enabled"] -> section.["Enabled"] <- Nodes.JsonValue.Create true
+              | _ -> ()
+          match adj.["TBAdj"] with
+          | :? Nodes.JsonObject as tb when isNull tb.["UseTBAdjudication"] ->
+              let folder = match tb.["TablebaseDirectory"] with :? Nodes.JsonValue as v -> (try v.GetValue<string>() with _ -> "") | _ -> ""
+              tb.["UseTBAdjudication"] <- Nodes.JsonValue.Create(not (String.IsNullOrWhiteSpace folder))
+          | _ -> ()
+      | _ -> ()
 
     /// Optional live-feed output for streaming a tournament to the WebGUI grid (see
     /// LiveFeedContract.md). All-empty / missing in JSON => no feed (normal tournament).
@@ -720,12 +731,17 @@ module TypesDef =
         [<JsonIgnore>] mutable DeviationCounter: int
         [<JsonIgnore>] mutable PreventMoveDeviationFor: string[]
         mutable Rounds: int
+        /// Games at once (Round Robin and Gauntlet; lowered when the engines do not fit in memory).
+        NumberOfGamesInParallel: int
+        /// The GPU ids the parallel games are spread over; null for none.
+        GPUs: int[]
+        [<JsonConverter(typeof<PlayModeConverter>)>]
+        PlayMode: PlayMode
         PauseAfterRound: int
         DelayBetweenGames: TimeSpan
         MoveOverhead: TimeSpan
         OrdoExePath: string
         Adjudication: Adjudication
-        TestOptions: TestOptions
         Opening: Opening
         CupOptions: CupOptions
         SwissOptions: SwissOptions
@@ -1021,7 +1037,9 @@ module TypesDef =
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = ""; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "" }
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
-          TestOptions = {PolicyTest = false; ValueTest = false; NumberOfGamesInParallel = 1; GPUs = null }
+          NumberOfGamesInParallel = 1
+          GPUs = null
+          PlayMode = PlayMode.Search
           Adjudication =
             {
               DrawOption = DrawOption.Off

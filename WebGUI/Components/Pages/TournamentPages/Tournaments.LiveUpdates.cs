@@ -38,7 +38,8 @@ public partial class Tournaments
 			case TournamentTypes.Update.GameStarted player:
 				await InvokeAsync(StartTimer);
 				ResetGameState();
-				DrawP = tournament.Adjudication.DrawOption.DrawMoveLength * 2;
+				// -1: draw adjudication is off (the banner says so)
+				DrawP = tournament.Adjudication.DrawOption.Enabled ? tournament.Adjudication.DrawOption.DrawMoveLength * 2 : -1;
 				var crossTable = table.FirstOrDefault(e => e.Player == whitePlayer);
 				if (crossTable != null)
 				{

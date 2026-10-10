@@ -8,17 +8,17 @@ open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.Game.Clock
 
 type Search =
-  /// Value head only (ValueTest).
+  /// Value head only (PlayMode.Value).
   | Value
   | NodeCount of int
   | MoveTimeMs of int
   | ClockTimes of control: UnionType * white: TimeSpan * black: TimeSpan
 
 /// The search for the side to move. `movesDone`: full moves that side has completed.
-let forMove (tests: TestOptions) (isLc0: bool) (timeControl: TimeControl) (config: TimeConfig)
+let forMove (playMode: PlayMode) (isLc0: bool) (timeControl: TimeControl) (config: TimeConfig)
             (movesDone: int) (white: SideClock) (black: SideClock) =
-  if tests.ValueTest then (if isLc0 then NodeCount 2 else Value)
-  elif tests.PolicyTest then NodeCount 1
+  if playMode = PlayMode.Value then (if isLc0 then NodeCount 2 else Value)
+  elif playMode = PlayMode.Policy then NodeCount 1
   elif config.NodeLimit then NodeCount config.Nodes
   elif config.IsMoveTime then MoveTimeMs (int config.MoveTime.TotalMilliseconds)
   else ClockTimes (timeControl.GetTimeForMove config movesDone, white.Left, black.Left)

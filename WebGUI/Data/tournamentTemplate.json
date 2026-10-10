@@ -13,6 +13,8 @@
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
+  "NumberOfGamesInParallel": 1,
+  "PlayMode": "Search",
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",
@@ -37,11 +39,6 @@
     }
   },
 
-  "TestOptions": {
-    "PolicyTest": false,
-    "ValueTest": false,
-    "NumberOfGamesInParallel": 1
-  },
 
   "Opening": {
     "OpeningsPath": "C:/Dev/Chess/Openings/sufi25.pgn",
@@ -53,7 +50,6 @@
     "RoundPairIncrements": [],
     "SeedingStrategy": "ByRating",
     "UniquePerMatchOnly": false,
-    "BracketPath": "wwwroot/cup_bracket.json",
     "RandomOpenings": false
   },
   "SwissOptions": {
@@ -62,8 +58,7 @@
     "SeedGroupCount": 4,
     "UniquePerMatchOnly": false,
     "RandomOpenings": false,
-    "AllowExtraPairsOnTie": false,
-    "StatePath": "wwwroot/swiss_state.json"
+    "AllowExtraPairsOnTie": false
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

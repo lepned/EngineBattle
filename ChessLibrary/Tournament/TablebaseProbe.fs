@@ -34,7 +34,14 @@ let private largestKnown = Collections.Concurrent.ConcurrentDictionary<string, i
 
 let largestTableCached (tablebasePath: string) =
     if String.IsNullOrWhiteSpace tablebasePath then 0
-    else largestKnown.GetOrAdd(tablebasePath, largestTable)
+    else
+        match largestKnown.TryGetValue tablebasePath with
+        | true, n -> n
+        | _ ->
+            // a folder with no tables (or not on this machine) is asked again, not remembered as 0
+            let n = largestTable tablebasePath
+            if n > 0 then largestKnown.[tablebasePath] <- n
+            n
 
 /// <summary>
 /// The tables are probed in this process (Syzygy, a C# port of Fathom), which holds one set of
@@ -142,7 +149,7 @@ let startRun (useTablebases: bool) (men: int) (tablebasePath: string) =
     if useTablebases && tablebasesExist tablebasePath then
         ensureLoaded true tablebasePath
         let largest = largestTable tablebasePath
-        largestKnown.[tablebasePath] <- largest
+        if largest > 0 then largestKnown.[tablebasePath] <- largest
         // men 0: as many as the tables hold
         if men > 0 && largest < men then
             Console.Error.WriteLine(

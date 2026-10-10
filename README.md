@@ -329,7 +329,7 @@ In order to use the console mode, run `eb-cli` from the release folder (or, from
 
 ` dotnet run --project Console -c Release -- tournament run <fullPathToYourTournament.json> `
 
-There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This setting is called `NumberOfGamesInParallel` (the old name `NumberOfGamesInParallelConsoleOnly` is still accepted) and can be set to any number you like; it is lowered automatically when one copy of each engine times that number does not fit in 70% of the available memory. Values up to 4 games can be recommended for a strong GPU.
+There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This top-level setting is called `NumberOfGamesInParallel` (a file with the older `TestOptions` block, or its older name `NumberOfGamesInParallelConsoleOnly` inside it, is still read) and can be set to any number you like; it is lowered automatically when one copy of each engine times that number does not fit in 70% of the available memory. Values up to 4 games can be recommended for a strong GPU.
 
 Note that parallel play applies to Round Robin and Gauntlet tournaments; Cup, Swiss and Ladder modes manage their pairings round by round and always run sequentially.
 

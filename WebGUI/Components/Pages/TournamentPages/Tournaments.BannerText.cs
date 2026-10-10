@@ -249,6 +249,7 @@ public partial class Tournaments
 	{
 		if (tournament != null)
 		{
+			if (!tournament.Adjudication.WinOption.Enabled) return "Win adjudication: off";
 			return
 				$"Win: after start, evals >= {tournament.Adjudication.WinOption.MinWinScore} for {tournament.Adjudication.WinOption.WinMoveLength} moves";
 		}
@@ -260,6 +261,7 @@ public partial class Tournaments
 	{
 		if (tournament != null)
 		{
+			if (!tournament.Adjudication.DrawOption.Enabled) return "Draw adjudication: off";
 			return
 				$"Draw: after {tournament.Adjudication.DrawOption.MinDrawMove} moves, evals <= {tournament.Adjudication.DrawOption.MaxDrawScore} for {tournament.Adjudication.DrawOption.DrawMoveLength} moves";
 		}

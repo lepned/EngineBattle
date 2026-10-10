@@ -24,11 +24,11 @@ open ChessLibrary.TournamentRunners.TournamentUtils
 /// engine times that number does not fit in 70% of the memory (measured once per engine setup and
 /// cached, so asking again - as match does to report it - starts no engine), at least one per GPU.
 let concurrencyFor (tourny: Tournament) =
-    let gpus = tourny.TestOptions.GPUs
+    let gpus = tourny.GPUs
     let memBased =
         HardwareInfo.concurrencyLevel
             tourny.EngineSetup.Engines
-            tourny.TestOptions.NumberOfGamesInParallel
+            tourny.NumberOfGamesInParallel
     let gpuBased =
         if gpus <> null && gpus.Length > 1 then
             max memBased gpus.Length

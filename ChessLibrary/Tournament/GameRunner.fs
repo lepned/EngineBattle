@@ -175,7 +175,7 @@ type GameContext =
 /// Dispose is the safety net for a run that ends without it.
 type GameRunner(ctx: GameContext) =
     let tourny, logger, callback = ctx.Tourny, ctx.Logger, ctx.Callback
-    let gpus = tourny.TestOptions.GPUs
+    let gpus = tourny.GPUs
     // Full per-game engine initialisation (MoveOverheadMs, restart checks, the GUI's opening
     // delay) is what the sequential runner did for the GUI; only the GUI with one board gets
     // it. Pooled engines in the console and in multi-board runs skip it but still get

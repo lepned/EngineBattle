@@ -201,9 +201,9 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
             // and more search threads than the machine has - games x the thinking engine's Threads
             // (without ponder one engine per game thinks, with it both). Threads the command line
             // leaves to the engine count as 1.
-            if not interrupted && tourny.TestOptions.NumberOfGamesInParallel > 1 then
+            if not interrupted && tourny.NumberOfGamesInParallel > 1 then
                 let games = ParallelExecution.concurrencyFor tourny
-                if games < tourny.TestOptions.NumberOfGamesInParallel then
+                if games < tourny.NumberOfGamesInParallel then
                     emit $"Info: Adjusted concurrency to {games}, as many as fit in 70%% of the memory.\n"
                 let threads =
                     parsed.Engines

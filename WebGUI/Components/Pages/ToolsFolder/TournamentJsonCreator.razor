@@ -663,7 +663,7 @@
                 root["OrdoExePath"] = ordoPath;
 
             // Engine setup
-            root["EngineSetup"]!["EngineDefFolder"] = engineDefsFolder;
+            root["EngineSetup"]!["EngineDefFolder"] = Slashes(engineDefsFolder);
             var engineList = new JsonArray();
             foreach (var e in selectedEngines)
                 engineList.Add(JsonValue.Create(e.FileName));
@@ -689,7 +689,7 @@
             root["TimeControl"]!["TimeConfigs"] = tcArray;
 
             // Openings
-            root["Opening"]!["OpeningsPath"] = openingsPath;
+            root["Opening"]!["OpeningsPath"] = Slashes(openingsPath);
             root["Opening"]!["OpeningsPly"] = openingsPly;
             root["Opening"]!["OpeningsTwice"] = openingsTwice;
             root["Opening"]!["RandomOpenings"] = randomOpenings;
@@ -704,7 +704,7 @@
             root["Adjudication"]!["WinOption"]!["MinWinScore"] = minWinScore;
             root["Adjudication"]!["WinOption"]!["WinMoveLength"] = winMoveLength;
             root["Adjudication"]!["TBAdj"]!["UseTBAdjudication"] = useTBAdjudication;
-            root["Adjudication"]!["TBAdj"]!["TablebaseDirectory"] = tablebaseDirectory;
+            root["Adjudication"]!["TBAdj"]!["TablebaseDirectory"] = Slashes(tablebaseDirectory);
             root["Adjudication"]!["TBAdj"]!["TBMen"] = tbMen;
 
             // Ladder options
@@ -715,15 +715,14 @@
             }
 
             // PGN output path (already a full .pgn path from auto-fill or user edit)
-            root["PgnOutPath"] = pgnOutPath;
+            root["PgnOutPath"] = Slashes(pgnOutPath);
             // the PGN Site tag; left out when empty, so the games say ? (unknown)
             if (!string.IsNullOrWhiteSpace(site)) root["Site"] = site.Trim();
 
             // Advanced
-            root["TestOptions"]!["NumberOfGamesInParallel"] = parallelGames;
-            // Drop the pre-rename key if the base template still carries it (both keys in one
-            // file would be ambiguous; the loader accepts either name).
-            (root["TestOptions"] as JsonObject)?.Remove("NumberOfGamesInParallelConsoleOnly");
+            root["NumberOfGamesInParallel"] = parallelGames;
+            // an older template's block would say it twice (the loader reads it as these keys)
+            root.Remove("TestOptions");
 
             var generatedJson = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             var genWarnings = new List<string>();
@@ -951,16 +950,20 @@
         }
 
         // Tablebase
-        var useTB = root["Adjudication"]?["TBAdj"]?["UseTBAdjudication"]?.GetValue<bool>() ?? false;
-        if (useTB)
-        {
-            var tbDir = root["Adjudication"]?["TBAdj"]?["TablebaseDirectory"]?.GetValue<string>() ?? "";
-            if (string.IsNullOrWhiteSpace(tbDir) || !Directory.Exists(tbDir))
-                warnings.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" — directory not found");
-        }
+        // as the run reads it: on when it says so, or when it names a folder and says nothing
+        var tbDir = root["Adjudication"]?["TBAdj"]?["TablebaseDirectory"]?.GetValue<string>() ?? "";
+        var useTB = root["Adjudication"]?["TBAdj"]?["UseTBAdjudication"]?.GetValue<bool>() ?? !string.IsNullOrWhiteSpace(tbDir);
+        if (useTB && !ChessLibrary.TablebaseProbe.tablebasesExist(tbDir))
+            errors.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" — directory not found (tablebase adjudication is on; the tournament page refuses to start it)");
+        else if (useTB && ChessLibrary.TablebaseProbe.largestTable(tbDir) == 0)
+            errors.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" holds no Syzygy tables (.rtbw)");
 
         return (errors, warnings);
     }
+
+    /// Forward slashes in every path the file gets: the same on every OS, and no doubled
+    /// backslashes in the JSON.
+    private static string Slashes(string path) => path?.Replace('\\', '/') ?? "";
 
     private void BackupActiveTournament(string wwwrootPath)
     {

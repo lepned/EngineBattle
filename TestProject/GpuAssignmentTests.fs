@@ -124,6 +124,6 @@ let ``EngineConfig Empty defaults DeviceOption and DeviceTemplate to empty`` () 
     Assert.Equal("", config.DeviceTemplate)
 
 [<Fact>]
-let ``TestOptions GPUs defaults to null in Tournament Empty`` () =
+let ``GPUs defaults to null in Tournament Empty`` () =
     let tourny = ChessLibrary.TypesDef.Tournament.Tournament.Empty
-    Assert.Null(tourny.TestOptions.GPUs)
+    Assert.Null(tourny.GPUs)

@@ -168,7 +168,7 @@ let ``event, site, wait and concurrency`` () =
     // the PGN's Event is the tournament's name, its Site the site
     Assert.Equal(("Test", "Home"), (t.Name, t.Site))
     Assert.Equal(TimeSpan.FromMilliseconds 250.0, t.DelayBetweenGames)
-    Assert.Equal(4, t.TestOptions.NumberOfGamesInParallel)
+    Assert.Equal(4, t.NumberOfGamesInParallel)
     let d = (mapped (sf @ lc0)).Tournament
     Assert.Equal(("EngineBattle Match", "?"), (d.Name, d.Site))
 

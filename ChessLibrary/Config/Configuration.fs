@@ -39,11 +39,10 @@ module ConsoleHelper =
     printfn $"{nameof(tournament.Opening.OpeningsTwice)}: {tournament.Opening.OpeningsTwice}"
     printfn $"{nameof(tournament.Opening.OpeningsPly)}: {tournament.Opening.OpeningsPly}"
     printfn $"Win adjudication: {tournament.AdjudicationText()}"
-    printfn $"Policy head test: {tournament.TestOptions.PolicyTest}"
-    printfn $"Value head test: {tournament.TestOptions.ValueTest}"
-    printfn $"Number of games in parallel: {tournament.TestOptions.NumberOfGamesInParallel}"
-    if tournament.TestOptions.GPUs <> null && tournament.TestOptions.GPUs.Length > 0 then
-      let gpuList = String.Join(", ", tournament.TestOptions.GPUs)
+    printfn $"Play mode: {tournament.PlayMode}"
+    printfn $"Number of games in parallel: {tournament.NumberOfGamesInParallel}"
+    if tournament.GPUs <> null && tournament.GPUs.Length > 0 then
+      let gpuList = String.Join(", ", tournament.GPUs)
       printfn $"GPUs: {gpuList}"
 
     printfn "Engines in tournament:\n"
@@ -344,7 +343,7 @@ module Validation =
   /// prevention or the value/policy tests. Its Ponder option is set to this.
   let willBeAskedToPonder (tourny: Tournament) (config: EngineConfig) =
       tourny.AllowPondering && not tourny.PreventMoveDeviation
-      && not tourny.TestOptions.ValueTest && not tourny.TestOptions.PolicyTest
+      && tourny.PlayMode = PlayMode.Search
       && (try
             let tc = tourny.TimeControl.GetTimeConfig config.TimeControlID
             not tc.IsMoveTime && not tc.NodeLimit
@@ -512,7 +511,7 @@ module Validation =
   let validateTournament (tourny: Tournament) =
       [
           // challengers count in a gauntlet only (the runner sets them to 0 otherwise)
-          validateEnginesPresent tourny.EngineSetup.Engines (if tourny.TournamentMode = "Gauntlet" then tourny.Challengers else 0)
+          validateEnginesPresent tourny.EngineSetup.Engines (if String.Equals(tourny.TournamentMode, "Gauntlet", StringComparison.OrdinalIgnoreCase) then tourny.Challengers else 0)
           validateTimeControl tourny
           validateTournamentModeOptions tourny
           validateOpeningPath tourny
@@ -614,9 +613,9 @@ module Validation =
       if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then
           ConsoleUtils.printInColor ConsoleColor.Yellow
               "Warning: RandomOpenings is enabled but OpeningsTwice is false. Each engine pair will play each opening from only one color side. Set OpeningsTwice to true for balanced color distribution."
-      if tourny.TestOptions.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
+      if tourny.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
           ConsoleUtils.printInColor ConsoleColor.Yellow
-              $"Warning: NumberOfGamesInParallel = {tourny.TestOptions.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."
+              $"Warning: NumberOfGamesInParallel = {tourny.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."
       for warning in duplicateOpeningWarnings tourny do
           ConsoleUtils.printInColor ConsoleColor.Yellow warning
 
@@ -672,7 +671,6 @@ module JSON =
       options.Converters.Add(WinboardConfigConverter())
       options.Converters.Add(TypesDef.CoreTypes.TimeControlStrategyConverter())
       options.Converters.Add(TypesDef.CoreTypes.DurationConverter())
-      options.Converters.Add(TypesDef.Tournament.TestOptionsConverter())
       options
 
   let private createJsonOptions() =
@@ -825,7 +823,7 @@ module JSON =
 
   /// These sections are taken whole: a missing one is the default, a given one as written. Their
   /// fields' zeros mean something (MinDrawMove 0: from the first move), unlike the section's default (off).
-  let private wholeSections = set [ "Adjudication.DrawOption"; "Adjudication.WinOption"; "Adjudication.TBAdj"; "TestOptions" ]
+  let private wholeSections = set [ "Adjudication.DrawOption"; "Adjudication.WinOption"; "Adjudication.TBAdj" ]
 
   /// Fills in what the file leaves out (or sets to null) from `defaults`, section by section.
   /// LayoutOption has its own merge (layoutOverDefault); TimeControl has no default.
@@ -838,27 +836,11 @@ module JSON =
               | (:? JsonObject as given), (:? JsonObject as d) when not (wholeSections.Contains at) -> overDefaults at d given
               | _ -> ()
 
-  /// What a given adjudication section means without its switch: a draw or win section is on (the
-  /// configs written before the switch existed), tablebase adjudication is on when it names a folder.
-  let private adjudicationSwitches (file: JsonObject) =
-      match file.["Adjudication"] with
-      | :? JsonObject as adj ->
-          for name in [ "DrawOption"; "WinOption" ] do
-              match adj.[name] with
-              | :? JsonObject as section when not (section.ContainsKey "Enabled") -> section.["Enabled"] <- JsonValue.Create true
-              | _ -> ()
-          match adj.["TBAdj"] with
-          | :? JsonObject as tb when not (tb.ContainsKey "UseTBAdjudication") ->
-              let folder = match tb.["TablebaseDirectory"] with :? JsonValue as v -> (try v.GetValue<string>() with _ -> "") | _ -> ""
-              tb.["UseTBAdjudication"] <- JsonValue.Create(not (String.IsNullOrWhiteSpace folder))
-          | _ -> ()
-      | _ -> ()
-
   /// The tournament file over Tournament.ConfigDefaults: a config needs only what has no default.
   let configOverDefaults (root: JsonNode) (options: JsonSerializerOptions) : unit =
       match root with
       | :? JsonObject as file ->
-          adjudicationSwitches file
+          readOlderShape file
           let defaults = JsonSerializer.SerializeToNode(Tournament.ConfigDefaults, options) :?> JsonObject
           overDefaults "" defaults file
       | _ -> ()

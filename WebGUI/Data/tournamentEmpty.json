@@ -13,6 +13,8 @@
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
+  "NumberOfGamesInParallel": 1,
+  "PlayMode": "Search",
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",
@@ -36,11 +38,6 @@
       "TBMen": 6
     }
   },
-  "TestOptions": {
-    "PolicyTest": false,
-    "ValueTest": false,
-    "NumberOfGamesInParallel": 1
-  },
   "Opening": {
     "OpeningsPath": "",
     "OpeningsPly": 100,
@@ -51,7 +48,6 @@
     "RoundPairIncrements": [],
     "SeedingStrategy": "ByRating",
     "UniquePerMatchOnly": false,
-    "BracketPath": "wwwroot/cup_bracket.json",
     "RandomOpenings": false
   },
   "SwissOptions": {
@@ -60,13 +56,11 @@
     "SeedGroupCount": 4,
     "UniquePerMatchOnly": false,
     "RandomOpenings": false,
-    "AllowExtraPairsOnTie": false,
-    "StatePath": "wwwroot/swiss_state.json"
+    "AllowExtraPairsOnTie": false
   },
   "LadderOptions": {
     "GamePairsPerMatch": 4,
-    "RandomOpenings": false,
-    "StatePath": "wwwroot/ladder_state.json"
+    "RandomOpenings": false
   },
   "PgnOutPath": "",
   "ReferencePGNPath": "",

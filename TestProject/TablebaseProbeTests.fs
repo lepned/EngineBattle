@@ -223,9 +223,16 @@ let ``TBMen 0 is as many pieces as the tables hold`` () =
     Assert.Equal(4, GameAdjudication.adjudicatedMen (withMen 4))
     // more than the tables hold is what they hold
     Assert.Equal(5, GameAdjudication.adjudicatedMen (withMen 7))
-    // the probe never asks past the tables, so 0 lets every position the tables have through
-    Assert.Equal(7, GameAdjudication.tablebaseMen (withMen 0))
+    // the probe asks this tournament's tables only, not every table the process has loaded
+    Assert.Equal(5, GameAdjudication.tablebaseMen (withMen 0))
     Assert.Equal(4, GameAdjudication.tablebaseMen (withMen 4)))
+
+[<Fact>]
+let ``a tablebase folder this machine cannot read leaves TBMen, or all`` () =
+  let missing = Path.Combine(Path.GetTempPath(), "eb_no_such_tb_folder")
+  let withMen men = { tourny missing with Adjudication = { (tourny missing).Adjudication with TBAdj = { TablebaseDirectory = missing; UseTBAdjudication = true; TBMen = men } } }
+  Assert.Equal(5, GameAdjudication.adjudicatedMen (withMen 5))
+  Assert.Equal(7, GameAdjudication.adjudicatedMen (withMen 0))
 
 [<Fact>]
 let ``tablebase adjudication that is on needs a folder with tables`` () =
