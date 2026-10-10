@@ -48,6 +48,31 @@ mv publish/eb-cli/EngineBattle.Console.exe publish/eb-cli/eb-cli.exe
 - The file is all there is: tablebase adjudication probes the Syzygy tables in process, so nothing
   has to sit next to it.
 
+### eb-cli.json
+
+Settings eb-cli reads from `eb-cli.json` next to the executable (next to `eb-cli.exe` in the
+download; `Console/bin/Release/net10.0/` when run from source with `dotnet run`). The file is
+optional and so is every key. They save typing - none of them changes what a command computes:
+
+```json
+{
+  "engineDefsFolder": "C:/Dev/Chess/Engines/EngineDefs",
+  "syzygyPath": "D:/syzygy",
+  "puzzleResultsFolder": "C:/Dev/Chess/EB"
+}
+```
+
+| Key | Used by | What it does |
+|---|---|---|
+| `engineDefsFolder` | `analyze`, `compare`, `bookeval`, `enginecheck`, `piecevalues`, `piecevaluefit` | A bare engine name (`eb-cli a Lc0_BT4_332`) is looked up here as `<name>` or `<name>.json` - the whole EB engine def, with its network, backend, arguments and options. A path that exists is used as given. |
+| `syzygyPath` | `tb` | The Syzygy folders when neither `--tb` nor `EB_SYZYGY_PATH` is given (several separated by `;` on Windows, `:` elsewhere). |
+| `puzzleResultsFolder` | `puzzletrend` | The folder read when none is given (`eb-cli pt --arm srv_deg4`). |
+
+Relative folders are relative to the file. An unknown key (a misspelt `syzygypath`) is reported
+on stderr; a file that is not valid JSON stops only a command that needs a value from it, with the
+reason. Comments and a trailing comma are allowed. `match` does not read it: its folders and
+engines are part of the match, as in fastchess, and `config.json` is the state of one match (in
+fastchess's format) to resume it.
 ### General Syntax
 
 ```
@@ -657,7 +682,7 @@ says a draw can be claimed; `--ignore-clock` reads the clock as 0 (what the posi
 position's own DTZ. Without DTZ tables (.rtbz) for the material the moves are grouped from
 the WDL tables alone; those cannot see the clock, so with the clock running a win or loss
 that is not a zeroing move is marked "50-move rule not checked". `--tb` names the folder (several separated by `;` on Windows, `:` elsewhere); without
-it `EB_SYZYGY_PATH` is used - set it once for your user, e.g. in PowerShell `[Environment]::SetEnvironmentVariable('EB_SYZYGY_PATH', 'D:/syzygy', 'User')` (new windows see it), or `export EB_SYZYGY_PATH=/data/syzygy` in your shell profile. `--json` prints the answer as JSON. Exit 1 when the tables give
+it `EB_SYZYGY_PATH`, then `syzygyPath` in [eb-cli.json](#eb-clijson). `--json` prints the answer as JSON. Exit 1 when the tables give
 no answer (no folder, too many pieces, castling rights, no table for the material). The
 WebGUI has the same lookup on Tools > Tablebase. Aliases: `tablebase`.
 

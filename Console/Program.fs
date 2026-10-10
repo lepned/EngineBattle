@@ -408,11 +408,18 @@ module Program =
       Bestmove: string; PV: string; SanPV: string
   }
 
+  /// An engine argument as a file: a path as given, or a bare def name from engineDefsFolder in
+  /// eb-cli.json (CliSettings.resolveEngine).
+  let private resolveEnginePath (enginePath: string) =
+      CliSettings.resolveEngine File.Exists (normalizePath enginePath) (fun () -> CliSettings.current.Force())
+
   /// Resolves an engine path (JSON config or bare exe) to an EngineConfig, applying UCI option overrides.
   let private resolveEngineConfig (enginePath: string) (uciOptions: (string * string) list) =
-      let normalizedEngine = normalizePath enginePath
-      if not (File.Exists normalizedEngine) then
-          failwithf "Engine file not found: %s" normalizedEngine
+      // Result.Ok/Error: an opened engine module has an Ok case of its own
+      let normalizedEngine =
+          match resolveEnginePath enginePath with
+          | Result.Ok p -> p
+          | Result.Error msg -> failwith msg
       let config =
           if normalizedEngine.EndsWith(".json", StringComparison.OrdinalIgnoreCase) then
               Configuration.JSON.readSingleEngineConfig normalizedEngine
@@ -499,10 +506,12 @@ module Program =
         Bestmove = bestmove; PV = pv; SanPV = sanPV }
 
   let runAnalyze (p: CliParser.AnalyzeParams) =
-    let normalizedEngine = normalizePath p.Engine
-    if not (File.Exists normalizedEngine) then
-        printfn "Engine file not found: %s" normalizedEngine
-    else
+    // a missing engine is an error like in the other verbs: stderr and exit 1
+    match resolveEnginePath p.Engine with
+    | Result.Error msg ->
+        eprintfn "%s" msg
+        exit 1
+    | Result.Ok _ -> ()
     try
         // Resolve engine config: JSON file or bare exe, with the UCI option overrides
         let config = resolveEngineConfig p.Engine p.UciOptions
@@ -750,10 +759,11 @@ module Program =
   /// The tablebase page for a terminal: every move from the Syzygy tables, best first (TablebaseLookup,
   /// shared with the page). Exit 1 when the tables give no answer.
   let runTablebase (fen: string) (tb: string option) (json: bool) (ignoreClock: bool) =
-    let path =
-        match tb with
-        | Some p -> p
-        | None -> Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj |> Option.defaultValue ""
+    // An unreadable eb-cli.json is reported like any other missing folder (--json still prints JSON).
+    let path, settingsError =
+        match CliSettings.resolveSyzygyPath tb (Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj) (fun () -> CliSettings.current.Force()) with
+        | Result.Ok p -> defaultArg p "", None
+        | Result.Error e -> "", Some e
     let r =
         try ChessLibrary.TablebaseLookup.lookupWith (not ignoreClock) path fen
         with ex ->
@@ -767,8 +777,10 @@ module Program =
         | _ -> false
     let text = ChessLibrary.TablebaseLookup.statusText path r
     let text =
-        match r.Status with
-        | ChessLibrary.TablebaseLookup.NoTablebaseFolder -> text + ": pass --tb <folder> or set EB_SYZYGY_PATH"
+        match r.Status, settingsError with
+        | ChessLibrary.TablebaseLookup.NoTablebaseFolder, Some e -> $"{text}: cannot read {e}"
+        | ChessLibrary.TablebaseLookup.NoTablebaseFolder, None ->
+            $"""{text}: pass --tb <folder>, set EB_SYZYGY_PATH, or put {{ "syzygyPath": "<folder>" }} in {CliSettings.path ()}"""
         | _ -> text
     if json then
         let opts = System.Text.Json.JsonSerializerOptions(PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase, WriteIndented = true)
@@ -2632,7 +2644,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "                                          --uci <name> <value> (repeatable), --print, --force, --timeout <s>"
     printfn "  gendefs, gd <template.json> [--net F|--nets D] [--out D] [--dry-run] [--force]"
     printfn "                                          Defs for training checkpoints, an existing def as the template"
-    printfn "  puzzletrend, pt <folder> [--arm S] [--type S] [--rg N] [--min-steps N] [--csv F]"
+    printfn "  puzzletrend, pt [<folder>] [--arm S] [--type S] [--rg N] [--min-steps N] [--csv F]"
     printfn "                                          Per-arm step curves from many puzzle runs"
     printfn "  pvcombo <games.pgn>                     Material-imbalance report by material signature"
     printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
@@ -2667,13 +2679,16 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "                                          pins, insights, SEE); --epd <file> for a batch"
     printfn "  tb, tablebase <fen> [--tb <folder>] [--json] [--ignore-clock]"
     printfn "                                          Every move from the Syzygy tables: win, draw, loss with DTZ"
-    printfn "                                          (folder default: EB_SYZYGY_PATH; the halfmove clock counts unless --ignore-clock)"
+    printfn "                                          (folder: --tb, EB_SYZYGY_PATH or eb-cli.json; clock counts unless --ignore-clock)"
     printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
     printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
     printfn "  validate, v <config>                    Validate a tournament config without running"
     printfn "  perft <depth> [sampleSize]              Run perft move generation test"
     printfn "  gui [page] [port]                       Launch WebGUI (default: tournament, port 5018)"
     printfn "  help, h                                 Show this help message"
+    printfn ""
+    printfn "Settings: eb-cli.json next to this program (optional): engineDefsFolder (a bare engine name,"
+    printfn "  e.g. 'a Lc0_BT4_332', is looked up there), syzygyPath (tb), puzzleResultsFolder (puzzletrend)."
     printfn ""
     printfn "Diagnostics:"
     printfn "  enginecheck, ec <engine> [options]      Check that an engine follows the UCI protocol and behaves in"
@@ -2960,6 +2975,18 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                 | Verb (PuzzleTrend (folder, armFilter, typeFilter, rgFilter, csvOut, minSteps)) ->
                     // Consolidates many puzzle runs into step curves per training arm, which is
                     // otherwise assembled by hand from one summary table per run.
+                    let folder =
+                        match folder with
+                        | Some f -> f
+                        | None ->
+                            match CliSettings.current.Force() with
+                            | Result.Ok { PuzzleResultsFolder = Some f } -> f
+                            | Result.Ok _ ->
+                                eprintfn "Missing folder for puzzletrend: pass <folder> or put { \"puzzleResultsFolder\": \"<folder>\" } in %s" (CliSettings.path ())
+                                exit 1
+                            | Result.Error e ->
+                                eprintfn "puzzletrend: cannot read %s" e
+                                exit 1
                     let normalizedFolder = normalizePath folder
                     if not (Directory.Exists normalizedFolder) then
                         printfn "Folder not found: %s" normalizedFolder

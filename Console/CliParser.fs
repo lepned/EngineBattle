@@ -106,7 +106,7 @@ type VerbResult =
     | BookEval of BookEvalParams
     | Deviations of path:string
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
-    | PuzzleTrend of folder:string * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
+    | PuzzleTrend of folder:string option * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
     | GenDefs of template:string * netFolder:string option * outFolder:string option * dryRun:bool * force:bool
     | MkDef of exe:string * out:string option * net:string option * tb:string option * baseDef:string option * overrides:(string * string) list * print:bool * force:bool * timeoutSec:int
     | Validate of configFile:string
@@ -755,9 +755,10 @@ module CustomParser =
                     parseArgs args (index + 2) (Verb (Deviations path) :: acc)
                 else failwith "Missing parameter for deviations"
             | "puzzletrend" | "pt" ->
-                if index + 1 < args.Length then
-                    let folder = args.[index + 1]
-                    let mutable i = index + 2
+                // the folder may be left out when eb-cli.json names puzzleResultsFolder
+                begin
+                    let folder = if index + 1 < args.Length && not (args.[index + 1].StartsWith "--") then Some args.[index + 1] else None
+                    let mutable i = if folder.IsSome then index + 2 else index + 1
                     let mutable arm = None
                     let mutable testType = None
                     let mutable ratingGroup = None
@@ -774,7 +775,7 @@ module CustomParser =
                         | "--min-steps" -> minSteps <- parseInt (valueOf args i); i <- i + 2
                         | _ -> stop <- true
                     parseArgs args i (Verb (PuzzleTrend (folder, arm, testType, ratingGroup, csvOut, minSteps)) :: acc)
-                else failwith "Missing folder for puzzletrend"
+                end
             | "tb" | "tablebase" ->
                 if index + 1 < args.Length then
                     // An unquoted FEN arrives as up to six arguments ("-" is a field, "--" a flag):
