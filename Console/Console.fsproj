@@ -15,11 +15,17 @@
 		<Content Include="benchmark-options.json" />
 		<Compile Include="CliParser.fs" />
 		<Compile Include="CliSettings.fs" />
+		<Compile Include="Cli\Spec.fs" />
+		<Compile Include="Cli\Parse.fs" />
+		<Compile Include="Cli\Help.fs" />
+		<Compile Include="Cli\Output.fs" />
+		<Compile Include="Cli\App.fs" />
 		<Compile Include="BenchmarkRunner.fs" />
 		<Compile Include="TunerRunner.fs" />
 		<Compile Include="BayesianOptimizer.fs" />
 		<Compile Include="MatchMode.fs" />
 		<Compile Include="EngineCheck.fs" />
+		<Compile Include="Commands.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

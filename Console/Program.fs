@@ -2766,7 +2766,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     // this program; no other verb starts with '-', and a mistyped option then gets match's error
     // and suggestion): MatchMode owns stdout, so it goes before anything prints.
     match List.ofArray argv with
-    | first :: rest when first = "match" || first.StartsWith "-" ->
+    | first :: rest when first = "match" || (first.StartsWith "-" && not (List.contains first [ "-h"; "--help"; "--version" ])) ->
         Console.OutputEncoding <- System.Text.Encoding.UTF8
         let viaVerb = first = "match"
         exit (MatchMode.run (if viaVerb then rest else List.ofArray argv) viaVerb)
@@ -2854,15 +2854,10 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
         //Async.Start(BlazorInterop.startBlazorAppAsync())
         
         Console.OutputEncoding <- System.Text.Encoding.UTF8
-        let cliArgs = CustomParser.parse (System.Environment.GetCommandLineArgs())
-        let mutable tournament = Tournament.Tournament.Empty
-        match cliArgs with
-        | [] ->
-            printConsoleHelp ()
-            waitIfOwnConsole ()
-        | _ -> 
-            // stderr, not stdout: scriptable verbs (query) must own stdout for their JSON
-            eprintfn "\nArguments provided to console app: %A" cliArgs
+        // The old verbs, while their commands move to Cli one group at a time (docs/EbCliRewrite.md):
+        // a command not moved yet hands its arguments to the verb it replaces.
+        let runLegacy (tokens: string list) =
+            let cliArgs = CustomParser.parse (Array.ofList ("eb-cli" :: tokens))
             for arg in cliArgs do
                 match arg with
                 | Verb (Perft (depth, sampleSize)) ->
@@ -2913,8 +2908,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                           for engine in engineList do
                             engine.IsChallenger <- false
                         let engineSetup = {tourny.EngineSetup with Engines = engineList}
-                        tournament <- 
-                            {tourny with 
+                        let tournament =
+                            {tourny with
                                 EngineSetup = engineSetup
                                 MinMoveTimeInMS = 0
                                 ConsoleOnly = true
@@ -3351,5 +3346,10 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     printConsoleHelp ()
                 | _ ->
                     printfn "Unhandled argument: %A" arg
-        0
+            Cli.Output.ExitOk
+        let tokens = List.ofArray argv
+        let code = Cli.App.run (Commands.all runLegacy) tokens
+        // double-clicked: keep the window open long enough to read the command list
+        if tokens.IsEmpty then waitIfOwnConsole ()
+        code
 
