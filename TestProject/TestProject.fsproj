@@ -60,6 +60,7 @@
 		<Compile Include="LayoutOptionParseTests.fs" />
 		<Compile Include="TimeConfigShortFormTests.fs" />
 		<Compile Include="TournamentConfigDefaultsTests.fs" />
+		<Compile Include="DocTournamentConfigTests.fs" />
 		<Compile Include="BookEvaluationFilterTests.fs" />
 		<Compile Include="WinboardConfigReadTests.fs" />
 		<Compile Include="WinboardTimeAndMoveTests.fs" />
