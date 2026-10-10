@@ -76,12 +76,11 @@ let ``TestOptions old NumberOfGamesInParallelConsoleOnly key is read as alias`` 
     opts.Converters.Add(TestOptionsConverter())
     let t = JsonSerializer.Deserialize<Tournament>(json, opts)
     Assert.Equal(4, t.TestOptions.NumberOfGamesInParallel)
-    Assert.True(t.TestOptions.WriteToConsole)
     Assert.Equal<int[]>([|0;1|], t.TestOptions.GPUs)
 
 [<Fact>]
 let ``TestOptions new NumberOfGamesInParallel key round-trips and writes the new name`` () =
-    let json = """{ "TestOptions": { "PolicyTest":true, "ValueTest":false, "WriteToConsole":false,
+    let json = """{ "TestOptions": { "PolicyTest":true, "ValueTest":false,
                                      "NumberOfGamesInParallel": 3, "GPUs": null } }"""
     let opts = JsonSerializerOptions(AllowTrailingCommas = true)
     opts.Converters.Add(TestOptionsConverter())
@@ -90,6 +89,7 @@ let ``TestOptions new NumberOfGamesInParallel key round-trips and writes the new
     let written = JsonSerializer.Serialize(t.TestOptions, opts)
     Assert.Contains("NumberOfGamesInParallel", written)
     Assert.DoesNotContain("ConsoleOnly", written)
+    Assert.DoesNotContain("WriteToConsole", written)
 
 // Test for ResultReason
 [<Fact>]

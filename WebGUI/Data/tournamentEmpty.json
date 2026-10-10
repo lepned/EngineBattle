@@ -39,7 +39,6 @@
   "TestOptions": {
     "PolicyTest": false,
     "ValueTest": false,
-    "WriteToConsole": false,
     "NumberOfGamesInParallel": 1
   },
   "Opening": {

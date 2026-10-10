@@ -117,9 +117,6 @@ let private playWith
   (callback: Update -> unit) : Async<Result> = async {
 
   sb.Clear() |> ignore
-  if tourny.TestOptions.WriteToConsole then
-    white.ShowCommands()
-    black.ShowCommands()
   let timeConfig (engine: ChessEngine) = tourny.FindTimeControl engine.Config.TimeControlID
   let clocks =
     [| Clock.create tourny.TimeControl (timeConfig white) tourny.MoveOverhead

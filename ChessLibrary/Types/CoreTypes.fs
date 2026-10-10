@@ -632,7 +632,7 @@ module TypesDef =
         EngineDefList: string list }
     // NumberOfGamesInParallel was called NumberOfGamesInParallelConsoleOnly before parallel
     // play reached the WebGUI; TestOptionsConverter below still accepts the old JSON name on load.
-    type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallel: int; GPUs: int[] }
+    type TestOptions = { PolicyTest: bool; ValueTest: bool; NumberOfGamesInParallel: int; GPUs: int[] }
 
     /// JSON converter for TestOptions: reads NumberOfGamesInParallelConsoleOnly (pre-rename)
     /// as an alias for NumberOfGamesInParallel; always writes the new name.
@@ -644,7 +644,6 @@ module TypesDef =
                 failwith $"Unexpected token for TestOptions: {reader.TokenType}"
             let mutable policyTest = false
             let mutable valueTest = false
-            let mutable writeToConsole = false
             let mutable parallelGames = 1
             let mutable gpus : int[] = null
             while reader.Read() && reader.TokenType <> JsonTokenType.EndObject do
@@ -653,7 +652,6 @@ module TypesDef =
                 match name with
                 | "PolicyTest" -> policyTest <- reader.GetBoolean()
                 | "ValueTest" -> valueTest <- reader.GetBoolean()
-                | "WriteToConsole" -> writeToConsole <- reader.GetBoolean()
                 | "NumberOfGamesInParallel" | "NumberOfGamesInParallelConsoleOnly" ->
                     parallelGames <- reader.GetInt32()
                 | "GPUs" ->
@@ -663,10 +661,10 @@ module TypesDef =
                         while reader.Read() && reader.TokenType <> JsonTokenType.EndArray do
                             items.Add(reader.GetInt32())
                         gpus <- items.ToArray()
+                // WriteToConsole (removed) and anything else unknown
                 | _ -> reader.Skip()
             { PolicyTest = policyTest
               ValueTest = valueTest
-              WriteToConsole = writeToConsole
               NumberOfGamesInParallel = parallelGames
               GPUs = gpus }
 
@@ -674,7 +672,6 @@ module TypesDef =
             writer.WriteStartObject()
             writer.WriteBoolean("PolicyTest", value.PolicyTest)
             writer.WriteBoolean("ValueTest", value.ValueTest)
-            writer.WriteBoolean("WriteToConsole", value.WriteToConsole)
             writer.WriteNumber("NumberOfGamesInParallel", value.NumberOfGamesInParallel)
             if isNull value.GPUs then
                 writer.WriteNull("GPUs")
@@ -1024,7 +1021,7 @@ module TypesDef =
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = ""; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "" }
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
-          TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallel = 1; GPUs = null }
+          TestOptions = {PolicyTest = false; ValueTest = false; NumberOfGamesInParallel = 1; GPUs = null }
           Adjudication =
             {
               DrawOption = DrawOption.Off

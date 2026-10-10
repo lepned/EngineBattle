@@ -613,7 +613,6 @@ module Engine =
 
       member _.PassedValidation = passed
       member this.BenchmarkLC0Cmd = benchMarkLC0Cmd
-      member this.ShowCommands = fun () -> printConfigCommands name initCommands
       member this.Config = config
       member this.Path = config.Path
       /// QUIRK: sends "uci" and returns nothing, unlike the analysis wrapper's GetUCICommands.

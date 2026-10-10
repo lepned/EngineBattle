@@ -626,7 +626,6 @@ module TunerRunner =
       { baseTournament.TestOptions with
           PolicyTest = false
           ValueTest = false
-          WriteToConsole = false
           NumberOfGamesInParallel = cfg.ParallelGames
           GPUs = if cfg.GPUs <> null then cfg.GPUs else baseTournament.TestOptions.GPUs }
 

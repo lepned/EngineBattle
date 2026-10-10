@@ -65,7 +65,6 @@ type ChessLibrary.Engine.ChessEngine
   prop PrintNonDefaultValues : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
   prop Process : System.Diagnostics.Process { get }
   prop ReadyFailure : System.String { get }
-  prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
   prop SupportsPonder : System.Boolean { get }
   prop UciIdName : System.String { get }
   static CreateAsync(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, initCommands: System.Collections.Generic.IEnumerable<System.String>, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : System.Threading.Tasks.Task<ChessLibrary.Engine.ChessEngine>
