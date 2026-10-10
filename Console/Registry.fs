@@ -35,7 +35,7 @@ let private legacy (runLegacy: string list -> int) (path: string list) group sum
 let all (runLegacy: string list -> int) : Entry list =
     let l = legacy runLegacy
     // the moved commands, by name
-    let moved = Commands.Positions.entries @ Commands.Values.entries @ Commands.Pgn.entries @ Commands.Other.entries
+    let moved = Commands.Positions.entries @ Commands.Values.entries @ Commands.Pgn.entries @ Commands.Other.entries @ Commands.Engine.entries
     let m (path: string list) = moved |> List.find (fun e -> e.Spec.Path = path)
     [ m [ "analyze" ]
       m [ "compare" ]
@@ -44,10 +44,10 @@ let all (runLegacy: string list -> int) : Entry list =
       m [ "values"; "position" ]
       m [ "values"; "fit" ]
       l [ "values"; "batch" ] Positions "Piece values for a folder of nets" "pvbatch"
-      l [ "engine"; "check" ] Engines "Check that an engine follows the UCI protocol" "enginecheck"
-      l [ "engine"; "new" ] Engines "Write an engine def from what the engine answers to 'uci'" "mkdef"
-      l [ "engine"; "gen" ] Engines "Write defs for training checkpoints, from an existing def" "gendefs"
-      l [ "engine"; "bench" ] Engines "Benchmark an engine from a config" "benchmark"
+      m [ "engine"; "check" ]
+      m [ "engine"; "new" ]
+      m [ "engine"; "gen" ]
+      m [ "engine"; "bench" ]
       m [ "pgn"; "check" ]
       m [ "pgn"; "validate" ]
       m [ "pgn"; "strip" ]

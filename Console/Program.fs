@@ -1372,18 +1372,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
             let cliArgs = CustomParser.parse (Array.ofList ("eb-cli" :: tokens))
             for arg in cliArgs do
                 match arg with
-                | Verb (EngineCheck p) ->
-                    // a missing engine or a broken def is a message, not a stack trace
-                    let config =
-                      try resolveEngineConfig p.Engine p.UciOptions
-                      with ex ->
-                        eprintfn "%s" ex.Message
-                        exit 1
-                    let code =
-                      EngineCheck.run
-                        { Config = config; Nodes = p.Nodes; MoveTimeMs = p.MoveTimeMs; DelayMs = p.DelayMs; StopDelayMs = p.StopDelayMs; Rounds = p.Rounds
-                          Moves = defaultArg p.Moves EngineCheck.defaultMoves; Only = p.Only }
-                    if code <> 0 then exit code
                 | Verb (PvBatch p) ->
                     runPvBatch p
                 | Verb (PuzzleJson (path, jsonOut)) ->
@@ -1429,11 +1417,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                           if not ok then exit 1
                     | None -> 
                         printfn "Tournamentjson config file not found..."                        
-                | Verb (Benchmark path) ->
-                    try
-                        BenchmarkRunner.runBenchmark path
-                    with ex ->
-                        eprintfn "Benchmark failed: %s" ex.Message
                 | Verb (Tune path) ->
                     Console.CancelKeyPress.Add(fun args ->
                         args.Cancel <- true
@@ -1504,53 +1487,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                     File.WriteAllText(outPath, ChessLibrary.PuzzleTrend.toCsv filtered)
                                     printfn "CSV written: %s" outPath
                                 | None -> ()
-                | Verb (MkDef (exe, out, net, tb, baseDef, overrides, print, force, timeoutSec)) ->
-                    // The Engine creator page for a terminal: ask the engine, write the def.
-                    // Same module as the page (EngineProbe), so the two cannot drift.
-                    let wishes =
-                        { ChessLibrary.EngineProbe.Wishes.Empty with
-                            NetFile = net |> Option.map normalizePath
-                            Tablebases = tb |> Option.map normalizePath
-                            Base = baseDef |> Option.map (normalizePath >> JSON.readSingleEngineConfig)
-                            Overrides = overrides }
-                    match ChessLibrary.EngineProbe.probe (normalizePath exe) (timeoutSec * 1000) with
-                    | Result.Error msg -> printfn "%s" msg
-                    | Result.Ok probed ->
-                        match ChessLibrary.EngineProbe.build probed wishes with
-                        | Result.Error msg -> printfn "%s" msg
-                        | Result.Ok def ->
-                            let by = if String.IsNullOrWhiteSpace def.Dev then "" else sprintf " by %s" def.Dev
-                            printfn "%s%s: %d options" def.Name by def.Options.Count
-                            match ChessLibrary.EngineProbe.networkOptionKey probed.Options with
-                            | Some k -> printfn "  %s = %s" k (string def.Options.[k])
-                            | None -> ()
-                            if print then printfn "%s" (ChessLibrary.EngineProbe.toJson def)
-                            else
-                                match ChessLibrary.EngineProbe.write (out |> Option.map normalizePath |> Option.defaultValue "") def force with
-                                | Result.Ok path -> printfn "  Wrote %s" path
-                                | Result.Error msg -> printfn "  %s" msg
-                | Verb (GenDefs (template, netFolder, outFolder, dryRun, force)) ->
-                    // A training run drops a checkpoint every few hours and each needs a def
-                    // that differs from the last only in the step number. Typing that by hand
-                    // is how step numbers get mistyped.
-                    let templatePath = normalizePath template
-                    match ChessLibrary.EngineDefGen.plan
-                            templatePath
-                            (netFolder |> Option.map normalizePath)
-                            (outFolder |> Option.map normalizePath) with
-                    // Result.Ok/Error qualified: an engine-message DU in scope shadows both cases
-                    | Result.Error msg -> printfn "%s" msg
-                    | Result.Ok p ->
-                        printfn "%s" (ChessLibrary.EngineDefGen.render p)
-                        if not p.ToWrite.IsEmpty then
-                            if dryRun then
-                                printfn "  --dry-run: nothing written."
-                            else
-                                let written = ChessLibrary.EngineDefGen.write force p
-                                printfn "  Wrote %d def(s)." written.Length
-                                let blocked = p.ToWrite.Length - written.Length
-                                if blocked > 0 then
-                                    printfn "  %d skipped: a file of that name already exists (--force to overwrite)." blocked
                 | Verb (BookEval p) -> runBookEval p
                 | Verb (Redash path) ->
                     BayesianOptimizer.regenerateDashboard path
