@@ -241,3 +241,15 @@ let ``tablebase adjudication that is on needs a folder with tables`` () =
   withTables [] (fun empty -> Assert.True(isError (tourny empty)))
   withTables [ "KQvK.rtbw" ] (fun dir -> Assert.False(isError (tourny dir)))
   Assert.False(isError Tournament.Empty)
+
+[<Fact>]
+let ``tablebase adjudication without a folder uses the app's, and says where to set one`` () =
+  let on dir = { tourny dir with Adjudication = { (tourny dir).Adjudication with TBAdj = { TablebaseDirectory = dir; UseTBAdjudication = true; TBMen = 0 } } }
+  Assert.Equal("D:/tb", (Configuration.JSON.withAppTablebaseFolder "D:/tb" (on "")).Adjudication.TBAdj.TablebaseDirectory)
+  // a folder in the file wins; off stays off
+  Assert.Equal("E:/own", (Configuration.JSON.withAppTablebaseFolder "D:/tb" (on "E:/own")).Adjudication.TBAdj.TablebaseDirectory)
+  let off = { on "" with Adjudication = { (on "").Adjudication with TBAdj = { (on "").Adjudication.TBAdj with UseTBAdjudication = false } } }
+  Assert.Equal("", (Configuration.JSON.withAppTablebaseFolder "D:/tb" off).Adjudication.TBAdj.TablebaseDirectory)
+  match Configuration.Validation.validateTablebases (on "") with
+  | Configuration.Validation.Errors [ m ] -> Assert.Contains("Settings", m)
+  | other -> Assert.Fail $"{other}"

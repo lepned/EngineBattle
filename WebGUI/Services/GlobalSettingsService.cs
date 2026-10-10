@@ -24,6 +24,7 @@ public class GlobalSettingsService
     {
         _filePath = Path.Combine(AppPaths.BaseDir, "Data", "globalSettings.json");
         _settings = Load();
+        ChessLibrary.Tournament.Manager.setAppTablebaseFolder(_settings.TablebaseFolder);
     }
 
     public void Save(GlobalSettings settings)
@@ -34,6 +35,7 @@ public class GlobalSettingsService
         lock (_lock)
         {
             _settings = settings;
+            ChessLibrary.Tournament.Manager.setAppTablebaseFolder(settings.TablebaseFolder);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             var dir = Path.GetDirectoryName(_filePath)!;
             if (!Directory.Exists(dir))

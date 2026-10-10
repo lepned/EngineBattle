@@ -398,6 +398,8 @@ module Validation =
   let validateTablebases (tourny: Tournament) =
       let tb = tourny.Adjudication.TBAdj
       if not tb.UseTBAdjudication then Ok
+      elif String.IsNullOrWhiteSpace tb.TablebaseDirectory then
+          Errors [ "Tablebase adjudication is on, but there is no tablebase folder: give TablebaseDirectory, or set the tablebase folder in Settings (WebGUI) / syzygyPath in eb-cli.json or EB_SYZYGY_PATH (eb-cli)" ]
       elif not (TablebaseProbe.tablebasesExist tb.TablebaseDirectory) then
           Errors [ sprintf "Tablebase adjudication is on, but TablebaseDirectory \"%s\" is not a folder that exists" tb.TablebaseDirectory ]
       elif TablebaseProbe.largestTable tb.TablebaseDirectory = 0 then
@@ -844,6 +846,15 @@ module JSON =
           let defaults = JsonSerializer.SerializeToNode(Tournament.ConfigDefaults, options) :?> JsonObject
           overDefaults "" defaults file
       | _ -> ()
+
+  /// Tablebase adjudication that is on without a TablebaseDirectory uses the app's tablebase folder
+  /// (the WebGUI's Settings; eb-cli's syzygyPath or EB_SYZYGY_PATH). A folder in the file wins; the
+  /// file itself is not changed.
+  let withAppTablebaseFolder (folder: string) (tourny: Tournament) =
+      let tb = tourny.Adjudication.TBAdj
+      if tb.UseTBAdjudication && String.IsNullOrWhiteSpace tb.TablebaseDirectory && not (String.IsNullOrWhiteSpace folder) then
+          { tourny with Adjudication = { tourny.Adjudication with TBAdj = { tb with TablebaseDirectory = folder } } }
+      else tourny
 
   /// A file that is missing and a file that will not parse are different problems for the
   /// person who has to fix them, and the second used to be reported as the first: the parse

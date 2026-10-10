@@ -33,9 +33,9 @@
     },
 
     "TBAdj": {
-      "TablebaseDirectory": "C:/Dev/Chess/TableBases",
       "UseTBAdjudication": false,
-      "TBMen": 6
+      "TablebaseDirectory": "C:/Dev/Chess/TableBases",
+      "TBMen": 0
     }
   },
 

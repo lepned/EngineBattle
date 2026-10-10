@@ -89,6 +89,10 @@ module Manager =
   /// The GUI said yes to a new cup, Swiss or ladder in a PGN that has games; read once at the start
   let mutable appendToPgnRequested = false
   let setAppendToPgn value = appendToPgnRequested <- value
+  /// The app's tablebase folder (the WebGUI's Settings), for a tournament that turns tablebase
+  /// adjudication on without naming a folder (JSON.withAppTablebaseFolder)
+  let mutable private appTablebaseFolder = ""
+  let setAppTablebaseFolder (folder: string) = appTablebaseFolder <- (if isNull folder then "" else folder)
   let mutable cupResumeRequested = false
   let setCupResumeRequested value =
     cupResumeRequested <- value
@@ -119,6 +123,7 @@ module Manager =
         let tournament = 
           match tournyFromJson with
           |Ok tourny ->
+            let tourny = JSON.withAppTablebaseFolder appTablebaseFolder tourny
             let tourny =           
               if tourny.EngineSetup.EngineDefList.Length > 0 then
                 let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList            

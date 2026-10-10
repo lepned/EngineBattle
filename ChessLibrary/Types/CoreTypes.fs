@@ -605,7 +605,7 @@ module TypesDef =
     type WinOption =
       { Enabled: bool; MinWinMove: int; MinWinScore: float; WinMoveLength: int }
       static member Off = { Enabled = false; MinWinMove = 6_000; WinMoveLength = 1; MinWinScore = 1000.0 }
-    type TableBaseAdjudication = {TablebaseDirectory:string; UseTBAdjudication: bool; TBMen: int }
+    type TableBaseAdjudication = { UseTBAdjudication: bool; TablebaseDirectory: string; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
     type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool; Seed: int }
     type CupOptions =

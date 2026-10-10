@@ -33,9 +33,9 @@
       "MinWinMove": 0
     },
     "TBAdj": {
-      "TablebaseDirectory": "",
       "UseTBAdjudication": false,
-      "TBMen": 6
+      "TablebaseDirectory": "",
+      "TBMen": 0
     }
   },
   "Opening": {

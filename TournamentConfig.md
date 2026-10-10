@@ -53,7 +53,7 @@ says `"Enabled": false` (or, for tablebases, `"UseTBAdjudication": false`).
   - **WinMoveLength**: Number of moves to consider for a win.
   - **MinWinMove**: Minimum number of moves for a win.
 - **TBAdj**:
-  - **TablebaseDirectory**: Folder with the Syzygy tablebases; several are separated by `;` on Windows and `:` on Linux and macOS. Naming a folder is enough to turn tablebase adjudication on.
+  - **TablebaseDirectory**: Folder with the Syzygy tablebases; several are separated by `;` on Windows and `:` on Linux and macOS. Naming a folder is enough to turn tablebase adjudication on. Empty, with `UseTBAdjudication` true, the app's tablebase folder is used: the one in Settings in the WebGUI, `syzygyPath` in eb-cli.json or `EB_SYZYGY_PATH` for eb-cli.
   - **UseTBAdjudication**: `false` turns tablebase adjudication off although a folder is named; left out, it is on when `TablebaseDirectory` names a folder. When it is on, the folder must exist and hold Syzygy tables (validation says so otherwise).
   - **TBMen**: Optional. Left out (or 0), positions are adjudicated from as many pieces as the
     tables hold. A number lowers that: `5` adjudicates only from five pieces even with 7-man

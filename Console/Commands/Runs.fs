@@ -1283,6 +1283,12 @@ let private loadTournament (path: string) =
     match JSON.tryReadTournamentJson path with
     | Result.Error message -> raise (Usage message)
     | Result.Ok tourny ->
+        // tablebase adjudication without a folder: eb-cli's own (syzygyPath, EB_SYZYGY_PATH)
+        let appFolder =
+            match CliSettings.resolveSyzygyPath None (Environment.GetEnvironmentVariable "EB_SYZYGY_PATH" |> Option.ofObj) (fun () -> CliSettings.current.Force()) with
+            | Result.Ok(Some folder) -> folder
+            | _ -> ""
+        let tourny = JSON.withAppTablebaseFolder appFolder tourny
         let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList
         Some(tourny, engineList)
 

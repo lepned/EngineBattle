@@ -953,6 +953,9 @@
         // as the run reads it: on when it says so, or when it names a folder and says nothing
         var tbDir = root["Adjudication"]?["TBAdj"]?["TablebaseDirectory"]?.GetValue<string>() ?? "";
         var useTB = root["Adjudication"]?["TBAdj"]?["UseTBAdjudication"]?.GetValue<bool>() ?? !string.IsNullOrWhiteSpace(tbDir);
+        // no folder in the file: the run uses the one in Settings
+        if (useTB && string.IsNullOrWhiteSpace(tbDir))
+            tbDir = SettingsService.Settings.TablebaseFolder ?? "";
         if (useTB && !ChessLibrary.TablebaseProbe.tablebasesExist(tbDir))
             errors.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" — directory not found (tablebase adjudication is on; the tournament page refuses to start it)");
         else if (useTB && ChessLibrary.TablebaseProbe.largestTable(tbDir) == 0)
