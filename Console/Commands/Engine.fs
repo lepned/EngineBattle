@@ -30,7 +30,7 @@ let checkSpec =
             value "only" "GROUPS" "Run only these groups, comma-separated (startup,positions,stop)"
             value "delay" "MS" "Wait between commands to the engine" |> withDefault "30"
             value "stop-delay" "MS" "Wait before each stop" |> withDefault "0"
-            value "rounds" "N" "Repeat the stop and isready checks" |> withDefault "3"
+            value "repeat" "N" "Repeat the stop and isready checks N times" |> withDefault "3"
             value "moves" "\"MOVES\"" "The game the position checks play (SAN or UCI; default a 30-ply Ruy Lopez)"
             uci
             args ]
@@ -69,7 +69,7 @@ let check (p: Parsed) =
               MoveTimeMs = intOf p "movetime"
               DelayMs = nonNegative "delay" 30
               StopDelayMs = nonNegative "stop-delay" 0
-              Rounds = max 1 (nonNegative "rounds" 3)
+              Rounds = max 1 (nonNegative "repeat" 3)
               Moves = moves
               Only = only }
     if code = 0 then ExitOk else ExitFailed

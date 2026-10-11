@@ -388,7 +388,7 @@ Options:
       --only GROUPS     Run only these groups, comma-separated (startup,positions,stop)
       --delay MS        Wait between commands to the engine (default 30)
       --stop-delay MS   Wait before each stop (default 0)
-      --rounds N        Repeat the stop and isready checks (default 3)
+      --repeat N        Repeat the stop and isready checks N times (default 3)
       --moves "MOVES"   The game the position checks play (SAN or UCI; default a 30-ply Ruy Lopez)
       --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
       --args "..."      The engine's command-line arguments, instead of the def's
