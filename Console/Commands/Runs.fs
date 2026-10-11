@@ -1421,7 +1421,8 @@ let tournamentValidate (p: Parsed) =
     match loadTournament path with
     | None -> raise (Usage $"not a tournament config: {path}")
     | Some(tourny, engineList) ->
-        let t = { tourny with EngineSetup = { tourny.EngineSetup with Engines = engineList } }
+        // checked as eb-cli runs it: the WebGUI's own hints (the delay between games) are not eb-cli's
+        let t = { tourny with EngineSetup = { tourny.EngineSetup with Engines = engineList }; ConsoleOnly = true }
         let errors = match Validation.validateTournament t with Validation.Errors e -> e | _ -> []
         if has p "json" then
             let result = {| Config = path; Valid = errors.IsEmpty; Warnings = Validation.tournamentWarnings t |}

@@ -612,6 +612,10 @@ let pvCollectFensFromPgn (path: string) (sample: int) : string[] =
         let stride = float arr.Length / float sample
         [| for i in 0 .. sample - 1 -> arr.[int (float i * stride)] |]
 
+/// How many fits the last `piece-values fit` made: a run whose every group had too few positions
+/// made none, and says so with exit 1.
+let mutable private fitsMade = 0
+
 /// What `piece-values fit` works from.
 type FitParams =
     { /// The engine whose evals are fitted (--from eval only).
@@ -689,6 +693,7 @@ let runPieceValueFitEval (p: FitParams) =
               if rows.Length < 12 then
                   printfn "── %s ──  only %d positions — too few to fit.\n" label rows.Length
               else
+                  fitsMade <- fitsMade + 1
                   let X = rows |> Array.map (fun (f, _, _) -> f)
                   let y = rows |> Array.map (fun (_, v, _) -> v)
                   let variances =
@@ -747,6 +752,7 @@ let runPieceValueFitOutcome (p: FitParams) =
           if rows.Length < 50 then
               printfn "── %s ──  only %d positions — too few to fit.\n" label rows.Length
           else
+              fitsMade <- fitsMade + 1
               let X = rows |> Array.map (fun (f, _, _, _) -> f)
               let z = rows |> Array.map (fun (_, v, _, _) -> v)
               // features are [ΔP;ΔN;ΔB;ΔR;ΔQ] (cols 0..4), no intercept
@@ -821,6 +827,7 @@ let runPieceValueFitPgnEval (p: FitParams) =
           if rows.Length < 50 then
               printfn "── %s ──  only %d positions — too few to fit.\n" label rows.Length
           else
+              fitsMade <- fitsMade + 1
               let X = rows |> Array.map (fun (f, _, _, _) -> f)
               let y = rows |> Array.map (fun (_, v, _, _) -> v)
               // features: [intercept; ΔP; ΔN; ΔB; ΔR; ΔQ; stm] — material in cols 1..5
@@ -941,6 +948,7 @@ let fit (p: Parsed) =
           ByPhase = has p "by-phase"
           Player = valueOf p "player"
           Bootstrap = positive "bootstrap" }
+    fitsMade <- 0
     match from with
     | "eval" ->
         if engineGiven.IsNone then raise (Usage "--from eval needs --engine")
@@ -950,7 +958,10 @@ let fit (p: Parsed) =
     | "outcome" -> runPieceValueFitOutcome fitParams
     | "pgn-eval" -> runPieceValueFitPgnEval fitParams
     | other -> raise (Usage $"--from expects eval, outcome or pgn-eval, got '{other}'")
-    Cli.Output.ExitOk
+    if fitsMade = 0 then
+        Cli.Output.error "nothing was fitted: too few positions (above); a larger file or --sample helps"
+        Cli.Output.ExitFailed
+    else Cli.Output.ExitOk
 
 let imbalanceSpec =
     { command [ "pgn"; "imbalance" ] "PGN files" "Results by material imbalance" with
