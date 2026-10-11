@@ -134,6 +134,8 @@ let ``any other def is named after the net, or --name`` () =
         Assert.Contains("\"WeightsFile\": \"C:/Nets/BT5 big.pb.gz\"", d.Text)
         Assert.Contains("\"Name\": \"BT5 big\"", d.Text)
         Assert.Contains("\"Threads\": 2", d.Text)
+        // a path as written, not \u-escaped
+        Assert.Contains("\"WeightsFile\": \"C:/Nett/Bjørn & co/BT5.pb.gz\"", (copied path "C:/Nett/Bjørn & co/BT5.pb.gz" None).Text)
         // no NetworkPath in the def, none added
         Assert.DoesNotContain("NetworkPath", d.Text)
         let named = copied path "C:/Nets/BT5.pb.gz" (Some "LC0 BT5")
@@ -144,6 +146,8 @@ let ``any other def is named after the net, or --name`` () =
 let ``a def without a network option is told, as is a net of another variant or arm`` () =
     withDef "Stockfish19.json" """{ "Name": "Stockfish 19", "Options": { "Threads": 8, "SyzygyPath": "C:/tb" } }""" (fun _ path ->
         Assert.Contains("has no network option", failed path "C:/Nets/x.onnx" None))
+    withDef "Broken.json" """{ "Name": "x", """ (fun _ path ->
+        Assert.Contains("is not a def", failed path "C:/Nets/x.onnx" None))
     withDef "Ceres_srv_512_16_deg4_t91_100M.json" templateJson (fun _ path ->
         Assert.Contains("EMA variant and the def raw", failed path "C:/Nets/lepdev_srv_512_16_deg4_t91_1B_200007680ema.onnx" None)
         Assert.Contains("arm 'srv_512_16_v7_1B'", failed path "C:/Nets/lepdev_srv_512_16_v7_1B_200007680.onnx" None)

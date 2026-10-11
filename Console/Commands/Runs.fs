@@ -1175,7 +1175,7 @@ let puzzleTrendSpec =
             force
             json ]
         Examples =
-          [ "eb-cli puzzle trend C:/Dev/Chess/EB --arm srv_deg4", "One arm's curve"
+          [ "eb-cli puzzle trend C:/Dev/Chess/EB --arm deg4", "One arm's curve"
             "eb-cli puzzle trend --type policy -o trend.csv", "Every arm's policy rows, to a CSV" ] }
 
 let puzzleTrend (p: Parsed) =

@@ -60,10 +60,13 @@ module EngineDefGen =
             | _ -> None
         | _ -> None
 
+    // a path or a name as written (C:/Nett/Bjørn, not Bj\u00F8rn), as EngineProbe.toJson
+    let private relaxed = JsonSerializerOptions(Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping)
+
     /// The string value of `key` in the text (the first one; Name before the Options), replaced.
     let private setString (key: string) (value: string) (text: string) =
         let re = Regex(sprintf "(\"%s\"\\s*:\\s*)\"(?:[^\"\\\\]|\\\\.)*\"" (Regex.Escape key))
-        re.Replace(text, (fun (m: Match) -> m.Groups.[1].Value + JsonSerializer.Serialize value), 1)
+        re.Replace(text, (fun (m: Match) -> m.Groups.[1].Value + JsonSerializer.Serialize(value, relaxed)), 1)
 
     let private stringOf (key: string) (text: string) =
         match (try JsonNode.Parse text with _ -> null) with
@@ -92,6 +95,8 @@ module EngineDefGen =
     let fromDef (defPath: string) (netPath: string) (name: string option) (outFolder: string option) : Result<NewDef, string> =
         let text = File.ReadAllText defPath
         match networkOption text with
+        | None when (try JsonNode.Parse text :? JsonObject with _ -> false) |> not ->
+            Error (sprintf "%s is not a def: not a JSON object" (Path.GetFileName defPath))
         | None ->
             Error (sprintf "%s has no network option (a string option named like WeightsFile or Network in its Options), so --net does not apply" (Path.GetFileName defPath))
         | Some (key, oldNet) ->

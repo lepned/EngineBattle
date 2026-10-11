@@ -689,7 +689,7 @@ Options:
       --json            Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
-  eb-cli puzzle trend C:/Dev/Chess/EB --arm srv_deg4
+  eb-cli puzzle trend C:/Dev/Chess/EB --arm deg4
       One arm's curve
   eb-cli puzzle trend --type policy -o trend.csv
       Every arm's policy rows, to a CSV
