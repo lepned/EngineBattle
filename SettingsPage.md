@@ -63,7 +63,7 @@ Directory paths that serve two purposes:
 | **Tablebase** | Tournament creator (Syzygy adjudication) and the Engine creator (`SyzygyPath` in new defs) |
 | **Neural Networks** | Engine panel weights browser, the Engine creator (`NetworkPath` in new defs) |
 | **Puzzle Configs** | Lichess Puzzles and ERET puzzle pages |
-| **Puzzle Results** | Where puzzle runs write their summaries and failed-puzzle files; the Run report and Puzzle trend pages read from here |
+| **Puzzle Results** | Where puzzle runs write their summaries and failed-puzzle files; the Lichess puzzle report and Puzzle trend pages read from here |
 
 **Show Engine Column in Puzzle Results** — when unchecked, puzzle result tables show only the neural net column.
 
