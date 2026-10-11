@@ -62,7 +62,7 @@ let ``a book evaluated before gets this run's MaxEval, not a second one`` () =
         writePgns path [ r ]
         let text = System.IO.File.ReadAllText path
         Assert.DoesNotContain("by Old", text)
-        Assert.Contains("[MaxEval \"95 by New, g1f3\"]", text)
+        Assert.Contains("[MaxEval \"0.95 by New, g1f3\"]", text)
         Assert.StartsWith("[Event \"x\"]", text)
         Assert.Contains("1. e4 e5 *", text)
     finally System.IO.File.Delete path

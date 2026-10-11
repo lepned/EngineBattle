@@ -55,8 +55,8 @@ PGN openings that end in the same position (transpositions) are evaluated once; 
 
 Results are saved to `<output folder>/BookEvals/`:
 
-- **PGN input** → `BookEval_<book>_<engines>.pgn` — filtered PGN games with a `[MaxEval]` header added showing the highest eval, which engine produced it, and the best move
-- **EPD input** → `BookEval_<book>_<engines>.epd` — filtered EPD lines with eval summaries
+- **PGN input** → `BookEval_<book>_<engines>.pgn` — filtered PGN games with a `[MaxEval]` header added showing the highest eval (in pawns), which engine produced it, and the best move
+- **EPD input** → `BookEval_<book>_<engines>.epd` — filtered EPD lines with each engine's eval (in pawns) and best move
 
 The results summary shows:
 - Positions analyzed and passed (with pass rate)

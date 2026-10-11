@@ -183,11 +183,12 @@ let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fen
                             let maxEval, maxMove, maxEngine =
                                 found |> Array.map (fun (cp, m, s) -> abs cp, m, s.Engine.Name) |> Array.max
                             let spread = bookEvalSpread signed
+                            // in pawns, as the filter
                             let summary =
                                 (found
-                                 |> Array.map (fun (cp, m, s) -> sprintf "%s eval: %.0f (%s), %s" s.Engine.Name cp s.Limit.Label m)
+                                 |> Array.map (fun (cp, m, s) -> sprintf "%s eval: %.2f (%s), %s" s.Engine.Name (cp / 100.0) s.Limit.Label m)
                                  |> String.concat ", ")
-                                + (if engines.Length = 1 then "" else sprintf " max evalDiff: %.1f" spread)
+                                + (if engines.Length = 1 then "" else sprintf " max evalDiff: %.2f" (spread / 100.0))
                             results.Add(make item maxEval spread maxMove maxEngine summary, maxEval, spread)
                 if progress <> null then progress.Invoke(i + 1, items.Length)
                 i <- i + 1
@@ -266,12 +267,12 @@ let writeEpds (path: string) (results: seq<EpdEvaluationResult>) =
 
 let private tagPair = Text.RegularExpressions.Regex(@"^\[[A-Za-z0-9_]+\s+""(?:[^""\\]|\\.)*""\]$")
 
-/// The passing PGN openings as they were read, each with a [MaxEval] tag after its own tags.
+/// The passing PGN openings as they were read, each with a [MaxEval] tag (in pawns) after its own tags.
 let writePgns (path: string) (results: seq<PgnEvaluationResult>) =
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath path)) |> ignore
     use w = new StreamWriter(path, false, UTF8Encoding(false))
     for r in results do
-        let tag = sprintf "[MaxEval \"%g by %s, %s\"]" r.MaxEval r.MaxEngine r.MaxMove
+        let tag = sprintf "[MaxEval \"%.2f by %s, %s\"]" (r.MaxEval / 100.0) r.MaxEngine r.MaxMove
         let lines = (if isNull r.Pgn.Raw then "" else r.Pgn.Raw).Replace("\r\n", "\n").Split('\n') |> Array.map (fun l -> l.TrimEnd())
         // the tags are the leading [Name "value"] lines; from the first other line on it is movetext,
         // kept as it was - a wrapped comment can start a line with [%clk ...] too
