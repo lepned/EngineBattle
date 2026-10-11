@@ -149,3 +149,15 @@ let ``a gauntlet is a gauntlet in any case`` () =
     let t = { read (minimal "") with TournamentMode = "gauntlet"; Challengers = 2 }
     let t = { t with EngineSetup = { t.EngineSetup with Engines = [ engine "A"; engine "B" ] } }
     Assert.Contains(errorsOf t, fun m -> m.Contains "challengers")
+
+[<Fact>]
+let ``engine defs that are not there are named together, with the folder they were looked for in`` () =
+    let folder = Path.Combine(Path.GetTempPath(), "eb_defs_" + System.Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory folder |> ignore
+    try
+        let ex = Assert.ThrowsAny<exn>(fun () -> Configuration.JSON.readEngineDefs folder [ "NoSuch.json"; "AlsoMissing.json" ] |> ignore)
+        Assert.Contains("engine def not found: NoSuch.json", ex.Message)
+        Assert.Contains("engine def not found: AlsoMissing.json", ex.Message)
+        Assert.Contains(folder, ex.Message)
+        Assert.DoesNotContain("Complete error message", ex.Message)
+    finally Directory.Delete(folder, true)

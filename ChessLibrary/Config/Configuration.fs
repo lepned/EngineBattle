@@ -680,36 +680,37 @@ module JSON =
   let private createJsonOptions() =
       addConverters (JsonSerializerOptions(AllowTrailingCommas = true))
 
-  let readSingleEngineConfig path =
-    try
-        let json = File.ReadAllText(path)
-        let fileName = Path.GetFileName(path)
-        match Validation.readAndValidateEngineConfigJson json fileName with
-        | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, createJsonOptions())
-        | Validation.Invalid msgs ->
-          msgs |> List.iter (fun m -> ConsoleUtils.printInColor ConsoleColor.Red m)
-          failwith "Invalid engine definition"
-    with
-    | ex ->
-      printfn "Error in reading engine config from file: %s" path
-      sprintf "Complete error message: %s" ex.Message |> failwith
+  let readSingleEngineConfig (path: string) =
+    if not (File.Exists path) then failwithf "engine def not found: %s" path
+    let json = File.ReadAllText(path)
+    match Validation.readAndValidateEngineConfigJson json (Path.GetFileName path) with
+    | Validation.Valid ->
+        try JsonSerializer.Deserialize<EngineConfig>(json, createJsonOptions())
+        with ex -> failwithf "engine def %s does not read: %s" (path.Replace('\\', '/')) ex.Message
+    | Validation.Invalid msgs ->
+        failwithf "engine def %s is not valid: %s" (path.Replace('\\', '/')) (String.Join("; ", msgs))
 
+  /// One def of a tournament's EngineDefList. A def that is not there, or does not read, fails
+  /// with a message that names the file and where it was looked for.
   let readEngineDef folder fileName =
-    try
-      let path = Path.Combine(folder,fileName)
-      let json = File.ReadAllText(path)
-      match Validation.readAndValidateEngineConfigJson json fileName with
-      | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, createJsonOptions())
-      | Validation.Invalid msgs ->
-          msgs |> List.iter (fun m -> ConsoleUtils.printInColor ConsoleColor.Red m)
-          failwith "Invalid engine definition"
-    with
-    | ex ->
-      printfn "Error in reading engine definition in JSON format from this file: %s/%s" folder fileName
-      sprintf "Complete error message: %s" ex.Message |> failwith
+    let path = Path.Combine(folder, fileName)
+    if not (File.Exists path) then
+      failwithf "engine def not found: %s (EngineSetup.EngineDefList; EngineDefFolder is %s)" fileName
+        (if String.IsNullOrWhiteSpace folder then "not set" else folder)
+    let json = File.ReadAllText(path)
+    match Validation.readAndValidateEngineConfigJson json fileName with
+    | Validation.Valid ->
+        try JsonSerializer.Deserialize<EngineConfig>(json, createJsonOptions())
+        with ex -> failwithf "engine def %s does not read: %s" (path.Replace('\\', '/')) ex.Message
+    | Validation.Invalid msgs ->
+        failwithf "engine def %s is not valid: %s" (path.Replace('\\', '/')) (String.Join("; ", msgs))
 
+  /// Every def of the list; each one that fails is named, all of them in one message.
   let readEngineDefs folder engineDefList =
-    [ for def in engineDefList -> readEngineDef folder def ]
+    let read = [ for def in engineDefList -> try Choice1Of2 (readEngineDef folder def) with ex -> Choice2Of2 ex.Message ]
+    match read |> List.choose (function Choice2Of2 m -> Some m | _ -> None) with
+    | [] -> read |> List.choose (function Choice1Of2 c -> Some c | _ -> None)
+    | failed -> failwith (String.Join("\n", failed))
 
   /// A LayoutOption block says only what it wants to change. System.Text.Json gives every
   /// field the block does not mention the type's zero - false, 0, null - so a block holding
