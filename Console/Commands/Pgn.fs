@@ -322,6 +322,25 @@ let summary (p: Parsed) =
     | _ -> ()
     ExitOk
 
+/// The standings of a set of games as JSON (pgn elo --json, tournament run --json): each player's
+/// score, Elo and results, and every pair's results.
+let standingsJson (players: TypesDef.CoreTypes.PlayerResult seq) (cross: TypesDef.CoreTypes.CrossTableEntry seq) =
+    // NaN or infinity (a 100% score has no finite Elo) is null in JSON
+    let num (x: float) = if Double.IsFinite x then Nullable x else Nullable()
+    {| Players =
+         [ for r in players |> Seq.sortByDescending (fun r -> r.Points) ->
+             let ww, wd, wl = r.WhiteWDL
+             let bw, bd, bl = r.BlackWDL
+             {| Player = r.Player; Played = r.Played; Points = r.Points; Percent = r.Percent; Elo = num r.Elo
+                Error = num r.Error; Cfs = r.CFS; Win = r.Win; Draw = r.Draw; Loss = r.Loss
+                White = {| Win = ww; Draw = wd; Loss = wl |}; Black = {| Win = bw; Draw = bd; Loss = bl |} |} ]
+       Pairs =
+         [ for e in cross do
+             for opponent, s in e.StatsAgainst do
+                 {| Player = e.Player; Opponent = opponent; Win = s.Wins; Draw = s.Draws; Loss = s.Losses |} ]
+       // too many players for a crosstable (GameAnalysis.maxCrosstablePlayers)
+       PairsSkipped = Seq.isEmpty cross && Seq.length players > 1 |}
+
 let eloSpec =
     { command [ "pgn"; "elo" ] Group "Ratings and results" with
         Description = Some "Elo, score and results per engine pair from the games."
@@ -333,23 +352,7 @@ let elo (p: Parsed) =
     let games = FullPGNParser.parsePgnFile (pgnArg p)
     let text, players, cross, _ = GameAnalysis.PGNCalculator.getEngineDataResults games
     if has p "json" then
-        // NaN or infinity (a 100% score has no finite Elo) is null in JSON
-        let num (x: float) = if Double.IsFinite x then Nullable x else Nullable()
-        let result =
-            {| Players =
-                 [ for r in players |> List.sortByDescending (fun r -> r.Points) ->
-                     let ww, wd, wl = r.WhiteWDL
-                     let bw, bd, bl = r.BlackWDL
-                     {| Player = r.Player; Played = r.Played; Points = r.Points; Percent = r.Percent; Elo = num r.Elo
-                        Error = num r.Error; Cfs = r.CFS; Win = r.Win; Draw = r.Draw; Loss = r.Loss
-                        White = {| Win = ww; Draw = wd; Loss = wl |}; Black = {| Win = bw; Draw = bd; Loss = bl |} |} ]
-               Pairs =
-                 [ for e in cross do
-                     for opponent, s in e.StatsAgainst do
-                         {| Player = e.Player; Opponent = opponent; Win = s.Wins; Draw = s.Draws; Loss = s.Losses |} ]
-               // too many players for a crosstable (GameAnalysis.maxCrosstablePlayers)
-               PairsSkipped = cross.Count = 0 && players.Length > 1 |}
-        printJson (envelope (name p.Command) true (box result) [])
+        printJson (envelope (name p.Command) true (box (standingsJson players cross)) [])
     else printfn "%s" text
     ExitOk
 

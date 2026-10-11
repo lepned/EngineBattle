@@ -819,7 +819,16 @@ let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
   else Cli.Output.ExitOk
 /// A tournament to its end, or until `ct` is cancelled (Ctrl+C: the games in progress stop, the
 /// finished ones are in the PGN). True when it went through.
-let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensions.Logging.ILogger) (ct: CancellationToken) =
+/// What a console tournament run gives back: whether it went through, why not, the games of this
+/// run, how long it took, and the standings it printed (players, pairs).
+type TournamentOutcome =
+  { Succeeded: bool
+    Failure: string option
+    Results: TypesDef.CoreTypes.Result list
+    Duration: TimeSpan
+    Standings: (TypesDef.CoreTypes.PlayerResult seq * TypesDef.CoreTypes.CrossTableEntry seq) option }
+
+let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.Extensions.Logging.ILogger) (ct: CancellationToken) =
   
   /// Compact result-reason labels for console output.
   let shortReason (reason: ChessLibrary.MiscTypes.ResultReason) : string =
@@ -920,6 +929,9 @@ let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensio
   runner.LinkCancellation ct
   // true when the run went through: tournamentjson's exit code
   let mutable failed = false
+  let mutable failure = None
+  let mutable played = []
+  let mutable standings = None
   let start = Stopwatch.GetTimestamp()
   let formatHms (ts: TimeSpan) = 
       let hours = int ts.TotalHours 
@@ -929,8 +941,10 @@ let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensio
 
   try
       let results = runner.Run()
+      played <- List.ofSeq results
       // a run that stopped with an error has said why; no "completed" summary after it
       failed <- runner.Failure.IsSome
+      failure <- runner.Failure |> Option.map string
       if not failed then
         let endTime = Stopwatch.GetElapsedTime start
         let gamesPlayed = results |> Seq.length
@@ -939,13 +953,15 @@ let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensio
         Console.WriteLine msg
         logger.LogInformation(msg)
         if File.Exists tourny.PgnOutPath then
-            let consoleRes, _, _, allResults = PGNCalculator.getEngineDataResults (runner.GetPGNGames())
+            let consoleRes, players, cross, _ = PGNCalculator.getEngineDataResults (runner.GetPGNGames())
+            standings <- Some (Seq.ofList players, Seq.ofArray (cross.ToArray()))
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
         else
             let results = results |> ResizeArray
             let scoreTable = runner.GetPlayerResults(results)
             let table = runner.GenerateStatsCrosstable(results)
+            standings <- Some (Seq.ofArray (scoreTable.ToArray()), Seq.ofArray (table.ToArray()))
             let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
@@ -954,7 +970,11 @@ let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensio
   |ex ->
       printfn "Caught an exception: %s" ex.Message
       failed <- true
-  not failed
+      failure <- Some ex.Message
+  { Succeeded = not failed; Failure = failure; Results = played; Duration = Stopwatch.GetElapsedTime start; Standings = standings }
+
+/// A console tournament run: true when it went through.
+let runTournament tournament logger ct = (runTournamentOutcome tournament logger ct).Succeeded
 
 // ---------- Batch piece-value analysis over a folder of nets ----------
 // For each net: self-play (RR) at the template's time control - nodes=1 in the usual template -
@@ -1309,11 +1329,14 @@ let private loadTournament (path: string) =
 let tournamentRunSpec =
     { command [ "tournament"; "run" ] Group "Run a tournament from a config" with
         Description =
-          Some "Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. A config with errors (what tournament validate reports) is refused with exit 2, as the WebGUI refuses to start it. Exit 1 when the run failed."
+          Some "Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. A config with errors (what tournament validate reports) is refused with exit 2, as the WebGUI refuses to start it. Exit 1 when the run failed. --json: at the end, the games of this run (players, result, how it ended, moves, time; the moves are in the PGN) and the standings of the whole PGN, in the shape of pgn elo --json."
         Args = [ configArg "a tournament config (JSON)" ]
-        Options = [ switch "append" "Let a new cup, Swiss or ladder start in a PGN that already has games" ]
+        Options =
+          [ switch "append" "Let a new cup, Swiss or ladder start in a PGN that already has games"
+            json ]
         Examples =
-          [ "eb-cli tournament run tournament.json", "Play it (or go on with it)" ] }
+          [ "eb-cli tournament run tournament.json", "Play it (or go on with it)"
+            "eb-cli tournament run tournament.json --json > result.json", "The games and the standings for a script" ] }
 
 let tournamentRun (p: Parsed) =
     let path = Cli.Groups.inputFile "tournament config" (argOf p "config").Value
@@ -1335,6 +1358,8 @@ let tournamentRun (p: Parsed) =
         let checkable = { tournament with Challengers = (if tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) then tournament.Challengers else 0) }
         match Validation.validateTournament checkable with
         | Validation.Errors messages ->
+            // with --json the errors are in the envelope, not only on stderr
+            if has p "json" then raise (Usage ("the config has errors: " + String.Join("; ", messages)))
             for m in messages do Cli.Output.error m
             raise (Usage "the config has errors (above); 'eb-cli tournament validate' checks it without running")
         | _ -> ()
@@ -1353,9 +1378,27 @@ let tournamentRun (p: Parsed) =
             use host = createHost ()
             host.Start()
             let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
-            let ok = runTournament tournament (loggerFactory.CreateLogger "EngineBattle Console logger") ct
+            let outcome = runTournamentOutcome tournament (loggerFactory.CreateLogger "EngineBattle Console logger") ct
             host.StopAsync().Wait()
-            if ok then Cli.Output.ExitOk else Cli.Output.ExitFailed
+            if has p "json" then
+                let games =
+                    [ for i, r in List.indexed outcome.Results ->
+                        {| Game = i + 1; White = r.Player1; Black = r.Player2; Result = r.Result; Ending = r.Ending
+                           Moves = r.Moves; Seconds = Math.Round(float r.GameTime / 1000.0, 1) |} ]
+                let result =
+                    {| Name = tournament.Name; Mode = tournament.ModeLabel(); Config = path; Pgn = tournament.PgnOutPath
+                       Seconds = Math.Round(outcome.Duration.TotalSeconds, 1)
+                       Parallel = tournament.NumberOfGamesInParallel
+                       Standings = (match outcome.Standings with Some (players, cross) -> box (Commands.Pgn.standingsJson players cross) | None -> null)
+                       Games = games |}
+                let errors =
+                    [ match outcome.Failure with
+                      | Some reason -> ({ Code = "failed"; Message = reason } : Cli.Output.JsonError)
+                      | None -> ()
+                      if ct.IsCancellationRequested then
+                          ({ Code = "interrupted"; Message = "stopped with Ctrl+C: the games in progress are not counted" } : Cli.Output.JsonError) ]
+                Cli.Output.printJson (Cli.Output.envelope (name p.Command) (outcome.Succeeded && not ct.IsCancellationRequested) (box result) errors)
+            if outcome.Succeeded then Cli.Output.ExitOk else Cli.Output.ExitFailed
 
 let tournamentValidateSpec =
     { command [ "tournament"; "validate" ] Group "Check a tournament config without running it" with

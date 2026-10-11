@@ -719,17 +719,20 @@ Run a tournament from a config
 
 Usage: eb-cli tournament run <config> [options]
 
-Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. A config with errors (what tournament validate reports) is refused with exit 2, as the WebGUI refuses to start it. Exit 1 when the run failed.
+Plays the tournament of a tournament config (TournamentConfig.md): round robin, gauntlet, Swiss, cup or ladder, one line per game, the table at the end; the games go to its PgnOutPath. A tournament resumes from the games already in its PGN. The first Ctrl+C stops the games in progress. A config with errors (what tournament validate reports) is refused with exit 2, as the WebGUI refuses to start it. Exit 1 when the run failed. --json: at the end, the games of this run (players, result, how it ended, moves, time; the moves are in the PGN) and the standings of the whole PGN, in the shape of pgn elo --json.
 
 Arguments:
   <config>  a tournament config (JSON)
 
 Options:
       --append  Let a new cup, Swiss or ladder start in a PGN that already has games
+      --json    Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli tournament run tournament.json
       Play it (or go on with it)
+  eb-cli tournament run tournament.json --json > result.json
+      The games and the standings for a script
 ```
 ### tournament validate
 
