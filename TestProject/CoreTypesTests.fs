@@ -46,6 +46,32 @@ let ``EngineConfig Information returns correct string`` () =
     let info = config.Information 100.0
     Assert.Contains("Protocol=UCI", info)
 
+[<Fact>]
+let ``the engine part of a game's comment names the exe and the version, and writes true and false in lower case`` () =
+    let options = System.Collections.Generic.Dictionary<string, obj>()
+    options.["Ponder"] <- box false
+    options.["UCI_ShowWDL"] <- box (JsonSerializer.Deserialize<obj>("true"))
+    let config = { EngineConfig.Empty with Path = "C:/Engines/Ceres/Ceres.exe"; Version = "v1.2"; Options = options }
+    let info = config.Information 50.0
+    Assert.StartsWith("Exe=Ceres.exe; Version=v1.2; Protocol=UCI; MoveOverheadMS=50;", info)
+    Assert.Contains("Ponder=false;", info)
+    Assert.Contains("UCI_ShowWDL=true;", info)
+    // an empty def's placeholder version is left out
+    Assert.DoesNotContain("Version=", { config with Version = "Version" }.Information 50.0)
+
+[<Fact>]
+let ``the tournament part of a game's comment says what it needs to be played again`` () =
+    let t = { Tournament.Empty with TournamentMode = "Swiss"; Rounds = 7; NumberOfGamesInParallel = 2; PreventMoveDeviation = true }
+    let text = t.PGNSummary()
+    for part in [ "EB="; "Mode=Swiss"; "Rounds=7"; "Book=No book"; "OpeningsPly="; "OpeningsTwice="; "RandomOpenings="; "Seed="
+                  "PreventMoveDeviation=true"; "Parallel=2"; "Adjudication:" ] do
+        Assert.Contains(part, text)
+    // nothing said for an empty description or hardware, and no stray space before a ';'
+    Assert.DoesNotContain("Description=", text)
+    Assert.DoesNotContain("Hardware=", text)
+    Assert.DoesNotContain(" ;", text)
+    Assert.Contains("Description=a test", { t with Description = "a test" }.PGNSummary())
+
 // Backward compat: a tournament.json with NO LiveFeed section must still deserialize.
 [<Fact>]
 let ``Tournament JSON without LiveFeed still deserializes (backward compat)`` () =

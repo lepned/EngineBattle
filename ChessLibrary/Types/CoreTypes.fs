@@ -230,12 +230,24 @@ module TypesDef =
           DeviceOption: string
           DeviceTemplate: string }
         with
+            /// The engine part of the comment on every game's first move: which executable, its
+            /// version as the def says it, and every option it was given (true/false in lower case).
             member x.Information moveOverhead =
               let sb = new StringBuilder()
+              if not (String.IsNullOrWhiteSpace x.Path) then
+                sb.Append(sprintf "Exe=%s; " (Path.GetFileName(x.Path.Replace('\\', '/')))) |> ignore
+              // "Version" is what an empty def says
+              if not (String.IsNullOrWhiteSpace x.Version) && x.Version <> "Version" then
+                sb.Append(sprintf "Version=%s; " x.Version) |> ignore
               sb.Append(sprintf "Protocol=%s;" x.Protocol) |> ignore
               sb.Append(sprintf " MoveOverheadMS=%.0f;" moveOverhead) |> ignore
               for opt in x.Options do
-                sb.Append(sprintf " %s=%s;" opt.Key (opt.Value.ToString())) |> ignore
+                let value =
+                  match (if isNull opt.Value then "" else opt.Value.ToString()) with
+                  | "True" -> "true"
+                  | "False" -> "false"
+                  | text -> text
+                sb.Append(sprintf " %s=%s;" opt.Key value) |> ignore
               sb.ToString()
             /// The rating a def gets when nobody gave one (Empty, mkdef, the Engine creator): not an Elo
             static member PlaceholderRating = 3600
@@ -914,21 +926,37 @@ module TypesDef =
           sb.AppendLine (sprintf "Comment: %s" x.Description) |> ignore
           sb.ToString()
 
+        /// The tournament part of the comment on every game's first move: what a game needs to be
+        /// played again - the EngineBattle that played it, the mode, the openings, the settings that
+        /// change the moves or the time the engines get, the tablebases and the adjudication.
         member x.PGNSummary() =
-          let sb = new StringBuilder()
-          sb.Append $"{x.Description}; " |> ignore
-          //sb.AppendLine x.Hardware |> ignore
-          sb.Append (sprintf "Rounds=%d; " x.Rounds)  |> ignore
-          //sb.Append x.GauntletText |> ignore
-          //sb.Append (x.TimeControlText() + "; ") |> ignore
-          if x.Opening.OpeningsPath.IsSome then
-            sb.Append (sprintf "Book=%s; " (Path.GetFileName(x.Opening.OpeningsPath.Value))) |> ignore
-          else
-            sb.Append "Book=No book; " |> ignore
-          sb.Append (x.TablebaseText() + "; ") |> ignore
-          sb.Append (x.AdjudicationText() + ";") |> ignore
-          //sb.AppendLine (sprintf "Comment: %s" x.Description) |> ignore
-          sb.ToString()
+          let parts = ResizeArray<string>()
+          parts.Add $"EB={BuildInfo.describe ()}"
+          if not (String.IsNullOrWhiteSpace x.Description) then parts.Add $"Description={x.Description}"
+          let mode = x.ModeLabel()
+          parts.Add $"Mode={mode}"
+          parts.Add (sprintf "Rounds=%d" x.Rounds)
+          match x.Opening.OpeningsPath with
+          | Some path when not (String.IsNullOrWhiteSpace path) -> parts.Add $"Book={Path.GetFileName path}"
+          | _ -> parts.Add "Book=No book"
+          // a cup, Swiss or ladder draws its openings at random by its own option
+          let random =
+            match mode.Trim().ToLowerInvariant() with
+            | "swiss" when not (obj.ReferenceEquals(x.SwissOptions, null)) -> x.SwissOptions.RandomOpenings
+            | "cup" when not (obj.ReferenceEquals(x.CupOptions, null)) -> x.CupOptions.RandomOpenings
+            | "ladder" when not (obj.ReferenceEquals(x.LadderOptions, null)) -> x.LadderOptions.RandomOpenings
+            | _ -> x.Opening.RandomOpenings
+          parts.Add (sprintf "OpeningsPly=%d" x.Opening.OpeningsPly)
+          parts.Add (sprintf "OpeningsTwice=%b" x.Opening.OpeningsTwice)
+          parts.Add (sprintf "RandomOpenings=%b" random)
+          parts.Add (sprintf "Seed=%d" x.Opening.Seed)
+          parts.Add (sprintf "PreventMoveDeviation=%b" x.PreventMoveDeviation)
+          parts.Add (sprintf "Parallel=%d" x.NumberOfGamesInParallel)
+          let hardware = x.Hardware()
+          if not (String.IsNullOrWhiteSpace hardware) then parts.Add $"Hardware={hardware}"
+          parts.Add (x.TablebaseText())
+          parts.Add (x.AdjudicationText().TrimEnd())
+          String.Join("; ", parts) + ";"
 
 
         member x.MinSummary() =
