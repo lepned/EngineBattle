@@ -326,7 +326,7 @@ Piece values fitted over many positions
 
 Usage: eb-cli piece-values fit <positions> [options]
 
-Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments.
+Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments. Exit 1 when no group had enough positions to fit.
 
 Arguments:
   <positions>  an EPD or PGN file

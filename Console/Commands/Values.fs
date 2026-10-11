@@ -906,7 +906,7 @@ let position (p: Parsed) =
 let fitSpec =
     { command [ "piece-values"; "fit" ] "Engines and positions" "Piece values fitted over many positions" with
         Description =
-          Some "Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments."
+          Some "Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments. Exit 1 when no group had enough positions to fit."
         Args = [ arg "positions" "an EPD or PGN file" ]
         Options =
           [ value "from" "eval|outcome|pgn-eval" "What is fitted" |> withDefault "eval"
@@ -959,7 +959,7 @@ let fit (p: Parsed) =
     | "pgn-eval" -> runPieceValueFitPgnEval fitParams
     | other -> raise (Usage $"--from expects eval, outcome or pgn-eval, got '{other}'")
     if fitsMade = 0 then
-        Cli.Output.error "nothing was fitted: too few positions (above); a larger file or --sample helps"
+        Cli.Output.error "nothing was fitted: too few positions (above); a larger file helps, or for a PGN a larger --sample"
         Cli.Output.ExitFailed
     else Cli.Output.ExitOk
 
