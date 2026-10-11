@@ -501,6 +501,9 @@ module Validation =
           Errors ["TournamentMode must be one of: RR, Gauntlet, Cup, Swiss, Ladder."]
       elif normalized = "cup" && obj.ReferenceEquals(tourny.CupOptions, null) then
           Errors ["CupOptions must be set when TournamentMode is Cup."]
+      // the cup runner refuses any other number at the start; say so before it
+      elif normalized = "cup" && (let n = tourny.EngineSetup.Engines.Length in n > 0 && n &&& (n - 1) <> 0) then
+          Errors [ $"A cup needs a power-of-two number of players (2, 4, 8, 16, ...); this one has {tourny.EngineSetup.Engines.Length}." ]
       elif normalized = "swiss" && obj.ReferenceEquals(tourny.SwissOptions, null) then
           Errors ["SwissOptions must be set when TournamentMode is Swiss."]
       elif normalized = "ladder" && obj.ReferenceEquals(tourny.LadderOptions, null) then

@@ -250,6 +250,9 @@ let ``drawSamples tolerates a theme or rating group listed twice`` () =
             db, 3000, 0, "2500, 2500", "opening, opening", ResizeArray(), 1, 2, "", 0, 0, 1)
     let themes = PuzzleDataUtils.parseThemes input.puzzleFilter
     let ratings = PuzzleDataUtils.parseRatingGroups input.ratingGroups input.maxRating
+    // left out of a config: the max rating is the one group, and no theme filter
+    Assert.Equal<int[]>([| 3000 |], PuzzleDataUtils.parseRatingGroups null 3000)
+    Assert.Equal<string[]>([| "" |], PuzzleDataUtils.parseThemes null)
     Assert.Equal(2, themes.Length)
     Assert.Equal(2, ratings.Length)
     let samples = PuzzleDataUtils.drawSamples themes ratings input   // must not throw on the duplicates

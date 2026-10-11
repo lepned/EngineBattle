@@ -34,15 +34,16 @@ let sanOfMovePlayed (board: Chess.Board) (command: string) (movePlayed: string) 
         if board.SanMovesPlayed.Count > before then board.SanMovesPlayed.[board.SanMovesPlayed.Count - 1]
         else "?"
 
+/// RatingGroups left out of a config (null) is no groups: the max rating is the one group.
 let parseRatingGroups (s:string) maxRating =
-  let gs = s.Split(',') |> Array.filter (not << System.String.IsNullOrWhiteSpace)
+  let gs = (if isNull s then "" else s).Split(',') |> Array.filter (not << System.String.IsNullOrWhiteSpace)
   if gs.Length = 0 then
     if maxRating = 0 then failwith "No rating groups or max rating specified"
     else [| maxRating |]
   else gs |> Array.map int
 
 let parseThemes (s:string) =
-  s.Split(',') |> Array.map (fun t -> t.Trim())
+  (if isNull s then "" else s).Split(',') |> Array.map (fun t -> t.Trim())
 
 let parseNodes (s:string) =
   if System.String.IsNullOrWhiteSpace s then [|0|]

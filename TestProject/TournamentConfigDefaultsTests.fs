@@ -135,6 +135,15 @@ let ``an older shape: a top-level null is no value, a flag that is not a bool is
     Assert.Contains("TestOptions.ValueTest must be true or false", ex.Message)
 
 [<Fact>]
+let ``a cup of three is refused by the validation, as the cup runner refuses it`` () =
+    let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
+    let cup names =
+        let t = { read (minimal "") with TournamentMode = "Cup" }
+        { t with EngineSetup = { t.EngineSetup with Engines = [ for n in names -> engine n ] } }
+    Assert.Contains(errorsOf (cup [ "A"; "B"; "C" ]), fun m -> m.Contains "power-of-two number of players" && m.Contains "has 3")
+    Assert.DoesNotContain(errorsOf (cup [ "A"; "B"; "C"; "D" ]), fun m -> m.Contains "power-of-two")
+
+[<Fact>]
 let ``a gauntlet is a gauntlet in any case`` () =
     let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
     let t = { read (minimal "") with TournamentMode = "gauntlet"; Challengers = 2 }
