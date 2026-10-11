@@ -52,15 +52,15 @@
                 <input type="text" class="tool-input" style="width:120px" @bind="numberOfOpenings" />
             </div>
             <div class="tool-input-group" style="margin-bottom:0">
-                <label>Min eval (cp)</label>
+                <label>Min eval (pawns)</label>
                 <input type="text" class="tool-input" style="width:100px" @bind="minEvalScore" />
             </div>
             <div class="tool-input-group" style="margin-bottom:0">
-                <label>Max eval (cp)</label>
+                <label>Max eval (pawns)</label>
                 <input type="text" class="tool-input" style="width:100px" @bind="maxEvalScore" />
             </div>
             <div class="tool-input-group" style="margin-bottom:0">
-                <label>Max eval diff (cp)</label>
+                <label>Max eval diff (pawns)</label>
                 <input type="text" class="tool-input" style="width:100px" @bind="maxEvalDiff" />
             </div>
         </div>
@@ -129,9 +129,9 @@
 
 @code {
 
-    private string minEvalScore = "80";
-    private string maxEvalScore = "100";
-    private string maxEvalDiff = "40";
+    private string minEvalScore = "0.8";
+    private string maxEvalScore = "1.0";
+    private string maxEvalDiff = "0.4";
     private string numberOfOpenings = "500";
     private string outputFolder = "";
     private bool isProcessing;
@@ -323,7 +323,7 @@
             new ChessLibrary.BookEvaluation.BookEngine(e.Config, e.ToSearchLimit())));
         ChessLibrary.BookEvaluation.Filter filter;
         try { filter = ChessLibrary.BookEvaluation.parseFilter(minEvalScore, maxEvalScore, maxEvalDiff, oobEngines.Count); }
-        catch (FormatException) { SetStatus("Min eval, max eval and max diff must be numbers.", true); return; }
+        catch (FormatException e) { SetStatus(char.ToUpperInvariant(e.Message[0]) + e.Message[1..], true); return; }
         var label = ChessLibrary.BookEvaluation.engineLabel(engines);
 
         var totalSw = System.Diagnostics.Stopwatch.StartNew();

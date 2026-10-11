@@ -42,7 +42,7 @@ The same rules hold for every command (`match` excepted - see below).
 
 - **Shape:** `eb-cli <command> [<subcommand>] <subject> [options]`. The subject - the engine, the
   position, the PGN, the config - is a positional argument; everything else is a named option.
-  Commands are grouped: `pgn check`, `engine new`, `puzzle run`.
+  Commands are grouped: `pgn parse`, `engine new`, `puzzle run`.
 - **Options** are `--kebab-case` and case-sensitive; only `-h` (help) and `-o` (output) have a
   short form. `--name value` and `--name=value` are the same, as are `-o FILE` and `-o=FILE`.
   `--` ends the options.
@@ -137,7 +137,7 @@ Engine definitions
   engine bench <config>           Benchmark an engine from a config
 
 PGN files
-  pgn check <pgn>                 Parse every game: counts, empty games, speed
+  pgn parse <pgn>                 Parse every game: counts, empty games, speed
   pgn validate <pgn>              Replay every game: illegal or ambiguous moves, non-standard SAN
   pgn strip <pgn>                 Write the games without comments, variations or NAGs
   pgn summary <pgn>               How the games ended
@@ -418,14 +418,14 @@ Options:
       --syzygy DIR       Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
       --base DEF         An existing def whose settings the new one starts from
       --uci NAME=VALUE   Set a UCI option of the engine (repeatable)
-      --print            Print the def instead of writing it
+      --dry-run          Print the def, write nothing
       --force            Write over a file that exists
       --timeout SECONDS  How long the engine has to answer (default 15)
 
 Examples:
   eb-cli engine new C:/Engines/sf/stockfish.exe --uci Threads=8 --uci Hash=4096 --out-dir defs
       A Stockfish def with 8 threads
-  eb-cli engine new lc0.exe --net BT4.onnx --print
+  eb-cli engine new lc0.exe --net BT4.onnx --dry-run
       Show the def without writing it
 ```
 ### engine gen
@@ -470,12 +470,12 @@ Examples:
   eb-cli engine bench benchmark-options.json
       Run the benchmark
 ```
-### pgn check
+### pgn parse
 
 ```text
 Parse every game: counts, empty games, speed
 
-Usage: eb-cli pgn check <pgn> [options]
+Usage: eb-cli pgn parse <pgn> [options]
 
 A health check of the parser on a file: games, plies, games without moves or a result, speed and memory. It replays no moves (pgn validate does). Exit 1 when a game could not be read.
 
@@ -486,7 +486,7 @@ Options:
       --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
-  eb-cli pgn check big.pgn
+  eb-cli pgn parse big.pgn
       How many games, and how fast they parse
 ```
 ### pgn validate
@@ -628,7 +628,7 @@ Keep the openings every engine scores in an eval window
 
 Usage: eb-cli book eval <book> [options]
 
-Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (centipawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
+Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
 
 Arguments:
   <book>  an opening book (.pgn or .epd)
@@ -638,9 +638,9 @@ Options:
                                   An engine, with its own limit after a comma if it has one; at least one (repeatable)
       --nodes N                   The limit of every engine without its own (default 10000)
       --movetime MS               A time limit for every engine without its own, instead of nodes
-      --min CP                    The smallest |eval| kept (default 80)
-      --max CP                    The largest |eval| kept (default 100)
-      --max-diff CP               The largest spread between the engines (default 40)
+      --min PAWNS                 The smallest |eval| kept (default 0.8)
+      --max PAWNS                 The largest |eval| kept (default 1.0)
+      --max-diff PAWNS            The largest spread between the engines (default 0.4)
       --count N                   Only the first N openings
   -o, --out FILE                  The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)
       --force                     Write over a file that exists
@@ -649,7 +649,7 @@ Options:
 Examples:
   eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000
       Two engines, lc0 with its own limit
-  eb-cli book eval book.epd --engine sf.json --movetime 300 --min 30 --max 120 -o balanced.epd
+  eb-cli book eval book.epd --engine sf.json --movetime 300 --min 0.3 --max 1.2 -o balanced.epd
       A wider window, to a file of its own
 ```
 ### puzzle run

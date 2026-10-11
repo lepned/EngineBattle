@@ -28,9 +28,9 @@ For each engine you can configure:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | **Number of openings** | 500 | Maximum number of positions to evaluate from the source file |
-| **Min eval (cp)** | 80 | Minimum absolute eval in centipawns. Every engine's absolute eval must reach it, or the position is filtered out (too drawish). |
-| **Max eval (cp)** | 100 | Maximum absolute eval in centipawns. Positions with any engine eval above this are filtered out (too one-sided). |
-| **Max eval diff (cp)** | 40 | Maximum allowed eval difference between engines, signs included. Positions where engines disagree by more than this - or on which side is better - are filtered out. |
+| **Min eval (pawns)** | 0.8 | Minimum absolute eval in pawns. Every engine's absolute eval must reach it, or the position is filtered out (too drawish). |
+| **Max eval (pawns)** | 1.0 | Maximum absolute eval in pawns. Positions with any engine eval above this are filtered out (too one-sided). |
+| **Max eval diff (pawns)** | 0.4 | Maximum allowed eval difference between engines, signs included. Positions where engines disagree by more than this - or on which side is better - are filtered out. |
 | **Output folder** | The Openings folder from Global Settings | Folder where results are saved (inside a `BookEvals` subfolder) |
 
 ### Eval Filtering Logic
@@ -38,7 +38,7 @@ For each engine you can configure:
 A position passes if:
 - Every engine's absolute eval is ≥ **Min eval**
 - No engine's absolute eval exceeds **Max eval**
-- The difference between the highest and lowest engine eval, with their signs, is < **Max eval diff** (with a single engine there is no difference to check). The evals are from the side to move, the same for every engine, so +90 from one engine and -90 from another is a difference of 180: the engines disagree on who is better, and the position is filtered out.
+- The difference between the highest and lowest engine eval, with their signs, is < **Max eval diff** (with a single engine there is no difference to check). The evals are from the side to move, the same for every engine, so +0.9 from one engine and -0.9 from another is a difference of 1.8: the engines disagree on who is better, and the position is filtered out.
 
 This ensures the position is competitive (not dead drawn) but not busted (not clearly winning for one side), and that engines roughly agree on the assessment.
 
@@ -70,14 +70,14 @@ The same run is `eb-cli book eval`, for books too large to babysit in the browse
 
 ```bash
 eb-cli book eval book.pgn --engine Stockfish19.json,movetime=300 --engine Lc0.json,nodes=2000
-eb-cli book eval book.epd --engine Stockfish19.json --min 30 --max 120 --count 1000 -o balanced.epd
+eb-cli book eval book.epd --engine Stockfish19.json --min 0.3 --max 1.2 --count 1000 -o balanced.epd
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--engine ENGINE[,nodes=N\|,movetime=MS]` | (required) | An engine (a def, an exe or a def name), with its own limit after a comma; repeat for more |
 | `--nodes N` / `--movetime MS` | 10000 nodes | The limit of every engine without its own |
-| `--min`, `--max`, `--max-diff` | 80, 100, 40 | The filter above, in centipawns |
+| `--min`, `--max`, `--max-diff` | 0.8, 1.0, 0.4 | The filter above, in pawns |
 | `--count N` | the whole book | Openings to read from the book |
 | `-o, --out FILE` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file; an existing one needs `--force` |
 
@@ -87,5 +87,5 @@ When the run ends, the command prints the same Results table as the page. Ctrl+C
 
 - Use **two engines** (e.g. Stockfish + Lc0) for more reliable filtering — the max eval diff catches positions where one engine is wrong
 - Start with a larger eval range and tighten it based on results
-- For tournament opening books, a min eval of 30–80 cp and max eval of 80–120 cp is a reasonable starting point
+- For tournament opening books, a min eval of 0.3–0.8 and max eval of 0.8–1.2 pawns is a reasonable starting point
 - Use the **Number of openings** parameter to limit evaluation time when working with large books

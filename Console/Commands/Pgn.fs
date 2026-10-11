@@ -1,4 +1,4 @@
-/// pgn check / validate / strip / summary / elo / speed / deviations: tools that read a PGN file.
+/// pgn parse / validate / strip / summary / elo / speed / deviations: tools that read a PGN file.
 /// Files are streamed, never held whole; progress goes to stderr every 100,000 games.
 module Commands.Pgn
 
@@ -50,17 +50,17 @@ let countEventLines (path: string) =
         read <- fs.Read(buffer, kept, buffer.Length - kept)
     count
 
-// ---------------------------------------------------------------- check
+// ---------------------------------------------------------------- parse
 
-let checkSpec =
-    { command [ "pgn"; "check" ] Group "Parse every game: counts, empty games, speed" with
+let parseSpec =
+    { command [ "pgn"; "parse" ] Group "Parse every game: counts, empty games, speed" with
         Description =
           Some "A health check of the parser on a file: games, plies, games without moves or a result, speed and memory. It replays no moves (pgn validate does). Exit 1 when a game could not be read."
         Args = [ pgnSubject ]
         Options = [ json ]
-        Examples = [ "eb-cli pgn check big.pgn", "How many games, and how fast they parse" ] }
+        Examples = [ "eb-cli pgn parse big.pgn", "How many games, and how fast they parse" ] }
 
-let check (p: Parsed) =
+let parseFile (p: Parsed) =
     let path = pgnArg p
     let sw = Diagnostics.Stopwatch.StartNew()
     let mutable games = 0
@@ -364,7 +364,7 @@ let deviations (p: Parsed) =
     ExitOk
 
 let entries: Entry list =
-    [ { Spec = checkSpec; Run = check }
+    [ { Spec = parseSpec; Run = parseFile }
       { Spec = validateSpec; Run = validate }
       { Spec = stripSpec; Run = strip }
       { Spec = summarySpec; Run = summary }

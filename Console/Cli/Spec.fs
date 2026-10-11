@@ -29,7 +29,7 @@ type Opt =
       Help: string }
 
 type Command =
-    { /// ["pgn"; "check"]; one word for a command without subcommands.
+    { /// ["pgn"; "parse"]; one word for a command without subcommands.
       Path: string list
       /// The heading the command is listed under.
       Group: string

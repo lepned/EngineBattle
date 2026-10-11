@@ -25,7 +25,7 @@ let all: Entry list =
       e [ "engine"; "new" ]
       e [ "engine"; "gen" ]
       e [ "engine"; "bench" ]
-      e [ "pgn"; "check" ]
+      e [ "pgn"; "parse" ]
       e [ "pgn"; "validate" ]
       e [ "pgn"; "strip" ]
       e [ "pgn"; "summary" ]

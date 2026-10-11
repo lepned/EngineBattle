@@ -40,8 +40,17 @@ let ``one engine has no spread to check`` () =
 let ``empty fields fall back, and one engine has no diff limit`` () =
     let f = parseFilter "" " " "" 2
     Assert.Equal((0.0, 1000.0, 10000.0), (f.MinEval, f.MaxEval, f.MaxDiff))
-    Assert.Equal(10000.0, (parseFilter "80" "100" "40" 1).MaxDiff)
-    Assert.Equal(40.0, (parseFilter "80" "100" "40" 2).MaxDiff)
+    Assert.Equal(10000.0, (parseFilter "0.8" "1.0" "0.4" 1).MaxDiff)
+    Assert.Equal(40.0, (parseFilter "0.8" "1.0" "0.4" 2).MaxDiff)
+
+[<Fact>]
+let ``the fields are pawns, a comma as decimal point, and a centipawn value is told`` () =
+    let f = parseFilter "0,3" "1.2" " 0.5 " 2
+    Assert.Equal((30.0, 120.0, 50.0), (f.MinEval, f.MaxEval, f.MaxDiff))
+    let told (a, b, c) = (Assert.Throws<System.FormatException>(fun () -> parseFilter a b c 2 |> ignore)).Message
+    Assert.Equal("min eval is in pawns: 80 centipawns is 0.8", told ("80", "1", "0.4"))
+    Assert.Contains("max eval diff takes pawns", told ("0.8", "1", "x"))
+    Assert.Contains("min eval is above max eval", told ("1.2", "0.8", ""))
 
 [<Fact>]
 let ``a book evaluated before gets this run's MaxEval, not a second one`` () =

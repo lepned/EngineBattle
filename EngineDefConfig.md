@@ -16,7 +16,7 @@ on the option, not the engine's name) and its folder into `NetworkPath`; an engi
 network option refuses it. `--syzygy` fills `SyzygyPath` when the engine has one and names no folder
 yet. `--uci NAME=VALUE` overrides a default and must name an option the engine reported. `--base
 def.json` carries the option values and the display fields of an existing def over onto a fresh
-probe. `--print` shows the def instead of writing it; an existing file is never overwritten
+probe. `--dry-run` shows the def instead of writing it; an existing file is never overwritten
 without `--force`. The file is named after the engine without spaces (`Stockfish19.json`).
 
 ## Configuration Fields

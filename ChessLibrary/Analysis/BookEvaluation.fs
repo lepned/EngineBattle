@@ -5,6 +5,7 @@ module ChessLibrary.BookEvaluation
 
 open System
 open System.Collections.Generic
+open System.Globalization
 open System.IO
 open System.Text
 open ChessLibrary.Chess
@@ -21,12 +22,25 @@ type Filter =
       MaxEval: float
       MaxDiff: float }
 
-/// The page's text fields: empty min is 0, empty max 1000, empty diff (or one engine) no limit.
+/// The filter from the page's text fields (or eb-cli's options), in pawns - a comma works as the
+/// decimal point: empty min is 0, empty max 10, empty diff (or one engine) no limit. A field that
+/// is not a size in pawns raises a FormatException that says which and why.
 let parseFilter (minEval: string) (maxEval: string) (maxDiff: string) (engineCount: int) =
-    let num (s: string) dflt = if String.IsNullOrWhiteSpace s then dflt else float (s.Trim())
-    { MinEval = num minEval 0.0
-      MaxEval = num maxEval 1000.0
-      MaxDiff = if engineCount <= 1 then 10000.0 else num maxDiff 10000.0 }
+    let num what (s: string) dflt =
+        if String.IsNullOrWhiteSpace s then dflt
+        else
+            let text = s.Trim()
+            match Double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture) with
+            | true, v when v >= 0.0 && v <= 20.0 -> v * 100.0
+            // the fields were in centipawns once
+            | true, v when v > 20.0 -> raise (FormatException $"{what} is in pawns: {text} centipawns is %g{v / 100.0}")
+            | _ -> raise (FormatException $"{what} takes pawns, e.g. 0.8, not '{text}'")
+    let filter =
+        { MinEval = num "min eval" minEval 0.0
+          MaxEval = num "max eval" maxEval 1000.0
+          MaxDiff = if engineCount <= 1 then 10000.0 else num "max eval diff" maxDiff 10000.0 }
+    if filter.MinEval > filter.MaxEval then raise (FormatException "min eval is above max eval")
+    filter
 
 /// The spread of the engines' evals, sign included (see bookPositionPasses).
 let bookEvalSpread (evals: float[]) =
@@ -232,7 +246,7 @@ let summaryRows (source: string) (read: int) (passed: int) (evaluated: int) (rem
             + (if removed > 0 then " of unique" else "")
       yield "Engines", engineLabel engines
       yield "Eval range", sprintf "%s - %s" minEval maxEval
-      yield "Max eval diff", sprintf "%s cp" maxDiff
+      yield "Max eval diff", sprintf "%s pawns" maxDiff
       yield "Duration", sprintf "%dh %dm %ds" (int elapsed.TotalHours) elapsed.Minutes elapsed.Seconds
       yield "Output file", outPath
       match failure with

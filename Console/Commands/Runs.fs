@@ -1091,12 +1091,12 @@ let runBookEval (p: BookParams) (ct: CancellationToken) =
         p.Engines |> List.map (fun e -> ({ Config = e.Config; Limit = defaultArg e.Limit p.DefaultLimit } : ChessLibrary.BookEvaluation.BookEngine))
     let filter =
         try ChessLibrary.BookEvaluation.parseFilter p.MinEval p.MaxEval p.MaxDiff engines.Length
-        with :? FormatException -> raise (Cli.Parse.Usage "--min, --max and --max-diff take numbers (centipawns)")
+        with :? FormatException as e -> raise (Cli.Parse.Usage $"--min, --max, --max-diff: {e.Message}")
     let label = ChessLibrary.BookEvaluation.engineLabel engines
     let take (xs: seq<'a>) = match p.Count with Some n -> Seq.truncate n xs | None -> xs
     printfn "Book evaluation: %s" p.Input
     printfn "Engines: %s" label
-    printfn "Filter: |eval| %g-%g cp%s" filter.MinEval filter.MaxEval (if engines.Length > 1 then sprintf ", spread below %g cp" filter.MaxDiff else "")
+    printfn "Filter: |eval| %g-%g pawns%s" (filter.MinEval / 100.0) (filter.MaxEval / 100.0) (if engines.Length > 1 then sprintf ", spread below %g pawns" (filter.MaxDiff / 100.0) else "")
     let sw = Diagnostics.Stopwatch.StartNew()
     let mutable lastShown = 0
     let progress = Action<int, int>(fun done' total ->
@@ -1219,22 +1219,22 @@ let puzzleTrend (p: Parsed) =
 let bookEvalSpec =
     { command [ "book"; "eval" ] Group "Keep the openings every engine scores in an eval window" with
         Description =
-          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (centipawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
+          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
         Args = [ arg "book" "an opening book (.pgn or .epd)" ]
         Options =
           [ value "engine" "ENGINE[,nodes=N|,movetime=MS]" "An engine, with its own limit after a comma if it has one; at least one" |> repeatable
             value "nodes" "N" "The limit of every engine without its own" |> withDefault "10000"
             value "movetime" "MS" "A time limit for every engine without its own, instead of nodes"
-            value "min" "CP" "The smallest |eval| kept" |> withDefault "80"
-            value "max" "CP" "The largest |eval| kept" |> withDefault "100"
-            value "max-diff" "CP" "The largest spread between the engines" |> withDefault "40"
+            value "min" "PAWNS" "The smallest |eval| kept" |> withDefault "0.8"
+            value "max" "PAWNS" "The largest |eval| kept" |> withDefault "1.0"
+            value "max-diff" "PAWNS" "The largest spread between the engines" |> withDefault "0.4"
             value "count" "N" "Only the first N openings"
             out "The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)"
             force ]
         OneOf = [ [ "nodes"; "movetime" ] ]
         Examples =
           [ "eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000", "Two engines, lc0 with its own limit"
-            "eb-cli book eval book.epd --engine sf.json --movetime 300 --min 30 --max 120 -o balanced.epd", "A wider window, to a file of its own" ] }
+            "eb-cli book eval book.epd --engine sf.json --movetime 300 --min 0.3 --max 1.2 -o balanced.epd", "A wider window, to a file of its own" ] }
 
 let bookEval (p: Parsed) =
     let input = Cli.Groups.inputFile "book" (argOf p "book").Value
@@ -1270,9 +1270,9 @@ let bookEval (p: Parsed) =
         { Input = input
           Engines = engines
           DefaultLimit = defaultLimit
-          MinEval = defaultArg (valueOf p "min") "80"
-          MaxEval = defaultArg (valueOf p "max") "100"
-          MaxDiff = defaultArg (valueOf p "max-diff") "40"
+          MinEval = defaultArg (valueOf p "min") "0.8"
+          MaxEval = defaultArg (valueOf p "max") "1.0"
+          MaxDiff = defaultArg (valueOf p "max-diff") "0.4"
           Count = intOf p "count"
           Out = out }
         (Cli.Output.onCtrlC ())

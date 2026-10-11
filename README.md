@@ -189,7 +189,7 @@ eb-cli tune run <tuner-config.json>
 eb-cli position <fen|startpos> [--square SQ] [--pv "<line>"] [--json]
 eb-cli tablebase <fen> [--syzygy DIR]
 eb-cli pgn deviations <file.pgn>
-eb-cli pgn check <file.pgn>
+eb-cli pgn parse <file.pgn>
 eb-cli gui [<page>] [--port N]
 ```
 

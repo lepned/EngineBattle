@@ -87,12 +87,12 @@ let newSpec =
             syzygy
             value "base" "DEF" "An existing def whose settings the new one starts from"
             uci
-            switch "print" "Print the def instead of writing it"
+            switch "dry-run" "Print the def, write nothing"
             force
             value "timeout" "SECONDS" "How long the engine has to answer" |> withDefault "15" ]
         Examples =
           [ "eb-cli engine new C:/Engines/sf/stockfish.exe --uci Threads=8 --uci Hash=4096 --out-dir defs", "A Stockfish def with 8 threads"
-            "eb-cli engine new lc0.exe --net BT4.onnx --print", "Show the def without writing it" ] }
+            "eb-cli engine new lc0.exe --net BT4.onnx --dry-run", "Show the def without writing it" ] }
 
 let newDef (p: Parsed) =
     let exe = inputFile "engine" (argOf p "exe").Value
@@ -122,7 +122,7 @@ let newDef (p: Parsed) =
             match ChessLibrary.EngineProbe.networkOptionKey probed.Options with
             | Some k -> info $"  {k} = {def.Options.[k]}"
             | None -> ()
-            if has p "print" then
+            if has p "dry-run" then
                 printfn "%s" (ChessLibrary.EngineProbe.toJson def)
                 ExitOk
             else

@@ -66,7 +66,7 @@ let group (commands: Command list) (g: string) =
     sb.AppendLine().AppendLine($"Run 'eb-cli help {g} <command>' for options and examples.") |> ignore
     sb.ToString()
 
-/// `eb-cli help pgn check`, `eb-cli pgn check --help`.
+/// `eb-cli help pgn parse`, `eb-cli pgn parse --help`.
 let command (c: Command) =
     let sb = StringBuilder()
     sb.AppendLine(c.Summary).AppendLine() |> ignore
