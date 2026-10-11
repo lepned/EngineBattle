@@ -116,7 +116,7 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
     let startedExe = exeWritten ()
     let exeNote () =
         match startedExe, exeWritten () with
-        | Some a, Some b when a <> b -> " (eb-cli's exe was replaced on disk during the match)"
+        | Some a, Some b when a <> b -> " (eb-cli's exe was replaced or removed on disk during the match)"
         | _ -> ""
     let logger = LogWriterLogger(log, minimum) :> ILogger
     try
@@ -248,6 +248,8 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
                     MatchOutput.Interrupted(programName viaVerb, t.ConfigName)
                 else MatchOutput.Completed
             save ()
+            // a replaced or removed exe that caused no failure is still worth a line: the run was not what the command named
+            if exeNote () <> "" then output.WriteError("note: eb-cli's exe was replaced or removed on disk during the match" + Environment.NewLine)
             r.End(ending, clock.Elapsed)
         with ex ->
             log.WriteLine(ex.ToString())
