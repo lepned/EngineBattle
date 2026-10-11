@@ -59,6 +59,11 @@ type private LogWriterLogger(log: TextWriter, minimum: LogLevel) =
                 log.WriteLine($"[{level}] {formatter.Invoke(state, ex)}")
                 if not (isNull ex) then log.WriteLine(ex.ToString())
 
+/// When this exe was last written, to tell a failure after it was replaced on disk mid-run
+/// (a republish of a single-file build) from a real one.
+let private exeWritten () =
+    try (match Environment.ProcessPath with null -> None | p -> Some(File.GetLastWriteTimeUtc p)) with _ -> None
+
 /// The match itself; everything for stdout and stderr goes through `output`.
 let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.QueuedWriter) : int =
     let clock = Stopwatch.StartNew()
@@ -108,6 +113,11 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
         | MatchArgs.Warn -> LogLevel.Warning
         | MatchArgs.Err -> LogLevel.Error
         | MatchArgs.Fatal -> LogLevel.Critical
+    let startedExe = exeWritten ()
+    let exeNote () =
+        match startedExe, exeWritten () with
+        | Some a, Some b when a <> b -> " (eb-cli's exe was replaced on disk during the match)"
+        | _ -> ""
     let logger = LogWriterLogger(log, minimum) :> ILogger
     try
         try
@@ -183,7 +193,14 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
                     match reporter with
                     | None -> ()
                     | Some r ->
-                        match r.Finished g with
+                        // a report that fails still counts the game: it was played and is in the PGN
+                        let decision =
+                            try r.Finished g
+                            with ex ->
+                                log.WriteLine(ex.ToString())
+                                output.WriteError($"Warning: the report of game {g.GameNr} failed: {ex.Message}{exeNote ()}" + Environment.NewLine)
+                                None
+                        match decision with
                         | Some _ ->
                             sprtStopped <- true
                             runnerRef |> Option.iter (fun run -> run.Cancel())
@@ -234,7 +251,9 @@ let private runWith (args: string list) (viaVerb: bool) (output: MatchOutput.Que
             r.End(ending, clock.Elapsed)
         with ex ->
             log.WriteLine(ex.ToString())
-            emit (ex.Message + "\n")
+            emit (ex.Message + exeNote () + "\n")
+            // without a -log file the trace would go nowhere
+            if obj.ReferenceEquals(log, TextWriter.Null) then output.WriteError(ex.ToString() + Environment.NewLine)
             1
     finally
         Console.SetOut realOut
