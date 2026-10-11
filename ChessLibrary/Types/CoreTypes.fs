@@ -723,7 +723,7 @@ module TypesDef =
         Challengers: int
         [<JsonIgnore>] mutable IsChess960: bool
         /// A cup, Swiss or ladder without a state file may start in a PGN that already has games
-        /// (the GUI asked, or the console's --append): otherwise it stops rather than mix two tournaments
+        /// (the GUI asked): otherwise it stops rather than mix two tournaments
         [<JsonIgnore>] mutable AppendToPgn: bool
         [<JsonIgnore>] mutable DeviationCounter: int
         [<JsonIgnore>] mutable PreventMoveDeviationFor: string[]

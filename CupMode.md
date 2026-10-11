@@ -113,7 +113,7 @@ To resume a cup tournament:
 
 Delete the PGN to start the tournament over: a state file that records games its PGN does not have is set aside as `.bak`. A tournament paused in the old shared file under `wwwroot` is taken over from it once, when it holds this tournament (same name, its engines); the old file is then renamed `.migrated`, so a later Restart is not undone by it.
 
-A cup, Swiss or ladder with no state file to resume from will not start in a PGN that already has games, since that would put two tournaments into one file: the GUI asks first (add to the PGN, or cancel and set another PgnOutPath), the console stops and says so (`eb-cli tournament run <file> --append` adds to the PGN anyway). A state file that cannot be read - cut short by a crash, say - is set aside as `.corrupt` rather than overwritten, and the same question follows.
+A cup, Swiss or ladder with no state file to resume from will not start in a PGN that already has games, since that would put two tournaments into one file: the GUI asks first (add to the PGN, or cancel and set another PgnOutPath), eb-cli stops and says so (set another PgnOutPath, or start it in the GUI to be asked). A state file that cannot be read - cut short by a crash, say - is set aside as `.corrupt` rather than overwritten, and the same question follows.
 
 ## Files Written
 

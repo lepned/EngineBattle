@@ -725,8 +725,7 @@ Arguments:
   <config>  a tournament config (JSON)
 
 Options:
-      --append  Let a new cup, Swiss or ladder start in a PGN that already has games
-      --json    Print the result as JSON on stdout (everything else goes to stderr)
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli tournament run tournament.json

@@ -27,7 +27,7 @@ namespace WebGUI.Components.Pages.TournamentPages;
 public partial class Tournaments
 {
 	// No state file to resume from, but the PGN already has games: a new cup, Swiss or ladder would
-	// put a second tournament into it - asked here; the console stops instead (unless --append)
+	// put a second tournament into it - asked here; the console stops instead
 	private Task<bool> ConfirmAppendToPgn(TypesDef.Tournament.Tournament t, StatePaths.Mode mode, string modeName) =>
 		AskAppendToPgn(t, StatePaths.orphanGames(Environment.ContentRootPath, t, mode), modeName);
 

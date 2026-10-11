@@ -165,7 +165,7 @@ let private runMode (mode: Mode<'S, 'M>) (play: (Pairing -> Async<Result option>
   if orphan > 0 && not tourny.AppendToPgn then
     let text =
       $"{tourny.PgnOutPath} already has {orphan} game(s) but there is no {mode.Name} state file to resume from ({statePath}). "
-      + "Starting would put a new tournament into the same PGN. Set another PgnOutPath, or start with --append to add to this file."
+      + "Starting would put a new tournament into the same PGN. Set another PgnOutPath (or start it in the WebGUI, which asks whether to add to this file)."
     // the run's error: the runner prints and logs it once, and the console exits 1
     failwith text
   let store = mode.Store statePath
