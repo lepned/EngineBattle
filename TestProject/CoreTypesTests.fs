@@ -80,11 +80,18 @@ let ``free text cannot end the game's comment`` () =
 
 [<Fact>]
 let ``the tournament part of a game's comment says what it needs to be played again`` () =
-    let t = { Tournament.Empty with TournamentMode = "Swiss"; Rounds = 7; NumberOfGamesInParallel = 2; PreventMoveDeviation = true }
+    let t = { Tournament.Empty with TournamentMode = "swiss"; Rounds = 7; NumberOfGamesInParallel = 2; PreventMoveDeviation = true }
     let text = t.PGNSummary()
-    for part in [ "EB="; "Mode=Swiss"; "Rounds=7"; "Book=No book"; "OpeningsPly="; "OpeningsTwice="; "RandomOpenings="; "Seed="
-                  "PreventMoveDeviation=true"; "Parallel=2"; "Adjudication:" ] do
+    for part in [ "EB="; "Mode=Swiss"; "Rounds=7"; "Book=No book"; "Seed="; "PreventMoveDeviation=true"; "Parallel=2"; "Adjudication:" ] do
         Assert.Contains(part, text)
+    // without a book the opening settings do nothing, so they are not said
+    Assert.DoesNotContain("OpeningsPly=", text)
+    let withBook = { t with Opening = { t.Opening with OpeningsPath = Some "C:/books/b.pgn"; OpeningsPly = 8 } }.PGNSummary()
+    for part in [ "Book=b.pgn"; "OpeningsPly=8"; "OpeningsTwice="; "RandomOpenings=" ] do
+        Assert.Contains(part, withBook)
+    // the mode by its one name, however the file spells it
+    Assert.Contains("Mode=RR;", { t with TournamentMode = "roundrobin" }.PGNSummary())
+    Assert.Contains("Mode=RR;", { t with TournamentMode = "rr" }.PGNSummary())
     // nothing said for an empty description, no stray space before a ';', and the hardware is the
     // banner's, not every game's
     Assert.DoesNotContain("Description=", text)

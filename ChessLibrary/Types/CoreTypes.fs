@@ -938,22 +938,34 @@ module TypesDef =
           let parts = ResizeArray<string>()
           parts.Add $"EB={BuildInfo.describe ()}"
           if not (String.IsNullOrWhiteSpace x.Description) then parts.Add $"Description={CoreTypes.pgnCommentSafe x.Description}"
-          let mode = x.ModeLabel()
-          parts.Add $"Mode={mode}"
+          let mode = x.ModeLabel().Trim().ToLowerInvariant()
+          // the mode by its one name, however the file spells it
+          let modeName =
+            match mode with
+            | "" | "rr" | "roundrobin" | "round-robin" -> "RR"
+            | "gauntlet" -> "Gauntlet"
+            | "swiss" -> "Swiss"
+            | "cup" -> "Cup"
+            | "ladder" -> "Ladder"
+            | _ -> x.ModeLabel().Trim()
+          parts.Add $"Mode={modeName}"
           parts.Add (sprintf "Rounds=%d" x.Rounds)
           match x.Opening.OpeningsPath with
-          | Some path when not (String.IsNullOrWhiteSpace path) -> parts.Add $"Book={Path.GetFileName path}"
+          | Some path when not (String.IsNullOrWhiteSpace path) ->
+              parts.Add $"Book={Path.GetFileName path}"
+              // a cup, Swiss or ladder draws its openings at random by its own option
+              let random =
+                match mode with
+                | "swiss" when not (obj.ReferenceEquals(x.SwissOptions, null)) -> x.SwissOptions.RandomOpenings
+                | "cup" when not (obj.ReferenceEquals(x.CupOptions, null)) -> x.CupOptions.RandomOpenings
+                | "ladder" when not (obj.ReferenceEquals(x.LadderOptions, null)) -> x.LadderOptions.RandomOpenings
+                | _ -> x.Opening.RandomOpenings
+              parts.Add (sprintf "OpeningsPly=%d" x.Opening.OpeningsPly)
+              parts.Add (sprintf "OpeningsTwice=%b" x.Opening.OpeningsTwice)
+              parts.Add (sprintf "RandomOpenings=%b" random)
+          // without a book the opening settings do nothing
           | _ -> parts.Add "Book=No book"
-          // a cup, Swiss or ladder draws its openings at random by its own option
-          let random =
-            match mode.Trim().ToLowerInvariant() with
-            | "swiss" when not (obj.ReferenceEquals(x.SwissOptions, null)) -> x.SwissOptions.RandomOpenings
-            | "cup" when not (obj.ReferenceEquals(x.CupOptions, null)) -> x.CupOptions.RandomOpenings
-            | "ladder" when not (obj.ReferenceEquals(x.LadderOptions, null)) -> x.LadderOptions.RandomOpenings
-            | _ -> x.Opening.RandomOpenings
-          parts.Add (sprintf "OpeningsPly=%d" x.Opening.OpeningsPly)
-          parts.Add (sprintf "OpeningsTwice=%b" x.Opening.OpeningsTwice)
-          parts.Add (sprintf "RandomOpenings=%b" random)
+          // also the cup's draw
           parts.Add (sprintf "Seed=%d" x.Opening.Seed)
           parts.Add (sprintf "PreventMoveDeviation=%b" x.PreventMoveDeviation)
           parts.Add (sprintf "Parallel=%d" x.NumberOfGamesInParallel)
