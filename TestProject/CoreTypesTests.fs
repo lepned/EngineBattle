@@ -85,9 +85,10 @@ let ``the tournament part of a game's comment says what it needs to be played ag
     for part in [ "EB="; "Mode=Swiss"; "Rounds=7"; "Book=No book"; "OpeningsPly="; "OpeningsTwice="; "RandomOpenings="; "Seed="
                   "PreventMoveDeviation=true"; "Parallel=2"; "Adjudication:" ] do
         Assert.Contains(part, text)
-    // nothing said for an empty description or hardware, and no stray space before a ';'
+    // nothing said for an empty description, no stray space before a ';', and the hardware is the
+    // banner's, not every game's
     Assert.DoesNotContain("Description=", text)
-    Assert.DoesNotContain("Hardware=", text)
+    Assert.DoesNotContain("Hardware=", { t with CPU = "i9"; GPU = "RTX" }.PGNSummary())
     Assert.DoesNotContain(" ;", text)
     Assert.Contains("Description=a test", { t with Description = "a test" }.PGNSummary())
 

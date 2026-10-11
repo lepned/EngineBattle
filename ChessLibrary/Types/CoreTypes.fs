@@ -957,8 +957,6 @@ module TypesDef =
           parts.Add (sprintf "Seed=%d" x.Opening.Seed)
           parts.Add (sprintf "PreventMoveDeviation=%b" x.PreventMoveDeviation)
           parts.Add (sprintf "Parallel=%d" x.NumberOfGamesInParallel)
-          let hardware = x.Hardware()
-          if not (String.IsNullOrWhiteSpace hardware) then parts.Add $"Hardware={CoreTypes.pgnCommentSafe hardware}"
           parts.Add (x.TablebaseText())
           parts.Add (x.AdjudicationText().TrimEnd())
           String.Join("; ", parts) + ";"
