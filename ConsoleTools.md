@@ -855,14 +855,13 @@ Examples:
 ```json
 {
   "PuzzleFile": "C:/Dev/Chess/Puzzles/lichess_puzzles.csv",
-  "Type": "search",
-  "Nodes": "10000",
+  "Type": "policy, value",
   "MaxRating": 2500,
   "MinRating": 1500,
   "RatingGroups": "2500",
   "EngineFolder": "C:/Dev/Chess/Engines/EngineDefs",
   "Engines": [
-    { "Engine": { "ConfigName": "SFDef.json" } }
+    { "Engine": { "ConfigName": "Lc0Def.json" } }
   ],
   "SampleSize": 500,
   "Concurrency": 1,
@@ -870,8 +869,9 @@ Examples:
 }
 ```
 
-`search` works with any UCI engine. `policy` and `value` read the network's own output and need
-an engine that reports it (Lc0, Ceres) - see [PuzzleConfig.md](PuzzleConfig.md).
+`policy` and `value` (and `policy3`, ...) read the network's own output and need Lc0 or Ceres. An
+engine without a network, like Stockfish, uses `"search"` with `"Nodes": "10000"`. See
+[PuzzleConfig.md](PuzzleConfig.md) for every type.
 
 ### Minimal ERET Configuration
 
