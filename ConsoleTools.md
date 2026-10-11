@@ -855,9 +855,11 @@ Examples:
 ```json
 {
   "PuzzleFile": "C:/Dev/Chess/Puzzles/lichess_puzzles.csv",
-  "Type": "policy, value",
+  "Type": "search",
+  "Nodes": "10000",
   "MaxRating": 2500,
   "MinRating": 1500,
+  "RatingGroups": "2500",
   "EngineFolder": "C:/Dev/Chess/Engines/EngineDefs",
   "Engines": [
     { "Engine": { "ConfigName": "SFDef.json" } }
@@ -867,6 +869,9 @@ Examples:
   "FailedPuzzlesOutputFolder": "C:/Dev/Chess/Puzzles/Results"
 }
 ```
+
+`search` works with any UCI engine. `policy` and `value` read the network's own output and need
+an engine that reports it (Lc0, Ceres) - see [PuzzleConfig.md](PuzzleConfig.md).
 
 ### Minimal ERET Configuration
 
