@@ -8,7 +8,7 @@ open System.Text.Json.Serialization
 open EPDTypes
 
 /// Puzzle-related types for Lichess puzzles, ERET, and analysis configurations.
-/// Contains PuzzleConfig, EretConfig, EngineListConfig, and related types.
+/// Contains PuzzleConfig, EretConfig and related types.
 module PuzzleTypes =
 
     // Forward reference to EngineConfig - we need to reference the CoreTypes module
@@ -65,25 +65,6 @@ module PuzzleTypes =
               FailedPuzzlesOutputFolder = ""
             }
 
-
-    type EngineListConfig = {
-        EngineFolder: string
-        Engines: ResizeArray<PuzzleEngine>
-        Nodes: int
-        ChartLines: int
-        PolicyDistributionMinMaxFilter : string
-        CombineWhiteAndBlackMoves: bool
-    }
-      with
-        static member empty =
-             {
-              EngineFolder = ""
-              Engines = ResizeArray<PuzzleEngine>()
-              Nodes = 1
-              ChartLines = 4
-              PolicyDistributionMinMaxFilter = ""
-              CombineWhiteAndBlackMoves = true
-             }
 
     type PuzzleEngineConverter() =
           inherit JsonConverter<PuzzleEngine>()

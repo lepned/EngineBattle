@@ -256,12 +256,18 @@ typical combinations. Full descriptions in [EngineDefConfig.md](EngineDefConfig.
 The examples show only the fields that matter for each case; a def that loads also needs the required fields of every engine def (`TimeControlID`, `Version`, `Rating`, `LogoPath`, `NetworkPath`, `Options`), see [EngineDefConfig.md](EngineDefConfig.md).
 
 ### Standard engine
-Most engines need nothing beyond the protocol:
+Most engines need nothing beyond the protocol. A whole def, ready to copy:
 ```json
 {
   "Name": "MyEngine",
+  "Version": "1.0",
+  "TimeControlID": 1,
+  "Rating": 2500,
+  "LogoPath": "",
   "Protocol": "Winboard",
-  "Path": "C:/Engines/MyEngine.exe"
+  "Path": "C:/Engines/MyEngine.exe",
+  "NetworkPath": "",
+  "Options": {}
 }
 ```
 

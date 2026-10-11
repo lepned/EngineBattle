@@ -20,12 +20,14 @@
   "OrdoExePath": "",
   "Adjudication": {
     "DrawOption": {
+      "Enabled": true,
       "DrawMoveLength": 5,
       "MaxDrawScore": 0.30,
       "MinDrawMove": 20
     },
 
     "WinOption": {
+      "Enabled": true,
       "MinWinScore": 5.0,
       "WinMoveLength": 5,
       "MinWinMove": 0
@@ -58,6 +60,10 @@
     "UniquePerMatchOnly": false,
     "RandomOpenings": false,
     "AllowExtraPairsOnTie": false
+  },
+  "LadderOptions": {
+    "GamePairsPerMatch": 4,
+    "RandomOpenings": false
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

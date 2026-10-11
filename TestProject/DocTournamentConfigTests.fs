@@ -22,7 +22,7 @@ let private blockAfter (heading: string) (doc: string) =
     doc.Substring(bodyStart, doc.IndexOf("\n```", bodyStart) - bodyStart)
 
 /// The config with its machine-specific paths pointed at files in `dir`, loaded and validated.
-let private loadAndValidate (json: string) =
+let loadAndValidate (json: string) =
     let dir = Directory.CreateTempSubdirectory("eb_doc_").FullName
     try
         let node = JsonNode.Parse(json, Nullable(), Text.Json.JsonDocumentOptions(AllowTrailingCommas = true)).AsObject()

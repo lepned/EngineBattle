@@ -95,6 +95,7 @@
 		<Compile Include="TablebaseLookupTests.fs" />
 		<Compile Include="CliSettingsTests.fs" />
 		<Compile Include="CliTests.fs" />
+		<Compile Include="DocExamplesTests.fs" />
 		<Compile Include="PgnHeaderTests.fs" />
 		<Compile Include="EngineLogTests.fs" />
 		<Compile Include="UpdateAgentTests.fs" />
