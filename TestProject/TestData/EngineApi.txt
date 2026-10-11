@@ -107,7 +107,6 @@ type ChessLibrary.AnalysisEngine
   prop Path : System.String { get }
   prop SearchMoveSuffix : System.String { get }
   prop SearchMoves : Microsoft.FSharp.Collections.FSharpList<System.String> { get }
-  prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
   prop StartFailure : System.String { get }
   prop Started : System.Threading.Tasks.Task<System.Boolean> { get }
   prop UciIdName : System.String { get }

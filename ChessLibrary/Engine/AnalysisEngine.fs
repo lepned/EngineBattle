@@ -560,5 +560,4 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
   member _.Path = config.Path
   member _.BenchmarkLC0Cmd = EngineProtocol.Engine.createLC0BenchmarkString config
   member _.PrintUCI() = Engine.printConfigCommands name initCommands
-  member _.ShowCommands = fun () -> Engine.printConfigCommands name initCommands
   member _.CurrentPositionCommand() = lock boardLock (fun () -> moveBoard.PositionWithMovesFromGraph())
