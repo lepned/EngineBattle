@@ -28,7 +28,8 @@ ENGINES
 
 MATCH
     -rounds N                 rounds (default 2)
-    -games N                  games per round and pair: 1 or 2 (default 2, colours swapped)
+    -games N                  games per round and pair: 1 or 2 (default 2, colours swapped); a
+                              larger N is taken as -rounds N and -rounds as -games, as fastchess does
     -repeat                   the same as -games 2
     -concurrency N            games played at the same time (default 1; N <= 0 counts back from
                               the number of hardware threads)
