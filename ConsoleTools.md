@@ -46,14 +46,14 @@ The same rules hold for every command (`match` excepted - see below).
 - **Options** are `--kebab-case` and case-sensitive; only `-h` (help) and `-o` (output) have a
   short form. `--name value` and `--name=value` are the same, as are `-o FILE` and `-o=FILE`.
   `--` ends the options.
-- **Mistakes** are said, with a suggestion, and exit 2: `eb-cli pgn chek x.pgn` gives
-  `'pgn chek' is not a command (did you mean 'check'?)`.
+- **Mistakes** are said, with a suggestion, and exit 2: `eb-cli analyse` gives
+  `'analyse' is not a command (did you mean 'analyze'?)`.
 - **Help:** `eb-cli` or `eb-cli help` lists the commands; `eb-cli help <command>` or
   `<command> --help` shows one command's arguments, options with their defaults, and examples.
   The help is made from the same specification the parser reads, so it is always what the
   program does; the reference below is that help. `eb-cli version` (or `--version`) names the
   build, `eb-cli version --json` the same as JSON.
-- **Engines:** an engine def (`.json`, with its network, backend, arguments and options), an engine
+- **Engines:** an engine definition (`.json`, with its network, backend, arguments and options), an engine
   executable, or the name of a def in `engineDefsFolder` ([eb-cli.json](#eb-clijson)).
   `--uci NAME=VALUE` sets a UCI option (repeatable), `--args "..."` replaces the def's arguments.
 - **Positions:** a FEN - quoted, or its six fields as they come - or `startpos`.
@@ -83,7 +83,7 @@ The same rules hold for every command (`match` excepted - see below).
   | 2 | usage: an unknown command or option, a bad value, a missing input file, an invalid config |
   | 130 | interrupted with Ctrl+C |
 
-- **Long runs** (tournament, puzzle and ERET tests, book evaluation, values batch): the first
+- **Long runs** (tournament, puzzle and ERET tests, book evaluation, piece-values batch): the first
   Ctrl+C stops the run and keeps what it has (finished games, positions that passed); a second
   stops at once. A tournament goes on from the games already in its PGN.
 - **EB_DEBUG=1** prints the stack trace of an unexpected failure.
@@ -126,30 +126,31 @@ Engines and positions
   compare <engine1> <engine2>     Compare two engines on one or more positions
   position                        Facts about a position: status, legal moves, attacks, pins, insights
   tablebase <fen>                 Every move of a position from the Syzygy tables
-  values position <engine>        Piece values from an engine's evaluations in one position
-  values fit <positions>          Piece values fitted over many positions
-  values batch <template> <nets>  Piece values for a folder of nets
+  piece-values position <engine>  Piece values from an engine's evaluations in one position
+  piece-values fit <positions>    Piece values fitted over many positions
+  piece-values batch <tournament> <nets>
+                                  Piece values for a folder of nets
 
-Engine definitions
+Engine setup and testing
   engine check <engine>           Check that an engine follows the UCI protocol
-  engine new <engine>             Write an engine def, from the engine or from a def with another net
-  engine bench <config>           Benchmark an engine from a config
+  engine new <engine>             Create an engine definition (.json) from an executable, or copy one with another net
+  engine bench <config>           Measure engine speed (NPS) across option sets, from a benchmark config
 
 PGN files
-  pgn parse <pgn>                 Parse every game: counts, empty games, speed
+  pgn parse <pgn>                 Parse every game: counts, empty games, parse speed
   pgn validate <pgn>              Replay every game: illegal or ambiguous moves, non-standard SAN
   pgn strip <pgn>                 Write the games without comments, variations or NAGs
-  pgn summary <pgn>               How the games ended
+  pgn endings <pgn>               How the games ended: mate, adjudication, time, repetition...
   pgn elo <pgn>                   Ratings and results
   pgn speed <pgn>                 Speed statistics per engine
-  pgn deviations <pgn>            Where engines deviated from each other and from themselves
+  pgn deviations <pgn>            Positions reached in several games, and the moves each engine chose there
   pgn imbalance <pgn>             Results by material imbalance
 
 Puzzles, books, tournaments and tuning
-  book eval <book>                Keep the openings every engine scores in an eval window
-  puzzle run <config>             Run a puzzle test from a config
-  puzzle eret <config>            Run an ERET test from a config
-  puzzle trend                    Step curves per training arm from many puzzle runs
+  book eval <book>                Filter an opening book down to balanced openings, checked by engines
+  puzzle run <config>             Run a Lichess puzzle test from a config
+  puzzle eret <config>            Run an ERET test suite (EPD best-move positions) from a config
+  puzzle trend                    Puzzle scores across a net's training checkpoints, from saved runs
   tournament run <config>         Run a tournament from a config
   tournament validate <config>    Check a tournament config without running it
   tune run <config>               Tune engine parameters (Bayesian optimisation)
@@ -171,7 +172,7 @@ Usage: eb-cli analyze <engine> [<fen>] [options]
 Searches the position once: the engine's info lines as they come on stderr, the summary on stdout (eval and WDL from White's view). A checkmate or stalemate is reported without a search. With --json, only the result, on stdout.
 
 Arguments:
-  <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  <engine>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
   [<fen>]   a FEN (quoted, or its six fields as they come) or startpos (default startpos)
 
 Options:
@@ -200,31 +201,33 @@ Examples:
 ```text
 Compare two engines on one or more positions
 
-Usage: eb-cli compare <engine1> <engine2> [options]
+Usage: eb-cli compare <engine1> <engine2> [<fen>] [options]
 
-Both engines search each position with the same limit; a table of evals, speed and best moves, then a summary. The position is the start position unless --fen or --positions says otherwise.
+Both engines search each position with the same limit; a table of evals, speed and best moves, then a summary. The position is the start position, a FEN (with --moves played from it), or every position of --positions.
 
 Arguments:
-  <engine1>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
-  <engine2>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  <engine1>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
+  <engine2>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
+  [<fen>]    a FEN (quoted, or its six fields as they come) or startpos (default startpos)
 
 Options:
-      --fen "FEN"        One position (quoted)
-      --positions FILE   An EPD file: every position in it
+      --moves "MOVES"    Moves played from the position first, SAN or UCI ("e4 e5 Nf3" or "e2e4 e7e5")
+      --positions FILE   An EPD file: every position in it, instead of one
       --nodes N          Search this many nodes (default 1000000)
       --movetime MS      Search this many milliseconds
       --depth N          Search to this depth
       --uci1 NAME=VALUE  Set a UCI option of engine 1 (repeatable)
       --uci2 NAME=VALUE  Set a UCI option of engine 2 (repeatable)
-      --threshold PAWNS  Show only positions where the evals differ by at least this many pawns, e.g. 0.5 (the summary counts all)
+      --min-diff PAWNS   Show only positions where the evals differ by at least this many pawns, e.g. 0.5 (the summary counts all)
       --json             Print the result as JSON on stdout (everything else goes to stderr)
   At most one of --nodes, --movetime, --depth.
-  At most one of --fen, --positions.
 
 Examples:
   eb-cli compare lc0_a.json lc0_b.json --nodes 1000
       Speed and eval on the start position
-  eb-cli compare sf.json lc0.json --positions suite.epd --movetime 500 --threshold 0.5
+  eb-cli compare sf.json lc0.json "8/8/8/8/8/2k5/2Q5/K7 b - - 0 1" --movetime 500
+      One position
+  eb-cli compare sf.json lc0.json --positions suite.epd --movetime 500 --min-diff 0.5
       Only the positions where they disagree by half a pawn or more
 ```
 ### position
@@ -278,7 +281,7 @@ Arguments:
   <fen>  a FEN (quoted, or its six fields as they come) or startpos
 
 Options:
-      --syzygy DIR    Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
+      --syzygy DIRS   Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
       --ignore-clock  Read the halfmove clock as 0: what the position is worth if the clock starts now
       --json          Print the result as JSON on stdout (everything else goes to stderr)
 
@@ -288,17 +291,17 @@ Examples:
   eb-cli tablebase "8/8/8/8/8/2k5/8/K6Q w - - 99 1" --json
       A cursed win, as JSON
 ```
-### values position
+### piece-values position
 
 ```text
 Piece values from an engine's evaluations in one position
 
-Usage: eb-cli values position <engine> [<fen>] [options]
+Usage: eb-cli piece-values position <engine> [<fen>] [options]
 
 Removes each piece in turn and measures how much the eval drops, from the piece owner's view: a ranked table, the board, and the average per piece type. The default search is one node, a pure network eval.
 
 Arguments:
-  <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  <engine>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
   [<fen>]   a FEN (quoted, or its six fields as they come) or startpos (default startpos)
 
 Options:
@@ -311,17 +314,17 @@ Options:
   At most one of --nodes, --movetime, --depth.
 
 Examples:
-  eb-cli values position lc0.json "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+  eb-cli piece-values position lc0.json "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
       What each piece is worth to the net
-  eb-cli values position ceres.json --moves "e4 e5 Nf3 Nc6" --nodes 100
+  eb-cli piece-values position ceres.json --moves "e4 e5 Nf3 Nc6" --nodes 100
       After four moves, with a 100-node search
 ```
-### values fit
+### piece-values fit
 
 ```text
 Piece values fitted over many positions
 
-Usage: eb-cli values fit <positions> [options]
+Usage: eb-cli piece-values fit <positions> [options]
 
 Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments.
 
@@ -331,7 +334,7 @@ Arguments:
 Options:
       --from eval|outcome|pgn-eval
                                   What is fitted (default eval)
-      --engine ENGINE             an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+      --engine ENGINE             an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
       --sample N                  Use this many positions (default: all of an EPD, 500 of a PGN for eval, 20000 for outcome and pgn-eval)
       --nodes N                   Nodes per position for --from eval (default 1)
       --by-phase                  Also fit middlegame and endgame separately
@@ -341,30 +344,30 @@ Options:
       --args "..."                The engine's command-line arguments, instead of the def's
 
 Examples:
-  eb-cli values fit quiet.epd --engine lc0.json
+  eb-cli piece-values fit quiet.epd --engine lc0.json
       The net's piece values over an EPD
-  eb-cli values fit games.pgn --from outcome --by-phase
+  eb-cli piece-values fit games.pgn --from outcome --by-phase
       Values implied by the results
 ```
-### values batch
+### piece-values batch
 
 ```text
 Piece values for a folder of nets
 
-Usage: eb-cli values batch <template> <nets> [options]
+Usage: eb-cli piece-values batch <tournament> <nets> [options]
 
-For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The summary keeps the rows of nets the run did not reach. The first Ctrl+C stops the net being played without fitting it; the next run plays it on from its PGN.
+For every .onnx in the folder: self-play at the tournament's time control with the tournament's first engine and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The summary keeps the rows of nets the run did not reach. The first Ctrl+C stops the net being played without fitting it; the next run plays it on from its PGN.
 
 Arguments:
-  <template>  a tournament config whose first engine def is the template
-  <nets>      a folder of .onnx networks
+  <tournament>  a tournament config: its first engine plays with each net, at its time control
+  <nets>        a folder of .onnx networks
 
 Options:
       --rounds N     Self-play games per net (default 1000)
       --out-dir DIR  Where the PGNs and summary.csv go (default <nets>/pv_batch)
 
 Examples:
-  eb-cli values batch template.json C:/Nets/arm --rounds 400
+  eb-cli piece-values batch tournament.json C:/Nets/arm --rounds 400
       400 games per net
 ```
 ### engine check
@@ -377,7 +380,7 @@ Usage: eb-cli engine check <engine> [options]
 Start-up, options, positions, search limits, info lines, stop and isready, ponder, edge cases and quit, and how it behaves in EngineBattle's analysis pages. PASS, WARN, FAIL or SKIP per check, then a summary. Exit 1 when a check fails. Groups: startup, options, positions, limits, info, stop, ponder, edge, quit, analysis.
 
 Arguments:
-  <engine>  an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)
+  <engine>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
 
 Options:
       --nodes N         Nodes for the search checks (default 2000)
@@ -402,7 +405,7 @@ Examples:
 ### engine new
 
 ```text
-Write an engine def, from the engine or from a def with another net
+Create an engine definition (.json) from an executable, or copy one with another net
 
 Usage: eb-cli engine new <engine> [options]
 
@@ -415,7 +418,7 @@ Options:
       --out-dir DIR     The folder to write the def into (default: the working directory; a def's copy: the def's folder)
       --net FILE        The network file, set in the engine's own network option (with a def: required)
       --name NAME       The copy's name (with a def)
-      --syzygy DIR      Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
+      --syzygy DIRS     Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
       --base DEF        An existing def whose settings the new one starts from
       --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
       --dry-run         Print the def, write nothing
@@ -435,7 +438,7 @@ Examples:
 ### engine bench
 
 ```text
-Benchmark an engine from a config
+Measure engine speed (NPS) across option sets, from a benchmark config
 
 Usage: eb-cli engine bench <config>
 
@@ -451,7 +454,7 @@ Examples:
 ### pgn parse
 
 ```text
-Parse every game: counts, empty games, speed
+Parse every game: counts, empty games, parse speed
 
 Usage: eb-cli pgn parse <pgn> [options]
 
@@ -516,12 +519,12 @@ Examples:
   eb-cli pgn strip games.pgn -o clean.pgn --skip-empty --skip-invalid --force
       Only playable games, over clean.pgn
 ```
-### pgn summary
+### pgn endings
 
 ```text
-How the games ended
+How the games ended: mate, adjudication, time, repetition...
 
-Usage: eb-cli pgn summary <pgn>
+Usage: eb-cli pgn endings <pgn>
 
 Terminations (mate, adjudication, time, repetition, ...) per engine and overall.
 
@@ -529,7 +532,7 @@ Arguments:
   <pgn>  a PGN file
 
 Examples:
-  eb-cli pgn summary games.pgn
+  eb-cli pgn endings games.pgn
       How the games ended
 ```
 ### pgn elo
@@ -570,7 +573,7 @@ Examples:
 ### pgn deviations
 
 ```text
-Where engines deviated from each other and from themselves
+Positions reached in several games, and the moves each engine chose there
 
 Usage: eb-cli pgn deviations <pgn>
 
@@ -602,11 +605,11 @@ Examples:
 ### book eval
 
 ```text
-Keep the openings every engine scores in an eval window
+Filter an opening book down to balanced openings, checked by engines
 
 Usage: eb-cli book eval <book> [options]
 
-Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
+Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
 
 Arguments:
   <book>  an opening book (.pgn or .epd)
@@ -616,8 +619,8 @@ Options:
                                   An engine, with its own limit after a comma if it has one; at least one (repeatable)
       --nodes N                   The limit of every engine without its own (default 10000)
       --movetime MS               A time limit for every engine without its own, instead of nodes
-      --min PAWNS                 The smallest |eval| kept (default 0.8)
-      --max PAWNS                 The largest |eval| kept (default 1.0)
+      --min-eval PAWNS            The smallest |eval| kept (default 0.8)
+      --max-eval PAWNS            The largest |eval| kept (default 1.0)
       --max-diff PAWNS            The largest spread between the engines (default 0.4)
       --count N                   Only the first N openings
   -o, --out FILE                  The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)
@@ -627,13 +630,13 @@ Options:
 Examples:
   eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000
       Two engines, lc0 with its own limit
-  eb-cli book eval book.epd --engine sf.json --movetime 300 --min 0.3 --max 1.2 -o balanced.epd
+  eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd
       A wider window, to a file of its own
 ```
 ### puzzle run
 
 ```text
-Run a puzzle test from a config
+Run a Lichess puzzle test from a config
 
 Usage: eb-cli puzzle run <config> [options]
 
@@ -654,7 +657,7 @@ Examples:
 ### puzzle eret
 
 ```text
-Run an ERET test from a config
+Run an ERET test suite (EPD best-move positions) from a config
 
 Usage: eb-cli puzzle eret <config>
 
@@ -670,7 +673,7 @@ Examples:
 ### puzzle trend
 
 ```text
-Step curves per training arm from many puzzle runs
+Puzzle scores across a net's training checkpoints, from saved runs
 
 Usage: eb-cli puzzle trend [<folder>] [options]
 

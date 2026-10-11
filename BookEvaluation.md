@@ -70,14 +70,14 @@ The same run is `eb-cli book eval`, for books too large to babysit in the browse
 
 ```bash
 eb-cli book eval book.pgn --engine Stockfish19.json,movetime=300 --engine Lc0.json,nodes=2000
-eb-cli book eval book.epd --engine Stockfish19.json --min 0.3 --max 1.2 --count 1000 -o balanced.epd
+eb-cli book eval book.epd --engine Stockfish19.json --min-eval 0.3 --max-eval 1.2 --count 1000 -o balanced.epd
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--engine ENGINE[,nodes=N\|,movetime=MS]` | (required) | An engine (a def, an exe or a def name), with its own limit after a comma; repeat for more |
 | `--nodes N` / `--movetime MS` | 10000 nodes | The limit of every engine without its own |
-| `--min`, `--max`, `--max-diff` | 0.8, 1.0, 0.4 | The filter above, in pawns |
+| `--min-eval`, `--max-eval`, `--max-diff` | 0.8, 1.0, 0.4 | The filter above, in pawns |
 | `--count N` | the whole book | Openings to read from the book |
 | `-o, --out FILE` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file; an existing one needs `--force` |
 

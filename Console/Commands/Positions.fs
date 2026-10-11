@@ -142,37 +142,37 @@ let analyze (p: Parsed) =
 let compareSpec =
     { command [ "compare" ] Group "Compare two engines on one or more positions" with
         Description =
-          Some "Both engines search each position with the same limit; a table of evals, speed and best moves, then a summary. The position is the start position unless --fen or --positions says otherwise."
-        Args = [ arg "engine1" engineArgHelp; arg "engine2" engineArgHelp ]
+          Some "Both engines search each position with the same limit; a table of evals, speed and best moves, then a summary. The position is the start position, a FEN (with --moves played from it), or every position of --positions."
+        Args = [ arg "engine1" engineArgHelp; arg "engine2" engineArgHelp; fenArg false $"{fenHelp} (default startpos)" ]
         Options =
-          [ value "fen" "\"FEN\"" "One position (quoted)"
-            value "positions" "FILE" "An EPD file: every position in it" ]
+          [ moves
+            value "positions" "FILE" "An EPD file: every position in it, instead of one" ]
           @ limitOptions 1_000_000
           @ [ value "uci1" "NAME=VALUE" "Set a UCI option of engine 1" |> repeatable
               value "uci2" "NAME=VALUE" "Set a UCI option of engine 2" |> repeatable
-              value "threshold" "PAWNS" "Show only positions where the evals differ by at least this many pawns, e.g. 0.5 (the summary counts all)"
+              value "min-diff" "PAWNS" "Show only positions where the evals differ by at least this many pawns, e.g. 0.5 (the summary counts all)"
               json ]
-        OneOf = [ limitOneOf; [ "fen"; "positions" ] ]
+        OneOf = [ limitOneOf ]
         Examples =
           [ "eb-cli compare lc0_a.json lc0_b.json --nodes 1000", "Speed and eval on the start position"
-            "eb-cli compare sf.json lc0.json --positions suite.epd --movetime 500 --threshold 0.5", "Only the positions where they disagree by half a pawn or more" ] }
+            "eb-cli compare sf.json lc0.json \"8/8/8/8/8/2k5/2Q5/K7 b - - 0 1\" --movetime 500", "One position"
+            "eb-cli compare sf.json lc0.json --positions suite.epd --movetime 500 --min-diff 0.5", "Only the positions where they disagree by half a pawn or more" ] }
 
 let compare (p: Parsed) =
     let config1 = engine p "engine1" "uci1"
     let config2 = engine p "engine2" "uci2"
     let positions =
-        match valueOf p "positions", valueOf p "fen" with
-        | Some file, _ ->
+        match valueOf p "positions" with
+        | Some file ->
+            if (argOf p "fen").IsSome || (valueOf p "moves").IsSome then
+                raise (Usage "--positions searches the file's positions: give it without a FEN or --moves")
             ChessLibrary.EPDExtractor.readEPDs (inputFile "positions file" file) |> Seq.map (fun e -> e.FEN) |> Array.ofSeq
-        | None, Some f ->
-            let v = ChessLibrary.BoardUtils.validateFen f
-            if f.Equals("startpos", StringComparison.OrdinalIgnoreCase) then [| startFen |]
-            elif v.IsValid then [| ChessLibrary.BoardUtils.normalizeFen f |]
-            else raise (Usage $"""--fen: not a valid FEN: {String.Join("; ", v.Errors)}""")
-        | None, None -> [| startFen |]
+        | None ->
+            let start = fen p "fen"
+            [| after start (movesFrom p start) |]
     if positions.Length = 0 then raise (Usage "the positions file has no positions")
     let lim = limit p 1_000_000
-    let threshold = floatOf p "threshold"
+    let threshold = floatOf p "min-diff"
     let jsonMode = has p "json"
     withResultsOnStdout (fun () ->
     let e1 = Engines.start config1

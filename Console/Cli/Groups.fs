@@ -44,7 +44,7 @@ let outputFile (p: Parsed) (path: string) =
 
 let uci = value "uci" "NAME=VALUE" "Set a UCI option of the engine" |> repeatable
 let args = value "args" "\"...\"" "The engine's command-line arguments, instead of the def's"
-let engineArgHelp = "an engine def (.json), an engine executable, or the name of a def in engineDefsFolder (eb-cli.json)"
+let engineArgHelp = "an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)"
 
 /// NAME=VALUE pairs; the value may itself contain '=' and spaces.
 let uciPairs (option: string) (values: string list) =
@@ -148,7 +148,7 @@ let after (fenText: string) (uciMoves: string list) =
 
 // ---------------------------------------------------------------- tablebases
 
-let syzygy = value "syzygy" "DIR" "Syzygy folders (several separated by ';' on Windows, ':' elsewhere)"
+let syzygy = value "syzygy" "DIRS" "Syzygy folders (several separated by ';' on Windows, ':' elsewhere)"
 
 /// eb-cli's tablebase folder for a tournament that turns tablebase adjudication on without a
 /// folder: EB_SYZYGY_PATH, then syzygyPath in eb-cli.json. A settings file that does not parse is

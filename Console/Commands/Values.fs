@@ -1,5 +1,5 @@
-/// The piece-value commands: contextual values in one position (values position), a fit over many
-/// positions (values fit), and results by material imbalance (pgn imbalance).
+/// The piece-value commands: contextual values in one position (piece-values position), a fit over many
+/// positions (piece-values fit), and results by material imbalance (pgn imbalance).
 module Commands.Values
 
 open System
@@ -601,7 +601,7 @@ let pvCollectFensFromPgn (path: string) (sample: int) : string[] =
         let stride = float arr.Length / float sample
         [| for i in 0 .. sample - 1 -> arr.[int (float i * stride)] |]
 
-/// What `values fit` works from.
+/// What `piece-values fit` works from.
 type FitParams =
     { /// The engine whose evals are fitted (--from eval only).
       Engine: TypesDef.CoreTypes.EngineConfig option
@@ -869,15 +869,15 @@ open Cli.Parse
 open Cli.App
 
 let positionSpec =
-    { command [ "values"; "position" ] "Engines and positions" "Piece values from an engine's evaluations in one position" with
+    { command [ "piece-values"; "position" ] "Engines and positions" "Piece values from an engine's evaluations in one position" with
         Description =
           Some "Removes each piece in turn and measures how much the eval drops, from the piece owner's view: a ranked table, the board, and the average per piece type. The default search is one node, a pure network eval."
         Args = [ arg "engine" engineArgHelp; fenArg false $"{fenHelp} (default startpos)" ]
         Options = [ moves ] @ limitOptions 1 @ [ uci; args ]
         OneOf = [ limitOneOf ]
         Examples =
-          [ "eb-cli values position lc0.json \"r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3\"", "What each piece is worth to the net"
-            "eb-cli values position ceres.json --moves \"e4 e5 Nf3 Nc6\" --nodes 100", "After four moves, with a 100-node search" ] }
+          [ "eb-cli piece-values position lc0.json \"r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3\"", "What each piece is worth to the net"
+            "eb-cli piece-values position ceres.json --moves \"e4 e5 Nf3 Nc6\" --nodes 100", "After four moves, with a 100-node search" ] }
 
 let position (p: Parsed) =
     let config = engine p "engine" "uci"
@@ -886,7 +886,7 @@ let position (p: Parsed) =
     Cli.Output.ExitOk
 
 let fitSpec =
-    { command [ "values"; "fit" ] "Engines and positions" "Piece values fitted over many positions" with
+    { command [ "piece-values"; "fit" ] "Engines and positions" "Piece values fitted over many positions" with
         Description =
           Some "Regresses a target against the material imbalance of many positions; the coefficients are the implied piece values. --from eval fits the engine's evaluations (needs --engine), outcome the games' results, pgn-eval the evals in the PGN's comments."
         Args = [ arg "positions" "an EPD or PGN file" ]
@@ -901,8 +901,8 @@ let fitSpec =
             uci
             args ]
         Examples =
-          [ "eb-cli values fit quiet.epd --engine lc0.json", "The net's piece values over an EPD"
-            "eb-cli values fit games.pgn --from outcome --by-phase", "Values implied by the results" ] }
+          [ "eb-cli piece-values fit quiet.epd --engine lc0.json", "The net's piece values over an EPD"
+            "eb-cli piece-values fit games.pgn --from outcome --by-phase", "Values implied by the results" ] }
 
 let fit (p: Parsed) =
     let path = inputFile "positions file" (argOf p "positions").Value

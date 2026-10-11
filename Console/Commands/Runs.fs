@@ -1,5 +1,5 @@
 /// The long runs: puzzle run / eret / trend, book eval, tournament run / validate, tune run /
-/// dashboard, values batch. Ctrl+C: the first press stops the run and keeps what it has, the second
+/// dashboard, piece-values batch. Ctrl+C: the first press stops the run and keeps what it has, the second
 /// stops at once; either way the exit code is 130 (Cli.Output.onCtrlC).
 module Commands.Runs
 
@@ -967,7 +967,7 @@ let pvPgnEvalEndgame (pgn: string) : (float * float * float * float) option =
         if abs b.[1] < 1e-9 then None
         else Some (b.[2] / b.[1], b.[3] / b.[1], b.[4] / b.[1], b.[5] / b.[1])
 
-/// `values batch`: what it works on - a template tournament and a folder of nets, both existing.
+/// `piece-values batch`: what it works on - a template tournament and a folder of nets, both existing.
 type BatchParams =
     { Template: string
       NetFolder: string
@@ -1003,7 +1003,7 @@ let runPvBatch (p: BatchParams) (ct: CancellationToken) =
             use host = createHost()
             host.Start()
             let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
-            let logger = loggerFactory.CreateLogger("EngineBattle values batch")
+            let logger = loggerFactory.CreateLogger("EngineBattle piece-values batch")
             let cloneEngine (name: string) (netPath: string) =
                 let opts = System.Collections.Generic.Dictionary<string, obj>(templateEngine.Options)
                 opts.["Network"] <- box netPath
@@ -1091,7 +1091,7 @@ let runBookEval (p: BookParams) (ct: CancellationToken) =
         p.Engines |> List.map (fun e -> ({ Config = e.Config; Limit = defaultArg e.Limit p.DefaultLimit } : ChessLibrary.BookEvaluation.BookEngine))
     let filter =
         try ChessLibrary.BookEvaluation.parseFilter p.MinEval p.MaxEval p.MaxDiff engines.Length
-        with :? FormatException as e -> raise (Cli.Parse.Usage $"--min, --max, --max-diff: {e.Message}")
+        with :? FormatException as e -> raise (Cli.Parse.Usage $"--min-eval, --max-eval, --max-diff: {e.Message}")
     let label = ChessLibrary.BookEvaluation.engineLabel engines
     let take (xs: seq<'a>) = match p.Count with Some n -> Seq.truncate n xs | None -> xs
     printfn "Book evaluation: %s" p.Input
@@ -1139,7 +1139,7 @@ let Group = "Puzzles, books, tournaments and tuning"
 let private configArg what = arg "config" what
 
 let puzzleRunSpec =
-    { command [ "puzzle"; "run" ] Group "Run a puzzle test from a config" with
+    { command [ "puzzle"; "run" ] Group "Run a Lichess puzzle test from a config" with
         Description =
           Some "Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored."
         Args = [ configArg "a puzzle config (JSON)" ]
@@ -1153,7 +1153,7 @@ let puzzleRun (p: Parsed) =
     runPuzzles path (has p "json") (Cli.Output.onCtrlC ())
 
 let puzzleEretSpec =
-    { command [ "puzzle"; "eret" ] Group "Run an ERET test from a config" with
+    { command [ "puzzle"; "eret" ] Group "Run an ERET test suite (EPD best-move positions) from a config" with
         Description = Some "Runs the ERET test of an ERET config (EretPuzzles.md); the failed puzzles and the summary go to its FailedPuzzlesOutputFolder. Exit 1 when an engine failed."
         Args = [ configArg "an ERET config (JSON)" ]
         Examples = [ "eb-cli puzzle eret EretConfig.json", "The test" ] }
@@ -1162,7 +1162,7 @@ let puzzleEret (p: Parsed) =
     runEretTest (Cli.Groups.inputFile "ERET config" (argOf p "config").Value) (Cli.Output.onCtrlC ())
 
 let puzzleTrendSpec =
-    { command [ "puzzle"; "trend" ] Group "Step curves per training arm from many puzzle runs" with
+    { command [ "puzzle"; "trend" ] Group "Puzzle scores across a net's training checkpoints, from saved runs" with
         Description =
           Some "Reads the LichessSummary_<stamp>.json of every puzzle run in the folder and lines each arm's checkpoints up by training step. Series with fewer steps than --min-steps are hidden (most nets are one-offs). The folder: the argument, else puzzleResultsFolder in eb-cli.json."
         Args = [ optionalArg "folder" "the folder of puzzle results" ]
@@ -1217,16 +1217,16 @@ let puzzleTrend (p: Parsed) =
     Cli.Output.ExitOk
 
 let bookEvalSpec =
-    { command [ "book"; "eval" ] Group "Keep the openings every engine scores in an eval window" with
+    { command [ "book"; "eval" ] Group "Filter an opening book down to balanced openings, checked by engines" with
         Description =
-          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min..--max (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
+          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
         Args = [ arg "book" "an opening book (.pgn or .epd)" ]
         Options =
           [ value "engine" "ENGINE[,nodes=N|,movetime=MS]" "An engine, with its own limit after a comma if it has one; at least one" |> repeatable
             value "nodes" "N" "The limit of every engine without its own" |> withDefault "10000"
             value "movetime" "MS" "A time limit for every engine without its own, instead of nodes"
-            value "min" "PAWNS" "The smallest |eval| kept" |> withDefault "0.8"
-            value "max" "PAWNS" "The largest |eval| kept" |> withDefault "1.0"
+            value "min-eval" "PAWNS" "The smallest |eval| kept" |> withDefault "0.8"
+            value "max-eval" "PAWNS" "The largest |eval| kept" |> withDefault "1.0"
             value "max-diff" "PAWNS" "The largest spread between the engines" |> withDefault "0.4"
             value "count" "N" "Only the first N openings"
             out "The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)"
@@ -1234,7 +1234,7 @@ let bookEvalSpec =
         OneOf = [ [ "nodes"; "movetime" ] ]
         Examples =
           [ "eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000", "Two engines, lc0 with its own limit"
-            "eb-cli book eval book.epd --engine sf.json --movetime 300 --min 0.3 --max 1.2 -o balanced.epd", "A wider window, to a file of its own" ] }
+            "eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd", "A wider window, to a file of its own" ] }
 
 let bookEval (p: Parsed) =
     let input = Cli.Groups.inputFile "book" (argOf p "book").Value
@@ -1270,8 +1270,8 @@ let bookEval (p: Parsed) =
         { Input = input
           Engines = engines
           DefaultLimit = defaultLimit
-          MinEval = defaultArg (valueOf p "min") "0.8"
-          MaxEval = defaultArg (valueOf p "max") "1.0"
+          MinEval = defaultArg (valueOf p "min-eval") "0.8"
+          MaxEval = defaultArg (valueOf p "max-eval") "1.0"
           MaxDiff = defaultArg (valueOf p "max-diff") "0.4"
           Count = intOf p "count"
           Out = out }
@@ -1383,17 +1383,17 @@ let tuneDashboard (p: Parsed) =
     Cli.Output.ExitOk
 
 let valuesBatchSpec =
-    { command [ "values"; "batch" ] Commands.Positions.Group "Piece values for a folder of nets" with
+    { command [ "piece-values"; "batch" ] Commands.Positions.Group "Piece values for a folder of nets" with
         Description =
-          Some "For every .onnx in the folder: self-play at the template tournament's time control with the template's first engine def and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The summary keeps the rows of nets the run did not reach. The first Ctrl+C stops the net being played without fitting it; the next run plays it on from its PGN."
-        Args = [ arg "template" "a tournament config whose first engine def is the template"; arg "nets" "a folder of .onnx networks" ]
+          Some "For every .onnx in the folder: self-play at the tournament's time control with the tournament's first engine and that net, then the outcome and pgn-eval endgame fits; summary.csv lists them. A net whose PGN already has the rounds is not played again. The summary keeps the rows of nets the run did not reach. The first Ctrl+C stops the net being played without fitting it; the next run plays it on from its PGN."
+        Args = [ arg "tournament" "a tournament config: its first engine plays with each net, at its time control"; arg "nets" "a folder of .onnx networks" ]
         Options =
           [ value "rounds" "N" "Self-play games per net" |> withDefault "1000"
             value "out-dir" "DIR" "Where the PGNs and summary.csv go (default <nets>/pv_batch)" ]
-        Examples = [ "eb-cli values batch template.json C:/Nets/arm --rounds 400", "400 games per net" ] }
+        Examples = [ "eb-cli piece-values batch tournament.json C:/Nets/arm --rounds 400", "400 games per net" ] }
 
 let valuesBatch (p: Parsed) =
-    let template = Cli.Groups.inputFile "template tournament" (argOf p "template").Value
+    let template = Cli.Groups.inputFile "tournament config" (argOf p "tournament").Value
     let netsGiven = (argOf p "nets").Value
     let nets = Cli.Groups.fullPath netsGiven
     if not (Directory.Exists nets) then raise (Usage $"net folder not found: {netsGiven}")

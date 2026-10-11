@@ -4,25 +4,25 @@ Tools for asking *"what is each piece worth to this network?"* — both contextu
 position) and globally (the net's implied piece values). Four eb-cli commands
 (`eb-cli help <command>` lists every option; ConsoleTools.md has them all):
 
-- `values position` — **contextual** values in a single position (leave-one-out).
-- `values fit` — **global** values via regression over many positions.
-- `values batch` — **batch** the global fit over a whole folder of nets (self-play + regress each).
+- `piece-values position` — **contextual** values in a single position (leave-one-out).
+- `piece-values fit` — **global** values via regression over many positions.
+- `piece-values batch` — **batch** the global fit over a whole folder of nets (self-play + regress each).
 - `pgn imbalance` — a **material-imbalance report** from a PGN, grouped by absolute material signature.
 
 There are three distinct notions of "a net's piece value", each with its own tool:
 
 | Notion | Question it answers | Command |
 |---|---|---|
-| **Contextual** | What is *this* piece doing *here*? | `values position` |
-| **Eval-function** | What does the net's *evaluation* encode? | `values fit … --from pgn-eval` (or `--from eval`) |
-| **Revealed-preference** | What do the net's *results* imply? | `values fit … --from outcome` |
+| **Contextual** | What is *this* piece doing *here*? | `piece-values position` |
+| **Eval-function** | What does the net's *evaluation* encode? | `piece-values fit … --from pgn-eval` (or `--from eval`) |
+| **Revealed-preference** | What do the net's *results* imply? | `piece-values fit … --from outcome` |
 
 ---
 
-## 1. Contextual values — `values position`
+## 1. Contextual values — `piece-values position`
 
 ```
-eb-cli values position <engine> [<fen>] [--moves "e4 e5 …"] [--nodes N|--movetime MS|--depth N] [--uci NAME=VALUE]...
+eb-cli piece-values position <engine> [<fen>] [--moves "e4 e5 …"] [--nodes N|--movetime MS|--depth N] [--uci NAME=VALUE]...
 ```
 
 For every non-king piece: evaluate the position, remove that piece, re-evaluate, and
@@ -42,10 +42,10 @@ game is effectively over).
 
 ---
 
-## 2. Global values — `values fit`
+## 2. Global values — `piece-values fit`
 
 ```
-eb-cli values fit <positions.epd|.pgn> [--from eval|outcome|pgn-eval] [--sample N] [--by-phase]
+eb-cli piece-values fit <positions.epd|.pgn> [--from eval|outcome|pgn-eval] [--sample N] [--by-phase]
                   [--engine E] [--nodes N] [--uci NAME=VALUE]...     (--from eval)
                   [--bootstrap N]                                      (outcome, pgn-eval)
                   [--player NAME]                                      (pgn-eval)
@@ -136,9 +136,9 @@ policy moves (no search) are weak, so the net hangs pawns/minors/rooks without c
 and games are decisive. This is cheap to generate and is closest in spirit to AlphaZero's
 self-play (their signal came from self-play *diversity*, not strength). Generate a corpus
 with a normal EB tournament at `NodeLimit=true, Nodes=1` over a varied opening book, then
-point `values fit` at the resulting PGN.
+point `piece-values fit` at the resulting PGN.
 
-`values fit` prints per-feature **material variance** and warns when it is near zero, so a
+`piece-values fit` prints per-feature **material variance** and warns when it is near zero, so a
 degenerate corpus is obvious rather than silently producing garbage.
 
 ---
@@ -170,10 +170,10 @@ tighten it).
 
 ---
 
-## 3. Batch over a folder of nets — `values batch`
+## 3. Batch over a folder of nets — `piece-values batch`
 
 ```
-eb-cli values batch <templateTournament.json> <netFolder> [--rounds N] [--out-dir DIR]
+eb-cli piece-values batch <tournament.json> <netFolder> [--rounds N] [--out-dir DIR]
 ```
 
 Runs the global fit end-to-end for **every `*.onnx` in `<netFolder>`**, in one process. For
@@ -185,7 +185,7 @@ and `pgneval` regressions and writes its rows to `summary.csv`
 net being played, which the next run plays on from its PGN) and **fault-tolerant** (a failing
 net is logged and the batch continues; the exit code is 1 when any net failed).
 
-`values batch` does not set the search limit itself: the self-play uses the template tournament's
+`piece-values batch` does not set the search limit itself: the self-play uses the template tournament's
 time control. Only the engines, mode (RR), rounds, PGN path, parallelism and deviation
 prevention are overridden (plus console-only output, no minimum move time and no delay
 between games). For the `nodes=1` self-play described above, give the template a node limit

@@ -1,4 +1,4 @@
-/// pgn parse / validate / strip / summary / elo / speed / deviations: tools that read a PGN file.
+/// pgn parse / validate / strip / endings / elo / speed / deviations: tools that read a PGN file.
 /// Files are streamed, never held whole; progress goes to stderr every 100,000 games.
 module Commands.Pgn
 
@@ -53,7 +53,7 @@ let countEventLines (path: string) =
 // ---------------------------------------------------------------- parse
 
 let parseSpec =
-    { command [ "pgn"; "parse" ] Group "Parse every game: counts, empty games, speed" with
+    { command [ "pgn"; "parse" ] Group "Parse every game: counts, empty games, parse speed" with
         Description =
           Some "A health check of the parser on a file: games, plies, games without moves or a result, speed and memory. It replays no moves (pgn validate does). Exit 1 when a game could not be read."
         Args = [ pgnSubject ]
@@ -309,10 +309,10 @@ let strip (p: Parsed) =
 // ---------------------------------------------------------------- summary, elo, speed, deviations
 
 let summarySpec =
-    { command [ "pgn"; "summary" ] Group "How the games ended" with
+    { command [ "pgn"; "endings" ] Group "How the games ended: mate, adjudication, time, repetition..." with
         Description = Some "Terminations (mate, adjudication, time, repetition, ...) per engine and overall."
         Args = [ pgnSubject ]
-        Examples = [ "eb-cli pgn summary games.pgn", "How the games ended" ] }
+        Examples = [ "eb-cli pgn endings games.pgn", "How the games ended" ] }
 
 let summary (p: Parsed) =
     Test.ParsingTests.pgnTerminationSummary (pgnArg p) 2 4.0 (3.0, 0.5) |> ignore
@@ -348,7 +348,7 @@ let speed (p: Parsed) =
     ExitOk
 
 let deviationsSpec =
-    { command [ "pgn"; "deviations" ] Group "Where engines deviated from each other and from themselves" with
+    { command [ "pgn"; "deviations" ] Group "Positions reached in several games, and the moves each engine chose there" with
         Description = Some "The position-keyed view of the deviation page: positions reached more than once and the moves played in them, with the opening coverage."
         Args = [ pgnSubject ]
         Examples = [ "eb-cli pgn deviations gauntlet.pgn", "Self and cross deviations" ] }

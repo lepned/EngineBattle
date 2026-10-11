@@ -10,7 +10,7 @@ open Cli.Groups
 open Cli.App
 
 [<Literal>]
-let Group = "Engine definitions"
+let Group = "Engine setup and testing"
 
 /// A folder that must exist (an output folder is not made up silently).
 let private existingFolder (option: string) (path: string) =
@@ -77,7 +77,7 @@ let check (p: Parsed) =
 // ---------------------------------------------------------------- new
 
 let newSpec =
-    { command [ "engine"; "new" ] Group "Write an engine def, from the engine or from a def with another net" with
+    { command [ "engine"; "new" ] Group "Create an engine definition (.json) from an executable, or copy one with another net" with
         Description =
           Some "An executable: starts the engine, reads its id and options, and writes <name>.json (the name without spaces) with every option at its default, overridden by --uci, --net and --syzygy - the GUI's Engine creator. A def (.json): writes a copy with the network --net (the same engine and settings), named after the net, or with the next step for a training checkpoint's def (<prefix>_<step>M[_ema].json); --name names it otherwise. A def that exists is not written over without --force."
         Args = [ arg "engine" "the engine executable, or an existing def (.json)" ]
@@ -168,7 +168,7 @@ let newDef (p: Parsed) =
 // ---------------------------------------------------------------- bench
 
 let benchSpec =
-    { command [ "engine"; "bench" ] Group "Benchmark an engine from a config" with
+    { command [ "engine"; "bench" ] Group "Measure engine speed (NPS) across option sets, from a benchmark config" with
         Description = Some "Runs the benchmark config (engine, option sets, positions, duration; see Console/ConsoleBenchmark.md) and writes the summary to its SummaryOutputPath, or logs/benchmark-summary-<time>.txt."
         Args = [ arg "config" "a benchmark config (JSON)" ]
         Examples = [ "eb-cli engine bench benchmark-options.json", "Run the benchmark" ] }

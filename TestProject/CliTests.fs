@@ -140,7 +140,7 @@ let ``engine, limit and position options read the same in every command`` () =
   Assert.Equal<(string * string) list>([ "Threads", "8"; "Hash", "64" ], Cli.Groups.uciPairs "uci" (valuesOf p "uci"))
   Assert.Equal<string list>([ "e2e4"; "e7e5" ], Cli.Groups.movesFrom p (Cli.Groups.fen p "fen"))
   // the default limit is the command's own
-  Assert.Equal(Cli.Groups.Nodes 1, Cli.Groups.limit (runReal [ "values"; "position"; "sf.json" ]) 1)
+  Assert.Equal(Cli.Groups.Nodes 1, Cli.Groups.limit (runReal [ "piece-values"; "position"; "sf.json" ]) 1)
   // two limits, a bad number, a bad option value, illegal moves: usage errors that say so
   match parse real [ "analyze"; "sf.json"; "--nodes"; "5"; "--depth"; "3" ] with
   | UsageError(message, _) -> Assert.Contains("give only one of", message)
@@ -195,5 +195,5 @@ let ``mistakes in position, values fit and gui are usage errors`` () =
   Assert.Contains("is a page name", usageOf [ "gui"; "5100" ] Commands.Gui.run)
   let epd = System.IO.Path.GetTempFileName()
   try
-    Assert.Contains("does not use --engine", usageOf [ "values"; "fit"; epd; "--from"; "outcome"; "--engine"; "sf" ] Commands.Values.fit)
+    Assert.Contains("does not use --engine", usageOf [ "piece-values"; "fit"; epd; "--from"; "outcome"; "--engine"; "sf" ] Commands.Values.fit)
   finally System.IO.File.Delete epd
