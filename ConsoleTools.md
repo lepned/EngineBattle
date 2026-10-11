@@ -413,14 +413,14 @@ Arguments:
   <exe>  the engine executable
 
 Options:
-      --out-dir DIR      The folder to write the def into (default: the working directory)
-      --net FILE         The network file, set in the engine's own network option
-      --syzygy DIR       Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
-      --base DEF         An existing def whose settings the new one starts from
-      --uci NAME=VALUE   Set a UCI option of the engine (repeatable)
-      --dry-run          Print the def, write nothing
-      --force            Write over a file that exists
-      --timeout SECONDS  How long the engine has to answer (default 15)
+      --out-dir DIR     The folder to write the def into (default: the working directory)
+      --net FILE        The network file, set in the engine's own network option
+      --syzygy DIR      Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
+      --base DEF        An existing def whose settings the new one starts from
+      --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
+      --dry-run         Print the def, write nothing
+      --force           Write over a file that exists
+      --timeout MS      How long the engine has to answer (default 15000)
 
 Examples:
   eb-cli engine new C:/Engines/sf/stockfish.exe --uci Threads=8 --uci Hash=4096 --out-dir defs

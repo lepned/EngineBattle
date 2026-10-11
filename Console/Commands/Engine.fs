@@ -89,7 +89,7 @@ let newSpec =
             uci
             switch "dry-run" "Print the def, write nothing"
             force
-            value "timeout" "SECONDS" "How long the engine has to answer" |> withDefault "15" ]
+            value "timeout" "MS" "How long the engine has to answer" |> withDefault "15000" ]
         Examples =
           [ "eb-cli engine new C:/Engines/sf/stockfish.exe --uci Threads=8 --uci Hash=4096 --out-dir defs", "A Stockfish def with 8 threads"
             "eb-cli engine new lc0.exe --net BT4.onnx --dry-run", "Show the def without writing it" ] }
@@ -99,9 +99,10 @@ let newDef (p: Parsed) =
     let optional name what = valueOf p name |> Option.map (inputFile what)
     let timeout =
         match intOf p "timeout" with
-        | Some s when s < 1 -> raise (Usage $"--timeout must be at least 1 second, got {s}")
-        | Some s -> s
-        | None -> 15
+        // it was in seconds once
+        | Some ms when ms < 100 -> raise (Usage $"--timeout is in milliseconds: {ms} seconds is {ms * 1000}")
+        | Some ms -> ms
+        | None -> 15000
     let folder = valueOf p "out-dir" |> Option.map (existingFolder "out-dir") |> Option.defaultValue (Directory.GetCurrentDirectory())
     let wishes =
         { ChessLibrary.EngineProbe.Wishes.Empty with
@@ -109,7 +110,7 @@ let newDef (p: Parsed) =
             Tablebases = valueOf p "syzygy" |> Option.map fullPaths
             Base = optional "base" "base def" |> Option.map ChessLibrary.Configuration.JSON.readSingleEngineConfig
             Overrides = uciPairs "uci" (valuesOf p "uci") }
-    match ChessLibrary.EngineProbe.probe exe (timeout * 1000) with
+    match ChessLibrary.EngineProbe.probe exe timeout with
     | Error message ->
         error message
         ExitFailed
