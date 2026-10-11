@@ -309,9 +309,6 @@ module EngineTypes =
         let floatParser line regex = parseRegex 0.0 float line regex
         let npsParser line regex = parseRegex 0L convertToNps line regex
 
-        /// The regex implementation. Kept for two jobs: every comment the fast parser below is not
-        /// sure it reads the same way goes here (and every format but EB's own), and it is the
-        /// reference the fast parser is tested against (AnnotationParserTests).
         /// The first move's comment without EB's tournament header in front of it. The header
         /// ({TournamentOptions: ...}, written before move 1) reaches the first move's comment, and
         /// its Seed=0, Rounds=20, Threads=4 would be read as d=, s=, n= of the move. It ends at its
@@ -341,6 +338,9 @@ module EngineTypes =
               else moreGroups <- false
             line.Substring(min i line.Length).Trim()
 
+        /// The regex implementation. Kept for two jobs: every comment the fast parser below is not
+        /// sure it reads the same way goes here (and every format but EB's own), and it is the
+        /// reference the fast parser is tested against (AnnotationParserTests).
         let legacyGetEngineStatData player isBlack (line: string) =
           let line = withoutTournamentHeader line
           if String.IsNullOrEmpty line then

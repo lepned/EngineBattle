@@ -926,7 +926,9 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
   let finished = ResizeArray<TypesDef.CoreTypes.Result>()
   let printUpdate update =
       match update with
-      | EndOfGame result -> lock finished (fun () -> finished.Add result)
+      // a game cut off by Ctrl+C is not in the PGN
+      | EndOfGame result when result.Reason <> ChessLibrary.MiscTypes.Cancel && result.Reason <> ChessLibrary.MiscTypes.NotStarted ->
+          lock finished (fun () -> finished.Add result)
       | _ -> ()
       updateProcessor.Post(update)
 
