@@ -28,7 +28,10 @@ let loadAndValidate (json: string) =
         let node = JsonNode.Parse(json, Nullable(), Text.Json.JsonDocumentOptions(AllowTrailingCommas = true)).AsObject()
         let book = Path.Combine(dir, "book.pgn")
         File.WriteAllText(book, "[Event \"x\"]\n[Result \"*\"]\n\n1. e4 e5 *\n")
-        node.["Opening"].["OpeningsPath"] <- JsonValue.Create book
+        // a config without an Opening block plays from the start position
+        match node.["Opening"] with
+        | :? JsonObject as opening -> opening.["OpeningsPath"] <- JsonValue.Create book
+        | _ -> ()
         node.["PgnOutPath"] <- JsonValue.Create(Path.Combine(dir, "out.pgn"))
         node.["EngineSetup"].["EngineDefFolder"] <- JsonValue.Create dir
         // every def the config names, as a small one for an executable that exists
@@ -39,7 +42,9 @@ let loadAndValidate (json: string) =
                             "Protocol": "UCI", "ContemptEnabled": false, "NegativeContemptAllowed": false,
                             "Path": %s, "NetworkPath": "", "Args": "", "Options": {} }"""
                     (Path.GetFileNameWithoutExtension name) (Text.Json.JsonSerializer.Serialize Environment.ProcessPath)
-            File.WriteAllText(Path.Combine(dir, name), engine)
+            let file = Path.Combine(dir, name)
+            Directory.CreateDirectory(Path.GetDirectoryName file) |> ignore   // a def in a subfolder
+            File.WriteAllText(file, engine)
         match node.["Adjudication"] with
         | :? JsonObject as adj when (adj.["TBAdj"] :? JsonObject) ->
             let tb = Directory.CreateDirectory(Path.Combine(dir, "tb")).FullName

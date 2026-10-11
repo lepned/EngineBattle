@@ -60,6 +60,25 @@ let ``the engine part of a game's comment names the exe and the version, and wri
     Assert.DoesNotContain("Version=", { config with Version = "Version" }.Information 50.0)
 
 [<Fact>]
+let ``the first move's engine data is read past EB's tournament header`` () =
+    let header =
+        "TournamentOptions: EB=1.10.1 (abc); Mode=RR; Rounds=20; Seed=7; Parallel=1; Adjudication: -draw off -resign off; " +
+        "WhiteEngineOptions: TimeControl: 3.0K nodes; Exe=sf.exe; Version=17; Protocol=UCI; Threads=4; " +
+        "BlackEngineOptions: TimeControl: 3.0K nodes; Exe=b.exe; Protocol=UCI; Hash=64; (Args: --x) (White commands: --path=C:/Program Files (x86)/e)"
+    let move = "wv=0.25, mt=2, s=1500000, eps=0, n=3000, d=10, sd=11, pd=c5, tl=0, tb=0, pv=1.e4 c5"
+    let stat = Annotation.getEngineStatData "W" false (header + " " + move)
+    Assert.Equal((10, 3000L, 1500000L), (stat.d, stat.n, stat.s))
+    Assert.Equal(move, Annotation.withoutTournamentHeader (header + " " + move))
+    // a header with no move data after it is nothing, and a move without a header is as it was
+    Assert.Equal("", Annotation.withoutTournamentHeader header)
+    Assert.Equal(move, Annotation.withoutTournamentHeader move)
+
+[<Fact>]
+let ``free text cannot end the game's comment`` () =
+    let t = { Tournament.Empty with Description = "a } b\nc" }
+    Assert.Contains("Description=a ) b c;", t.PGNSummary())
+
+[<Fact>]
 let ``the tournament part of a game's comment says what it needs to be played again`` () =
     let t = { Tournament.Empty with TournamentMode = "Swiss"; Rounds = 7; NumberOfGamesInParallel = 2; PreventMoveDeviation = true }
     let text = t.PGNSummary()

@@ -125,14 +125,17 @@ let private checkable (t: Type) =
     && not t.IsEnum
 
 /// Every key of the example that its type has no field for, as a path ("Opening.OpeningsPly").
-let rec private unknownKeys (t: Type) (node: JsonNode) (path: string) : string list =
+/// `ignoreCase` as the reader of that kind: the tournament, puzzle, ERET and engine-def readers
+/// take a field only in its own case ("openingsPly" is passed over).
+let rec private unknownKeys (ignoreCase: bool) (t: Type) (node: JsonNode) (path: string) : string list =
+    let key (name: string) = if ignoreCase then name.ToLowerInvariant() else name
     match node with
-    | :? JsonArray as a -> [ for item in a do if not (isNull item) then yield! unknownKeys t item path ]
+    | :? JsonArray as a -> [ for item in a do if not (isNull item) then yield! unknownKeys ignoreCase t item path ]
     | :? JsonObject as o when checkable t ->
-        let props = t.GetProperties() |> Array.map (fun p -> p.Name.ToLowerInvariant(), p) |> dict
+        let props = t.GetProperties() |> Array.map (fun p -> key p.Name, p) |> dict
         [ for kv in o do
-            match props.TryGetValue(kv.Key.ToLowerInvariant()) with
-            | true, p when not (isNull kv.Value) -> yield! unknownKeys (inner p.PropertyType) kv.Value (path + kv.Key + ".")
+            match props.TryGetValue(key kv.Key) with
+            | true, p when not (isNull kv.Value) -> yield! unknownKeys ignoreCase (inner p.PropertyType) kv.Value (path + kv.Key + ".")
             | true, _ -> ()
             | false, _ -> if not (aliases.Contains kv.Key) then yield path + kv.Key ]
     | _ -> []
@@ -212,7 +215,9 @@ type ConfigExamples(output: ITestOutputHelper) =
         let found, skipped = examples ()
         let problems =
             [ for where, kind, o in found do
-                match unknownKeys (typeOf kind) o "" with
+                // the tuner, the benchmark and eb-cli.json read keys in any case
+                let ignoreCase = (match kind with TunerConfig | TunerExcerpt | TuneParameterExcerpt | BenchmarkConfig | CliSettings -> true | _ -> false)
+                match unknownKeys ignoreCase (typeOf kind) o "" with
                 | [] -> ()
                 | keys ->
                     let listed = String.Join(", ", keys)

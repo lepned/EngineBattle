@@ -312,7 +312,37 @@ module EngineTypes =
         /// The regex implementation. Kept for two jobs: every comment the fast parser below is not
         /// sure it reads the same way goes here (and every format but EB's own), and it is the
         /// reference the fast parser is tested against (AnnotationParserTests).
+        /// The first move's comment without EB's tournament header in front of it. The header
+        /// ({TournamentOptions: ...}, written before move 1) reaches the first move's comment, and
+        /// its Seed=0, Rounds=20, Threads=4 would be read as d=, s=, n= of the move. It ends at its
+        /// last ';', with only "(Args: ...)" and "(... commands: ...)" after that; EB's move
+        /// comments hold no ';'.
+        let withoutTournamentHeader (line: string) =
+          if isNull line || not (line.StartsWith("TournamentOptions:", StringComparison.Ordinal)) then line
+          else
+            let mutable i = line.LastIndexOf ';' + 1
+            let mutable moreGroups = true
+            while moreGroups do
+              let mutable j = i
+              while j < line.Length && Char.IsWhiteSpace line.[j] do j <- j + 1
+              if j < line.Length && line.[j] = '(' then
+                // a balanced group: a path may hold "(x86)"
+                let mutable depth = 0
+                let mutable k = j
+                let mutable closed = false
+                while k < line.Length && not closed do
+                  if line.[k] = '(' then depth <- depth + 1
+                  elif line.[k] = ')' then
+                    depth <- depth - 1
+                    if depth = 0 then closed <- true
+                  k <- k + 1
+                i <- k
+                moreGroups <- closed
+              else moreGroups <- false
+            line.Substring(min i line.Length).Trim()
+
         let legacyGetEngineStatData player isBlack (line: string) =
+          let line = withoutTournamentHeader line
           if String.IsNullOrEmpty line then
             { EngineMoveStat.Empty with Player = player }
           else
@@ -553,8 +583,10 @@ module EngineTypes =
 
         /// The engine data in a move comment: EB's own "wv=... d=... n=..." (the fast parser), or
         /// the Banksia, Ceres and "+0.28/12 1.2s" forms other GUIs write (the regexes). Same
-        /// answers as legacyGetEngineStatData.
+        /// answers as legacyGetEngineStatData. EB's tournament header in front of the first move's
+        /// data is left out.
         let getEngineStatData player isBlack (line: string) =
+          let line = withoutTournamentHeader line
           if String.IsNullOrEmpty line || not (isPlainAscii line) then legacyGetEngineStatData player isBlack line
           else
             try

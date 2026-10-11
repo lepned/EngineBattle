@@ -210,6 +210,11 @@ module TypesDef =
             CommandDelayMs = 0
         }
 
+    /// Free text (a description, a version, the hardware) as it goes into a PGN comment: a '}'
+    /// would end the comment and a line break split it.
+    let pgnCommentSafe (text: string) =
+      if isNull text then "" else text.Replace('}', ')').Replace('\r', ' ').Replace('\n', ' ')
+
     type EngineConfig =
         { mutable Name: string
           Alias: string
@@ -238,7 +243,7 @@ module TypesDef =
                 sb.Append(sprintf "Exe=%s; " (Path.GetFileName(x.Path.Replace('\\', '/')))) |> ignore
               // "Version" is what an empty def says
               if not (String.IsNullOrWhiteSpace x.Version) && x.Version <> "Version" then
-                sb.Append(sprintf "Version=%s; " x.Version) |> ignore
+                sb.Append(sprintf "Version=%s; " (pgnCommentSafe x.Version)) |> ignore
               sb.Append(sprintf "Protocol=%s;" x.Protocol) |> ignore
               sb.Append(sprintf " MoveOverheadMS=%.0f;" moveOverhead) |> ignore
               for opt in x.Options do
@@ -932,7 +937,7 @@ module TypesDef =
         member x.PGNSummary() =
           let parts = ResizeArray<string>()
           parts.Add $"EB={BuildInfo.describe ()}"
-          if not (String.IsNullOrWhiteSpace x.Description) then parts.Add $"Description={x.Description}"
+          if not (String.IsNullOrWhiteSpace x.Description) then parts.Add $"Description={CoreTypes.pgnCommentSafe x.Description}"
           let mode = x.ModeLabel()
           parts.Add $"Mode={mode}"
           parts.Add (sprintf "Rounds=%d" x.Rounds)
@@ -953,7 +958,7 @@ module TypesDef =
           parts.Add (sprintf "PreventMoveDeviation=%b" x.PreventMoveDeviation)
           parts.Add (sprintf "Parallel=%d" x.NumberOfGamesInParallel)
           let hardware = x.Hardware()
-          if not (String.IsNullOrWhiteSpace hardware) then parts.Add $"Hardware={hardware}"
+          if not (String.IsNullOrWhiteSpace hardware) then parts.Add $"Hardware={CoreTypes.pgnCommentSafe hardware}"
           parts.Add (x.TablebaseText())
           parts.Add (x.AdjudicationText().TrimEnd())
           String.Join("; ", parts) + ";"

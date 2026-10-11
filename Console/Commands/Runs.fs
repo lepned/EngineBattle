@@ -922,7 +922,13 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
   let tourny = tournament
   //ConsoleHelper.displayTournament tourny      
   let updateProcessor = createUpdateProcessor tourny.VerboseLogging
-  let printUpdate update = updateProcessor.Post(update)
+  // the games this run finished, as they finish: Run's own list is the PGN's when a run fails
+  let finished = ResizeArray<TypesDef.CoreTypes.Result>()
+  let printUpdate update =
+      match update with
+      | EndOfGame result -> lock finished (fun () -> finished.Add result)
+      | _ -> ()
+      updateProcessor.Post(update)
 
   let runner = Manager.Runner(logger, printUpdate, false)
   runner.AddTournament tourny
@@ -930,7 +936,6 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
   // true when the run went through: tournamentjson's exit code
   let mutable failed = false
   let mutable failure = None
-  let mutable played = []
   let mutable standings = None
   let start = Stopwatch.GetTimestamp()
   let formatHms (ts: TimeSpan) = 
@@ -941,7 +946,6 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
 
   try
       let results = runner.Run()
-      played <- List.ofSeq results
       // a run that stopped with an error has said why; no "completed" summary after it
       failed <- runner.Failure.IsSome
       failure <- runner.Failure |> Option.map string
@@ -971,7 +975,7 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
       printfn "Caught an exception: %s" ex.Message
       failed <- true
       failure <- Some ex.Message
-  { Succeeded = not failed; Failure = failure; Results = played; Duration = Stopwatch.GetElapsedTime start; Standings = standings }
+  { Succeeded = not failed; Failure = failure; Results = lock finished (fun () -> List.ofSeq finished); Duration = Stopwatch.GetElapsedTime start; Standings = standings }
 
 /// A console tournament run: true when it went through.
 let runTournament tournament logger ct = (runTournamentOutcome tournament logger ct).Succeeded
@@ -1372,7 +1376,10 @@ let tournamentRun (p: Parsed) =
         // AllowPondering: every engine started once first, to see which can ponder
         let enginesOk = not tournament.AllowPondering || (let ok, _, _ = Tournament.TournamentUtils.checkPonderingEngines tournament in ok)
         if not enginesOk then
-            Cli.Output.error "AllowPondering is set, but not every engine can ponder"
+            let reason = "AllowPondering is set, but not every engine can ponder"
+            if has p "json" then
+                Cli.Output.printJson (Cli.Output.envelope (name p.Command) false null [ ({ Code = "pondering"; Message = reason } : Cli.Output.JsonError) ])
+            Cli.Output.error reason
             Cli.Output.ExitFailed
         else
             use host = createHost ()
