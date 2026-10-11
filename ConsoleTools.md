@@ -132,8 +132,7 @@ Engines and positions
 
 Engine definitions
   engine check <engine>           Check that an engine follows the UCI protocol
-  engine new <exe>                Write an engine def from what the engine answers to 'uci'
-  engine gen <template>           Write defs for training checkpoints, from an existing def
+  engine new <engine>             Write an engine def, from the engine or from a def with another net
   engine bench <config>           Benchmark an engine from a config
 
 PGN files
@@ -403,18 +402,19 @@ Examples:
 ### engine new
 
 ```text
-Write an engine def from what the engine answers to 'uci'
+Write an engine def, from the engine or from a def with another net
 
-Usage: eb-cli engine new <exe> [options]
+Usage: eb-cli engine new <engine> [options]
 
-Starts the engine, reads its id and options, and writes <name>.json (the name without spaces) with every option at its default, overridden by --uci, --net and --syzygy. The same as the GUI's Engine creator. A def that exists is not written over without --force.
+An executable: starts the engine, reads its id and options, and writes <name>.json (the name without spaces) with every option at its default, overridden by --uci, --net and --syzygy - the GUI's Engine creator. A def (.json): writes a copy with the network --net (the same engine and settings), named after the net, or with the next step for a training checkpoint's def (<prefix>_<step>M[_ema].json); --name names it otherwise. A def that exists is not written over without --force.
 
 Arguments:
-  <exe>  the engine executable
+  <engine>  the engine executable, or an existing def (.json)
 
 Options:
-      --out-dir DIR     The folder to write the def into (default: the working directory)
-      --net FILE        The network file, set in the engine's own network option
+      --out-dir DIR     The folder to write the def into (default: the working directory; a def's copy: the def's folder)
+      --net FILE        The network file, set in the engine's own network option (with a def: required)
+      --name NAME       The copy's name (with a def)
       --syzygy DIR      Syzygy folders (several separated by ';' on Windows, ':' elsewhere)
       --base DEF        An existing def whose settings the new one starts from
       --uci NAME=VALUE  Set a UCI option of the engine (repeatable)
@@ -427,32 +427,10 @@ Examples:
       A Stockfish def with 8 threads
   eb-cli engine new lc0.exe --net BT4.onnx --dry-run
       Show the def without writing it
-```
-### engine gen
-
-```text
-Write defs for training checkpoints, from an existing def
-
-Usage: eb-cli engine gen <template> [options]
-
-The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force; exit 1 when a def was not written because its file exists.
-
-Arguments:
-  <template>  an existing def of the arm (a full path)
-
-Options:
-      --net FILE     Write the def of this one network only
-      --nets DIR     Look for networks here (default: the folder of the template's network)
-      --out-dir DIR  Write the defs here (default: the template's folder)
-      --dry-run      Show what would be written, write nothing
-      --force        Write over a file that exists
-  At most one of --net, --nets.
-
-Examples:
-  eb-cli engine gen C:/Defs/Ceres_srv_deg4_400M.json
-      Defs for the arm's new checkpoints
-  eb-cli engine gen C:/Defs/Ceres_srv_deg4_400M.json --net C:/Nets/srv_deg4_800M.onnx --dry-run
-      What one checkpoint's def would be
+  eb-cli engine new Lc0_BT4.json --net C:/Nets/BT5.pb.gz
+      The same Lc0 with another net: BT5.json
+  eb-cli engine new Ceres_arm_400M.json --net C:/Nets/arm_800003840.onnx
+      A training checkpoint's def: Ceres_arm_800M.json
 ```
 ### engine bench
 

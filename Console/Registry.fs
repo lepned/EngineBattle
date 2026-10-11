@@ -23,7 +23,6 @@ let all: Entry list =
       e [ "values"; "batch" ]
       e [ "engine"; "check" ]
       e [ "engine"; "new" ]
-      e [ "engine"; "gen" ]
       e [ "engine"; "bench" ]
       e [ "pgn"; "parse" ]
       e [ "pgn"; "validate" ]

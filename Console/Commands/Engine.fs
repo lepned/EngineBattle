@@ -1,4 +1,4 @@
-/// engine check / new / gen / bench: engine definitions and how an engine behaves.
+/// engine check / new / bench: engine definitions and how an engine behaves.
 module Commands.Engine
 
 open System
@@ -77,13 +77,14 @@ let check (p: Parsed) =
 // ---------------------------------------------------------------- new
 
 let newSpec =
-    { command [ "engine"; "new" ] Group "Write an engine def from what the engine answers to 'uci'" with
+    { command [ "engine"; "new" ] Group "Write an engine def, from the engine or from a def with another net" with
         Description =
-          Some "Starts the engine, reads its id and options, and writes <name>.json (the name without spaces) with every option at its default, overridden by --uci, --net and --syzygy. The same as the GUI's Engine creator. A def that exists is not written over without --force."
-        Args = [ arg "exe" "the engine executable" ]
+          Some "An executable: starts the engine, reads its id and options, and writes <name>.json (the name without spaces) with every option at its default, overridden by --uci, --net and --syzygy - the GUI's Engine creator. A def (.json): writes a copy with the network --net (the same engine and settings), named after the net, or with the next step for a training checkpoint's def (<prefix>_<step>M[_ema].json); --name names it otherwise. A def that exists is not written over without --force."
+        Args = [ arg "engine" "the engine executable, or an existing def (.json)" ]
         Options =
-          [ value "out-dir" "DIR" "The folder to write the def into (default: the working directory)"
-            value "net" "FILE" "The network file, set in the engine's own network option"
+          [ value "out-dir" "DIR" "The folder to write the def into (default: the working directory; a def's copy: the def's folder)"
+            value "net" "FILE" "The network file, set in the engine's own network option (with a def: required)"
+            value "name" "NAME" "The copy's name (with a def)"
             syzygy
             value "base" "DEF" "An existing def whose settings the new one starts from"
             uci
@@ -92,10 +93,41 @@ let newSpec =
             value "timeout" "MS" "How long the engine has to answer" |> withDefault "15000" ]
         Examples =
           [ "eb-cli engine new C:/Engines/sf/stockfish.exe --uci Threads=8 --uci Hash=4096 --out-dir defs", "A Stockfish def with 8 threads"
-            "eb-cli engine new lc0.exe --net BT4.onnx --dry-run", "Show the def without writing it" ] }
+            "eb-cli engine new lc0.exe --net BT4.onnx --dry-run", "Show the def without writing it"
+            "eb-cli engine new Lc0_BT4.json --net C:/Nets/BT5.pb.gz", "The same Lc0 with another net: BT5.json"
+            "eb-cli engine new Ceres_arm_400M.json --net C:/Nets/arm_800003840.onnx", "A training checkpoint's def: Ceres_arm_800M.json" ] }
+
+/// `engine new <def> --net FILE`: the def with another net (EngineDefGen.fromDef).
+let private copyDef (p: Parsed) (def: string) =
+    for exeOnly in [ "uci"; "base"; "syzygy"; "timeout" ] do
+        if has p exeOnly then raise (Usage $"--{exeOnly} is for an executable; a def's copy takes --net, --name, --out-dir, --dry-run and --force")
+    let net =
+        match valueOf p "net" with
+        | Some f -> inputFile "network file" f
+        | None -> raise (Usage "a def's copy needs --net: the network it plays with")
+    let folder = valueOf p "out-dir" |> Option.map (existingFolder "out-dir")
+    match ChessLibrary.EngineDefGen.fromDef def net (valueOf p "name") folder with
+    | Error message -> raise (Usage message)
+    | Ok copy when String.Equals(Path.GetFullPath copy.DefPath, def, StringComparison.OrdinalIgnoreCase) ->
+        raise (Usage $"the copy would be {copy.DefPath} itself (--name or --out-dir puts it elsewhere)")
+    | Ok copy ->
+        info $"""{copy.Name}: {net.Replace('\\', '/')}"""
+        if has p "dry-run" then
+            info $"--dry-run: {copy.DefPath} not written"
+            printfn "%s" copy.Text
+            ExitOk
+        elif File.Exists copy.DefPath && not (has p "force") then
+            raise (Usage $"{copy.DefPath} exists - use --force to overwrite it")
+        else
+            File.WriteAllText(copy.DefPath, copy.Text)
+            printfn "%s" copy.DefPath
+            ExitOk
 
 let newDef (p: Parsed) =
-    let exe = inputFile "engine" (argOf p "exe").Value
+    let engine = inputFile "engine" (argOf p "engine").Value
+    if engine.EndsWith(".json", StringComparison.OrdinalIgnoreCase) then copyDef p engine else
+    if has p "name" then raise (Usage "--name is for a def's copy; an executable's def is named after the engine's id")
+    let exe = engine
     let optional name what = valueOf p name |> Option.map (inputFile what)
     let timeout =
         match intOf p "timeout" with
@@ -133,48 +165,6 @@ let newDef (p: Parsed) =
                     ExitOk
                 | Error message -> raise (Usage message)
 
-// ---------------------------------------------------------------- gen
-
-let genSpec =
-    { command [ "engine"; "gen" ] Group "Write defs for training checkpoints, from an existing def" with
-        Description =
-          Some "The template is an existing def named <prefix>_<step>M[_ema].json: its name carries the naming, its content everything else. Every network of the same arm and variant (raw or ema) in the folder that has no def yet gets one, with the network and the step label replaced. Nothing is written over without --force; exit 1 when a def was not written because its file exists."
-        Args = [ arg "template" "an existing def of the arm (a full path)" ]
-        Options =
-          [ value "net" "FILE" "Write the def of this one network only"
-            value "nets" "DIR" "Look for networks here (default: the folder of the template's network)"
-            value "out-dir" "DIR" "Write the defs here (default: the template's folder)"
-            switch "dry-run" "Show what would be written, write nothing"
-            force ]
-        OneOf = [ [ "net"; "nets" ] ]
-        Examples =
-          [ "eb-cli engine gen C:/Defs/Ceres_srv_deg4_400M.json", "Defs for the arm's new checkpoints"
-            "eb-cli engine gen C:/Defs/Ceres_srv_deg4_400M.json --net C:/Nets/srv_deg4_800M.onnx --dry-run", "What one checkpoint's def would be" ] }
-
-let gen (p: Parsed) =
-    let template = inputFile "template" (argOf p "template").Value
-    let nets =
-        match valueOf p "net", valueOf p "nets" with
-        | Some f, _ -> Some(inputFile "network" f)
-        | None, Some d -> Some(existingFolder "nets" d)
-        | None, None -> None
-    let outDir = valueOf p "out-dir" |> Option.map (existingFolder "out-dir")
-    match ChessLibrary.EngineDefGen.plan template nets outDir with
-    | Error message -> raise (Usage message)
-    | Ok plan ->
-        printfn "%s" (ChessLibrary.EngineDefGen.render plan)
-        if not plan.ToWrite.IsEmpty then
-            if has p "dry-run" then
-                info "--dry-run: nothing written"
-                ExitOk
-            else
-                let written = ChessLibrary.EngineDefGen.write (has p "force") plan
-                info $"Wrote {written.Length} def(s)"
-                let blocked = plan.ToWrite.Length - written.Length
-                if blocked > 0 then error $"{blocked} not written: a file of that name exists (--force writes over it)"
-                if blocked > 0 then ExitFailed else ExitOk
-        else ExitOk
-
 // ---------------------------------------------------------------- bench
 
 let benchSpec =
@@ -190,5 +180,4 @@ let bench (p: Parsed) =
 let entries: Entry list =
     [ { Spec = checkSpec; Run = check }
       { Spec = newSpec; Run = newDef }
-      { Spec = genSpec; Run = gen }
       { Spec = benchSpec; Run = bench } ]

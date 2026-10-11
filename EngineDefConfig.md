@@ -19,6 +19,20 @@ def.json` carries the option values and the display fields of an existing def ov
 probe. `--dry-run` shows the def instead of writing it; an existing file is never overwritten
 without `--force`. The file is named after the engine without spaces (`Stockfish19.json`).
 
+Given a def instead of an executable, `engine new` copies it with another network - the same
+engine, options and settings, the network option and `NetworkPath` pointing at `--net`:
+
+```bash
+eb-cli engine new Lc0_BT4_332.json --net C:/Nets/BT5.pb.gz            # BT5.json, named BT5
+eb-cli engine new Lc0_BT4_332.json --net C:/Nets/BT5.pb.gz --name "LC0 BT5"
+eb-cli engine new Ceres_arm_400M.json --net C:/Nets/arm_800003840.onnx  # Ceres_arm_800M.json
+```
+
+The copy is named after the net, or `--name`. A training checkpoint's def - named
+`<prefix>_<step>M[_ema].json`, for a net whose name ends in its position counter - gets the new
+net's step instead, in the file name and wherever the old step label stood (Name, Alias). It is
+written next to the def unless `--out-dir` says otherwise.
+
 ## Configuration Fields
 
 A def is refused when any of the required fields - `Name`, `TimeControlID`, `Version`, `Rating`, `LogoPath`, `Protocol`, `Path`, `NetworkPath` and `Options` - is missing, or when `TimeControlID` is not a JSON number. The check is on presence: an engine without a network still writes `"NetworkPath": ""`, and one without options `"Options": {}`. Every other field is optional.
