@@ -39,6 +39,16 @@ module PuzzleTrend =
     /// digit (e.g. "C1-640-34-I8"), which is not a training checkpoint.
     let private minStepPositions = 500_000L
 
+    /// The server writes the same arm under different machine prefixes between runs
+    /// (`lepdev_srv_512_16_deg4_t91_1B` and `a4000-21bn11_srv_512_16_deg4_t91_1B` are one
+    /// arm). Matching on the part from `srv` onward keeps a renamed host from looking like
+    /// a new arm. Arms without that marker are returned unchanged.
+    let armKey (arm: string) =
+        if String.IsNullOrWhiteSpace arm then ""
+        else
+            let idx = arm.IndexOf("srv_", StringComparison.OrdinalIgnoreCase)
+            if idx > 0 then arm.Substring idx else arm
+
     /// Splits a net name into arm + step. Returns None for names without a checkpoint counter.
     let parseNetName (rawName: string) : NetId option =
         if String.IsNullOrWhiteSpace rawName then None
@@ -99,7 +109,8 @@ module PuzzleTrend =
                 [ for s in scores.EnumerateArray() do
                     match parseNetName (strProp s "neuralNet") with
                     | Some net ->
-                        yield { Arm = net.Arm
+                        // one curve per arm, whichever host wrote the checkpoint
+                        yield { Arm = armKey net.Arm
                                 StepM = net.StepM
                                 IsEma = net.IsEma
                                 Type = strProp s "type"

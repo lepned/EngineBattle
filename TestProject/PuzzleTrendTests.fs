@@ -145,3 +145,19 @@ let ``a small later run does not displace a large earlier one`` () =
     Assert.Single(deduped) |> ignore
     Assert.Equal(0.426, (List.head deduped).Accuracy, 3)
     Assert.Equal(2000, (List.head deduped).Total)
+
+[<Fact>]
+let ``an arm stays one curve when the host that wrote it changes`` () =
+    let score (net: string) =
+        sprintf """{ "neuralNet": "%s", "type": "Value", "ratingAvg": 2500, "accuracy": 0.5, "avgKLD": 0, "playerRating": 0, "totalNumber": 100 }""" net
+    let json =
+        sprintf """{ "startedUtc": "2026-10-11", "scores": [ %s, %s, %s ] }"""
+            (score "lepdev_srv_512_16_deg4_t91_1B_200007680")
+            (score "a4000-21bn11_srv_512_16_deg4_t91_1B_300011520")
+            (score "lepned_256_10_cfT80_300M_300000256")
+    let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "eb_trend_%s.json" (System.Guid.NewGuid().ToString("N")))
+    try
+        System.IO.File.WriteAllText(path, json)
+        let arms = PuzzleTrend.loadFile path |> List.map (fun p -> p.Arm)
+        Assert.Equal<string list>([ "srv_512_16_deg4_t91_1B"; "srv_512_16_deg4_t91_1B"; "lepned_256_10_cfT80_300M" ], arms)
+    finally System.IO.File.Delete path

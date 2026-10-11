@@ -25,15 +25,8 @@ module EngineDefGen =
     let private stepLabelRe =
         Regex(@"_(\d+)M(_ema)?$", RegexOptions.IgnoreCase ||| RegexOptions.Compiled)
 
-    /// The server writes the same arm under different machine prefixes between runs
-    /// (`lepdev_srv_512_16_deg4_t91_1B` and `a4000-21bn11_srv_512_16_deg4_t91_1B` are one
-    /// arm). Matching on the part from `srv` onward keeps a renamed host from looking like
-    /// a new arm. Arms without that marker are returned unchanged.
-    let armKey (arm: string) =
-        if String.IsNullOrWhiteSpace arm then ""
-        else
-            let idx = arm.IndexOf("srv_", StringComparison.OrdinalIgnoreCase)
-            if idx > 0 then arm.Substring idx else arm
+    /// One arm whatever host wrote it (PuzzleTrend.armKey).
+    let armKey (arm: string) = PuzzleTrend.armKey arm
 
     /// Splits a def file name into the part before the step and the step itself.
     /// `Ceres_srv_512_16_deg4_t91_100M.json` -> ("Ceres_srv_512_16_deg4_t91", 100, false)

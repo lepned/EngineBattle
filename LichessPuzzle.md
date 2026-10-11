@@ -200,7 +200,7 @@ thematic move) and, when enabled, `positionAccuracy` (every position). The theme
 ## Summary
 
 EngineBattle’s console mode makes it easy to benchmark chess engines on thousands of Lichess puzzles with just a single command. By customizing your `PuzzleConfig.json`, you can tailor tests to your needs—whether you’re evaluating tactical strength, policy head accuracy, or overall puzzle-solving ability. 
-> **Note:** Puzzles can also be run in the GUI (**Puzzles → Lichess puzzles**, with **Tools → Lichess puzzle creator** for the config), and every run's summary can be opened later on **Puzzles → Run report**; several runs of one training arm are consolidated on **Puzzles → Puzzle trend**.
+> **Note:** Puzzles can also be run in the GUI (**Puzzles → Lichess puzzles**, with **Tools → Lichess puzzle creator** for the config), and every run's summary can be opened later on **Puzzles → Run report**; several runs of one training arm are consolidated on the Puzzle trend page (not in the menu: open `/puzzles/trend`, or `eb-cli puzzle trend` on the command line).
 
 **Ready to get started?**  
 Clone EngineBattle, set up your engines and puzzles, and run your first test today! 
