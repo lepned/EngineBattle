@@ -599,25 +599,26 @@ module Validation =
               warnings
       | _ -> []
 
+  /// The settings that will not do what they seem to: non-blocking, each without its "Warning: ".
+  let tournamentWarnings (tourny: Tournament) : string list =
+      let mode = tourny.ModeLabel().Trim().ToLowerInvariant()
+      let isRRorGauntlet = mode = "rr" || mode = "roundrobin" || mode = "round-robin" || mode = "gauntlet"
+      [ yield! delayWarning tourny
+        if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then
+            "RandomOpenings is enabled but OpeningsTwice is false. Each engine pair will play each opening from only one color side. Set OpeningsTwice to true for balanced color distribution."
+        if tourny.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
+            $"NumberOfGamesInParallel = {tourny.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."
+        for warning in duplicateOpeningWarnings tourny do
+            if warning.StartsWith "Warning: " then warning.Substring 9 else warning ]
+
   let validateTournamentInput (tourny: Tournament) =
       match validateTournament tourny with
       | Ok -> ConsoleUtils.printInColor ConsoleColor.Green "Tournament passed limited validation of key settings"
       | Errors msgs ->
           for msg in msgs do
               ConsoleUtils.printInColor ConsoleColor.Red msg
-      // Non-blocking warnings
-      for warning in delayWarning tourny do
+      for warning in tournamentWarnings tourny do
           ConsoleUtils.printInColor ConsoleColor.Yellow ("Warning: " + warning)
-      let mode = tourny.ModeLabel().Trim().ToLowerInvariant()
-      let isRRorGauntlet = mode = "rr" || mode = "roundrobin" || mode = "round-robin" || mode = "gauntlet"
-      if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then
-          ConsoleUtils.printInColor ConsoleColor.Yellow
-              "Warning: RandomOpenings is enabled but OpeningsTwice is false. Each engine pair will play each opening from only one color side. Set OpeningsTwice to true for balanced color distribution."
-      if tourny.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
-          ConsoleUtils.printInColor ConsoleColor.Yellow
-              $"Warning: NumberOfGamesInParallel = {tourny.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."
-      for warning in duplicateOpeningWarnings tourny do
-          ConsoleUtils.printInColor ConsoleColor.Yellow warning
 
 module JSON =
 

@@ -140,7 +140,7 @@ PGN files
   pgn parse <pgn>                 Parse every game: counts, empty games, parse speed
   pgn validate <pgn>              Replay every game: illegal or ambiguous moves, non-standard SAN
   pgn strip <pgn>                 Write the games without comments, variations or NAGs
-  pgn endings <pgn>               How the games ended: mate, adjudication, time, repetition...
+  pgn endings <pgn>               How the games ended: missed wins, repetition, 50-move rule, stalemate...
   pgn elo <pgn>                   Ratings and results
   pgn speed <pgn>                 Speed statistics per engine
   pgn deviations <pgn>            Positions reached in several games, and the moves each engine chose there
@@ -522,14 +522,17 @@ Examples:
 ### pgn endings
 
 ```text
-How the games ended: mate, adjudication, time, repetition...
+How the games ended: missed wins, repetition, 50-move rule, stalemate...
 
-Usage: eb-cli pgn endings <pgn>
+Usage: eb-cli pgn endings <pgn> [options]
 
-Terminations (mate, adjudication, time, repetition, ...) per engine and overall.
+From the games with engine evals: the missed wins (a game an engine stood +4 in and did not win) per engine and how they ended, and how many games ended by repetition, the 50-move rule, stalemate or insufficient material.
 
 Arguments:
   <pgn>  a PGN file
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli pgn endings games.pgn
@@ -540,12 +543,15 @@ Examples:
 ```text
 Ratings and results
 
-Usage: eb-cli pgn elo <pgn>
+Usage: eb-cli pgn elo <pgn> [options]
 
 Elo, score and results per engine pair from the games.
 
 Arguments:
   <pgn>  a PGN file
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli pgn elo match.pgn
@@ -575,12 +581,15 @@ Examples:
 ```text
 Positions reached in several games, and the moves each engine chose there
 
-Usage: eb-cli pgn deviations <pgn>
+Usage: eb-cli pgn deviations <pgn> [options]
 
-The position-keyed view of the deviation page: positions reached more than once and the moves played in them, with the opening coverage.
+Positions reached in more than one game where the moves differ: which engine played what there, and engines that chose differently in the same position themselves (the deviation page's position view), with how the openings were told apart from the engines' own moves.
 
 Arguments:
   <pgn>  a PGN file
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli pgn deviations gauntlet.pgn
@@ -591,12 +600,15 @@ Examples:
 ```text
 Results by material imbalance
 
-Usage: eb-cli pgn imbalance <pgn>
+Usage: eb-cli pgn imbalance <pgn> [options]
 
 How the games went when one side had, for instance, a bishop for a knight, the bishop pair, or a rook for a minor piece: the score and the PGN evals per matchup, from the positions past ply 16.
 
 Arguments:
-  <pgn>  the games
+  <pgn>  a PGN file
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli pgn imbalance games.pgn
@@ -659,12 +671,15 @@ Examples:
 ```text
 Run an ERET test suite (EPD best-move positions) from a config
 
-Usage: eb-cli puzzle eret <config>
+Usage: eb-cli puzzle eret <config> [options]
 
 Runs the ERET test of an ERET config (EretPuzzles.md); the failed puzzles and the summary go to its FailedPuzzlesOutputFolder. Exit 1 when an engine failed.
 
 Arguments:
   <config>  an ERET config (JSON)
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli puzzle eret EretConfig.json
@@ -721,12 +736,15 @@ Examples:
 ```text
 Check a tournament config without running it
 
-Usage: eb-cli tournament validate <config>
+Usage: eb-cli tournament validate <config> [options]
 
 Reads the config and its engine defs and checks the key settings; warnings for settings that will not do what they seem to. Exit 1 when the config has errors.
 
 Arguments:
   <config>  a tournament config (JSON)
+
+Options:
+      --json  Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli tournament validate tournament.json

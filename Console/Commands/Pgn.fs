@@ -309,25 +309,46 @@ let strip (p: Parsed) =
 // ---------------------------------------------------------------- summary, elo, speed, deviations
 
 let summarySpec =
-    { command [ "pgn"; "endings" ] Group "How the games ended: mate, adjudication, time, repetition..." with
-        Description = Some "Terminations (mate, adjudication, time, repetition, ...) per engine and overall."
+    { command [ "pgn"; "endings" ] Group "How the games ended: missed wins, repetition, 50-move rule, stalemate..." with
+        Description = Some "From the games with engine evals: the missed wins (a game an engine stood +4 in and did not win) per engine and how they ended, and how many games ended by repetition, the 50-move rule, stalemate or insufficient material."
         Args = [ pgnSubject ]
+        Options = [ json ]
         Examples = [ "eb-cli pgn endings games.pgn", "How the games ended" ] }
 
 let summary (p: Parsed) =
-    Test.ParsingTests.pgnTerminationSummary (pgnArg p) 2 4.0 (3.0, 0.5) |> ignore
+    let path = pgnArg p
+    match Test.ParsingTests.pgnTerminationSummary path 2 4.0 (3.0, 0.5) with
+    | [ _, _, _, counts ] when has p "json" -> printJson (envelope (name p.Command) true (box counts) [])
+    | _ -> ()
     ExitOk
 
 let eloSpec =
     { command [ "pgn"; "elo" ] Group "Ratings and results" with
         Description = Some "Elo, score and results per engine pair from the games."
         Args = [ pgnSubject ]
+        Options = [ json ]
         Examples = [ "eb-cli pgn elo match.pgn", "The rating table" ] }
 
 let elo (p: Parsed) =
     let games = FullPGNParser.parsePgnFile (pgnArg p)
-    let text, _, _, _ = GameAnalysis.PGNCalculator.getEngineDataResults games
-    printfn "%s" text
+    let text, players, cross, _ = GameAnalysis.PGNCalculator.getEngineDataResults games
+    if has p "json" then
+        // NaN or infinity (a 100% score has no finite Elo) is null in JSON
+        let num (x: float) = if Double.IsFinite x then Nullable x else Nullable()
+        let result =
+            {| Players =
+                 [ for r in players |> List.sortByDescending (fun r -> r.Points) ->
+                     let ww, wd, wl = r.WhiteWDL
+                     let bw, bd, bl = r.BlackWDL
+                     {| Player = r.Player; Played = r.Played; Points = r.Points; Percent = r.Percent; Elo = num r.Elo
+                        Error = num r.Error; Cfs = r.CFS; Win = r.Win; Draw = r.Draw; Loss = r.Loss
+                        White = {| Win = ww; Draw = wd; Loss = wl |}; Black = {| Win = bw; Draw = bd; Loss = bl |} |} ]
+               Pairs =
+                 [ for e in cross do
+                     for opponent, s in e.StatsAgainst do
+                         {| Player = e.Player; Opponent = opponent; Win = s.Wins; Draw = s.Draws; Loss = s.Losses |} ] |}
+        printJson (envelope (name p.Command) true (box result) [])
+    else printfn "%s" text
     ExitOk
 
 let speedSpec =
@@ -349,8 +370,9 @@ let speed (p: Parsed) =
 
 let deviationsSpec =
     { command [ "pgn"; "deviations" ] Group "Positions reached in several games, and the moves each engine chose there" with
-        Description = Some "The position-keyed view of the deviation page: positions reached more than once and the moves played in them, with the opening coverage."
+        Description = Some "Positions reached in more than one game where the moves differ: which engine played what there, and engines that chose differently in the same position themselves (the deviation page's position view), with how the openings were told apart from the engines' own moves."
         Args = [ pgnSubject ]
+        Options = [ json ]
         Examples = [ "eb-cli pgn deviations gauntlet.pgn", "Self and cross deviations" ] }
 
 let deviations (p: Parsed) =
@@ -359,7 +381,9 @@ let deviations (p: Parsed) =
     let games = FullPGNParser.parsePgnFile path |> Seq.toList
     info $"Deviation analysis: {path} ({games.Length} games)"
     let devs, summary, coverage = DeviationAnalysis.analyzePositionDeviations games
-    printf "%s" (DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage)
+    if has p "json" then
+        printJson (envelope (name p.Command) true (box {| Games = games.Length; Engines = summary; Positions = devs; Openings = coverage |}) [])
+    else printf "%s" (DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage)
     info $"Done in {sw.Elapsed.TotalSeconds:F1} s"
     ExitOk
 

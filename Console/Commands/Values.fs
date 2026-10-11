@@ -519,11 +519,18 @@ let pvComboOrient (wr: int option[]) (br: int option[]) (w: int[]) (b: int[]) : 
     else 0
 
 /// Results by material imbalance (B vs N, the bishop pair, ...) over a PGN's games; `path` exists.
-let runPvCombo (path: string) =
+/// One matchup of `pgn imbalance`: how many positions, and the mean outcome and PGN eval (pawns)
+/// from side A's view; no means below 20 positions.
+type ImbalanceRow = { Matchup: string; Positions: int; Outcome: Nullable<float>; Eval: Nullable<float> }
+
+let runPvCombo (path: string) (json: bool) =
+  let found = ResizeArray<ImbalanceRow>()
+  let mutable positions = 0
   do
       printfn "\nContextual material imbalances on:\n  %s\n" path
       printf "Collecting positions ..."
       let rows = pvComboRows path
+      positions <- rows.Length
       printfn " %d positions past ply 16.\n" rows.Length
 
       // build signature from involved (typeIndex, whiteCount, blackCount); P=0 N=1 B=2 R=3 Q=4
@@ -555,10 +562,14 @@ let runPvCombo (path: string) =
               let mz = acc |> Seq.averageBy fst
               let evs = acc |> Seq.choose snd |> Array.ofSeq
               let me = if evs.Length > 0 then Array.average evs else nan
+              found.Add { Matchup = label; Positions = acc.Count; Outcome = Nullable mz; Eval = (if Double.IsFinite me then Nullable me else Nullable()) }
               printfn "  %-12s %8d %+10.3f %+9.2f" label acc.Count mz me
           else
+              found.Add { Matchup = label; Positions = acc.Count; Outcome = Nullable(); Eval = Nullable() }
               printfn "  %-12s %8d %10s %9s" label acc.Count "(few)" ""
       printfn ""
+  if json then
+      Cli.Output.printJson (Cli.Output.envelope "pgn imbalance" true (box {| Positions = positions; Matchups = found |}) [])
 
 /// Side to move is in check (a tactical position — exclude from a quiet fit).
 let pvInCheck (fen: string) : bool =
@@ -944,11 +955,12 @@ let fit (p: Parsed) =
 let imbalanceSpec =
     { command [ "pgn"; "imbalance" ] "PGN files" "Results by material imbalance" with
         Description = Some "How the games went when one side had, for instance, a bishop for a knight, the bishop pair, or a rook for a minor piece: the score and the PGN evals per matchup, from the positions past ply 16."
-        Args = [ arg "pgn" "the games" ]
+        Args = [ arg "pgn" "a PGN file" ]
+        Options = [ json ]
         Examples = [ "eb-cli pgn imbalance games.pgn", "The matchups and how they scored" ] }
 
 let imbalance (p: Parsed) =
-    runPvCombo (inputFile "PGN" (argOf p "pgn").Value)
+    runPvCombo (inputFile "PGN" (argOf p "pgn").Value) (has p "json")
     Cli.Output.ExitOk
 
 let entries: Entry list =

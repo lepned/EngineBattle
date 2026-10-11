@@ -60,3 +60,9 @@ let ``A book edited after a check is read again`` () =
         Assert.Empty(Validation.duplicateOpeningWarnings tourny)
     finally
         File.Delete path
+
+[<Fact>]
+let ``the tournament's warnings carry the duplicate openings, without the printed Warning prefix`` () =
+    withBook (entry "a" "E10" "1.d4" + entry "b" "D43" "1.d4") (fun tourny ->
+        let w = Assert.Single(Validation.tournamentWarnings tourny |> List.filter (fun w -> w.Contains "same position"))
+        Assert.False(w.StartsWith "Warning:", w))

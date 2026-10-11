@@ -369,7 +369,7 @@ let createHost() =
 
 
 /// An ERET run from its config (a path that exists); exit 1 when an engine failed.
-let runEretTest (path: string) (ct: CancellationToken) =
+let runEretTest (path: string) (json: bool) (ct: CancellationToken) =
   let loaded =
     try loadEretConfig path
     with ex -> raise (Cli.Parse.Usage $"not an ERET config: {path}: {ex.Message}")
@@ -388,11 +388,24 @@ let runEretTest (path: string) (ct: CancellationToken) =
       |> ResizeArray   
   let timeControl = if data.RunWithNodeLimit then nodes else time
   // an engine that fails ends the run with its exception (exit 1); the parallel run's names each one
-  try PuzzleRunners.runEretTests timeControl engineConfigs data (Action<ERET>(Eret.processEret data)) ct |> ignore
+  // every engine's result, for --json
+  let mutable final = []
+  let onUpdate (update: ERET) =
+    match update with
+    | AllResults results -> final <- List.ofSeq results
+    | _ -> ()
+    Eret.processEret data update
+  try PuzzleRunners.runEretTests timeControl engineConfigs data (Action<ERET>(onUpdate)) ct |> ignore
   with :? AggregateException as ae ->
     failwith (String.Join("; ", ae.Flatten().InnerExceptions |> Seq.map (fun e -> e.Message) |> Seq.distinct))
   if ct.IsCancellationRequested then
     Cli.Output.warn "stopped with Ctrl+C: the summary counts only the positions that were done"
+  if json then
+    let engines =
+      [ for r in final ->
+          {| Engine = r.PlayerName; Correct = r.CorrectPuzzles.Count; Failed = r.FailedPuzzles.Count; Accuracy = r.Accuracy
+             FailedPuzzles = [ for epd, played in r.FailedPuzzles -> {| Id = Option.toObj epd.Id; Fen = epd.FEN; Played = played |} ] |} ]
+    Cli.Output.printJson (Cli.Output.envelope "puzzle eret" true (box {| Config = path; Cancelled = ct.IsCancellationRequested; Engines = engines |}) [])
   Cli.Output.ExitOk
 
 /// A puzzle run from its config (a path that exists). With json the result (Console/PuzzleJsonSchema.md)
@@ -1156,10 +1169,11 @@ let puzzleEretSpec =
     { command [ "puzzle"; "eret" ] Group "Run an ERET test suite (EPD best-move positions) from a config" with
         Description = Some "Runs the ERET test of an ERET config (EretPuzzles.md); the failed puzzles and the summary go to its FailedPuzzlesOutputFolder. Exit 1 when an engine failed."
         Args = [ configArg "an ERET config (JSON)" ]
+        Options = [ json ]
         Examples = [ "eb-cli puzzle eret EretConfig.json", "The test" ] }
 
 let puzzleEret (p: Parsed) =
-    runEretTest (Cli.Groups.inputFile "ERET config" (argOf p "config").Value) (Cli.Output.onCtrlC ())
+    runEretTest (Cli.Groups.inputFile "ERET config" (argOf p "config").Value) (has p "json") (Cli.Output.onCtrlC ())
 
 let puzzleTrendSpec =
     { command [ "puzzle"; "trend" ] Group "Puzzle scores across a net's training checkpoints, from saved runs" with
@@ -1343,6 +1357,7 @@ let tournamentValidateSpec =
     { command [ "tournament"; "validate" ] Group "Check a tournament config without running it" with
         Description = Some "Reads the config and its engine defs and checks the key settings; warnings for settings that will not do what they seem to. Exit 1 when the config has errors."
         Args = [ configArg "a tournament config (JSON)" ]
+        Options = [ json ]
         Examples = [ "eb-cli tournament validate tournament.json", "Is it ready to run?" ] }
 
 let tournamentValidate (p: Parsed) =
@@ -1351,10 +1366,13 @@ let tournamentValidate (p: Parsed) =
     | None -> raise (Usage $"not a tournament config: {path}")
     | Some(tourny, engineList) ->
         let t = { tourny with EngineSetup = { tourny.EngineSetup with Engines = engineList } }
-        Validation.validateTournamentInput t
-        match Validation.validateTournament t with
-        | Validation.Errors _ -> Cli.Output.ExitFailed
-        | _ -> Cli.Output.ExitOk
+        let errors = match Validation.validateTournament t with Validation.Errors e -> e | _ -> []
+        if has p "json" then
+            let result = {| Config = path; Valid = errors.IsEmpty; Warnings = Validation.tournamentWarnings t |}
+            let listed = [ for e in errors -> ({ Code = "invalid-config"; Message = e } : Cli.Output.JsonError) ]
+            Cli.Output.printJson (Cli.Output.envelope (name p.Command) errors.IsEmpty (box result) listed)
+        else Validation.validateTournamentInput t
+        if errors.IsEmpty then Cli.Output.ExitOk else Cli.Output.ExitFailed
 
 let tuneRunSpec =
     { command [ "tune"; "run" ] Group "Tune engine parameters (Bayesian optimisation)" with

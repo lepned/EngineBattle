@@ -360,6 +360,26 @@ module ParsingTests =
       InSufficientMaterial = inSufficientMaterial
     }
 
+  type PlayerMissedWins = { Player: string; MissedWins: int }
+
+  /// The numbers of pgnTerminationSummary's table (evals in pawns), for `pgn endings --json`.
+  type EndingCounts =
+    { Games: int
+      /// games with engine evals: the denominator of every count below
+      GamesAnalyzed: int
+      MissedWinThreshold: float
+      MissedWins: int
+      MissedWinsPerPlayer: PlayerMissedWins list
+      MissedWinsEndingBelow: float
+      MissedWinsEndedBelow: int
+      MissedWinsEndingAbove: float
+      MissedWinsEndedAbove: int
+      TwoFold: int
+      ThreeFold: int
+      Stalemate: int
+      FiftyMoveRule: int
+      InsufficientMaterial: int }
+
   let pgnTerminationSummary path chunkSize threshold (highEvalThreshold, lowEvalThreshold) =
     // Function to calculate maximum length for each column
     let calculateMaxLengths (headers:string list) (rows: string list list) =
@@ -548,7 +568,14 @@ module ParsingTests =
 
       let summary = sprintf "```\nSummary of the analysis for all games in PGN:\n" + formatTable headers rows + "\n```"
       printfn "%s" summary      
-      games, summary, sb.ToString()    
+      let counts =
+        { Games = games; GamesAnalyzed = totalGames; MissedWinThreshold = threshold; MissedWins = totalMissedWins
+          MissedWinsPerPlayer = [ for p, missed in totalMissedWinsPerPlayer -> { Player = p; MissedWins = missed } ]
+          MissedWinsEndingBelow = lowEvalThreshold; MissedWinsEndedBelow = endEloLower
+          MissedWinsEndingAbove = highEvalThreshold; MissedWinsEndedAbove = endEloHigher
+          TwoFold = allTwoFold; ThreeFold = allThreeFold; Stalemate = staleMate; FiftyMoveRule = fiftyMoveRule
+          InsufficientMaterial = insufficientMaterial }
+      games, summary, sb.ToString(), counts    
     [allPlayers]
 
   let gameAnalysisFromFolderAndSubFolder folderPath chunkSize threshold (highEvalThreshold, lowEvalThreshold) =
@@ -577,7 +604,7 @@ module ParsingTests =
         writer.WriteLine($"Working on file: {file}")
         //writer.WriteLine("---------------------------------------------------------\n")
         
-        for numberOfGames, summary, detailSummary in pgnTerminationSummary file chunkSize threshold (highEvalThreshold, lowEvalThreshold) do
+        for numberOfGames, summary, detailSummary, _ in pgnTerminationSummary file chunkSize threshold (highEvalThreshold, lowEvalThreshold) do
             writer.WriteLine(summary)        
             writer.WriteLine(detailSummary)
             writer.WriteLine("---------------------------------------------------------")
