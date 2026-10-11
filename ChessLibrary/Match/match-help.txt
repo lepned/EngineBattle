@@ -59,6 +59,8 @@ OUTPUT
     -output format=fastchess|cutechess   report format (default fastchess)
     -report penta=true|false  pentanomial statistics (default true, with -games 2)
     -ratinginterval N         a report every N games or pairs (default 10; 0 = only at the end)
+                              pairs when pentanomial is reported (the default), games with
+                              -report penta=false
     -scoreinterval N          a score line every N games (cutechess format; default 1)
     -pgnout file=F [append=true|false]
                               EngineBattle's PGN (resumes from the games already in it)
