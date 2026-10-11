@@ -405,7 +405,11 @@ let runEretTest (path: string) (json: bool) (ct: CancellationToken) =
       [ for r in final ->
           {| Engine = r.PlayerName; Correct = r.CorrectPuzzles.Count; Failed = r.FailedPuzzles.Count; Accuracy = r.Accuracy
              FailedPuzzles = [ for epd, played in r.FailedPuzzles -> {| Id = Option.toObj epd.Id; Fen = epd.FEN; Played = played |} ] |} ]
-    Cli.Output.printJson (Cli.Output.envelope "puzzle eret" true (box {| Config = path; Cancelled = ct.IsCancellationRequested; Engines = engines |}) [])
+    let errors =
+      if ct.IsCancellationRequested then
+        [ ({ Code = "interrupted"; Message = "stopped with Ctrl+C: only the positions that were done are counted" } : Cli.Output.JsonError) ]
+      else []
+    Cli.Output.printJson (Cli.Output.envelope "puzzle eret" (not ct.IsCancellationRequested) (box {| Config = path; Engines = engines |}) errors)
   Cli.Output.ExitOk
 
 /// A puzzle run from its config (a path that exists). With json the result (Console/PuzzleJsonSchema.md)

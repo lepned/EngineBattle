@@ -310,7 +310,7 @@ let strip (p: Parsed) =
 
 let summarySpec =
     { command [ "pgn"; "endings" ] Group "How the games ended: missed wins, repetition, 50-move rule, stalemate..." with
-        Description = Some "From the games with engine evals: the missed wins (a game an engine stood +4 in and did not win) per engine and how they ended, and how many games ended by repetition, the 50-move rule, stalemate or insufficient material."
+        Description = Some "From the games with engine evals: the missed wins (a drawn game in which an engine stood above +4) per engine and how they ended, and how many games ended by repetition, the 50-move rule, stalemate or insufficient material."
         Args = [ pgnSubject ]
         Options = [ json ]
         Examples = [ "eb-cli pgn endings games.pgn", "How the games ended" ] }
@@ -346,7 +346,9 @@ let elo (p: Parsed) =
                Pairs =
                  [ for e in cross do
                      for opponent, s in e.StatsAgainst do
-                         {| Player = e.Player; Opponent = opponent; Win = s.Wins; Draw = s.Draws; Loss = s.Losses |} ] |}
+                         {| Player = e.Player; Opponent = opponent; Win = s.Wins; Draw = s.Draws; Loss = s.Losses |} ]
+               // too many players for a crosstable (GameAnalysis.maxCrosstablePlayers)
+               PairsSkipped = cross.Count = 0 && players.Length > 1 |}
         printJson (envelope (name p.Command) true (box result) [])
     else printfn "%s" text
     ExitOk

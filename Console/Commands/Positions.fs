@@ -166,10 +166,11 @@ let compare (p: Parsed) =
         | Some file ->
             if (argOf p "fen").IsSome || (valueOf p "moves").IsSome then
                 raise (Usage "--positions searches the file's positions: give it without a FEN or --moves")
-            ChessLibrary.EPDExtractor.readEPDs (inputFile "positions file" file) |> Seq.map (fun e -> e.FEN) |> Array.ofSeq
+            ChessLibrary.EPDExtractor.readEPDs (inputFile "positions file" file) |> Seq.map (fun e -> e.FEN, []) |> Array.ofSeq
         | None ->
+            // the moves go to the engines (position fen ... moves ...), as analyze sends them
             let start = fen p "fen"
-            [| after start (movesFrom p start) |]
+            [| start, movesFrom p start |]
     if positions.Length = 0 then raise (Usage "the positions file has no positions")
     let lim = limit p 1_000_000
     let threshold = floatOf p "min-diff"
@@ -187,7 +188,7 @@ let compare (p: Parsed) =
             say "E2 = %s" config2.Name
             say "Positions: %d, search: %s" positions.Length lim.Text
             say ""
-        let fenW = positions |> Array.map String.length |> Array.max |> max 3
+        let fenW = positions |> Array.map (fun (f, m) -> (after f m).Length) |> Array.max |> max 3
         if not jsonMode then
             say "%-4s  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s" "#" fenW "FEN" "Eval E1" "Eval E2" "Diff" "NPS E1" "NPS E2" "Ratio" "Move"
             say "%s" (String.replicate (fenW + 76) "-")
@@ -198,17 +199,19 @@ let compare (p: Parsed) =
         let mutable stop = false
         for i in 0 .. positions.Length - 1 do
             if not stop then
-                let fenText = positions.[i]
+                let start, played = positions.[i]
+                // the table shows the position searched
+                let fenText = after start played
                 try
-                    let r1 = Engines.search e1 fenText [] lim false
-                    let r2 = Engines.search e2 fenText [] lim false
+                    let r1 = Engines.search e1 start played lim false
+                    let r2 = Engines.search e2 start played lim false
                     let diff =
                         match Engines.pawnsOf r1.Eval, Engines.pawnsOf r2.Eval with
                         | Some a, Some b -> Some(abs (a - b))
                         | _ -> None
                     results.Add((i + 1, r1, r2, diff))
-                    let white = whiteToMove fenText []
-                    rows.Add(box {| Index = i + 1; Fen = fenText; E1 = searchJson white r1; E2 = searchJson white r2; EvalDiff = Option.toNullable diff; Error = (null: string) |})
+                    let white = whiteToMove start played
+                    rows.Add(box {| Index = i + 1; Fen = start; Moves = played; E1 = searchJson white r1; E2 = searchJson white r2; EvalDiff = Option.toNullable diff; Error = (null: string) |})
                     let show = match threshold, diff with Some t, Some d -> d >= t | _ -> true
                     if show && not jsonMode then
                         let moveText = if r1.Bestmove = r2.Bestmove then r1.Bestmove else $"{r1.Bestmove}/{r2.Bestmove}"
@@ -221,12 +224,12 @@ let compare (p: Parsed) =
                 | :? ChessLibrary.CustomException.EngineStartupException as ex ->
                     // a refused or dead engine does not recover on the next position
                     error $"position {i + 1}: {ex.Message}"
-                    rows.Add(box {| Index = i + 1; Fen = fenText; E1 = null; E2 = null; EvalDiff = Nullable<float>(); Error = ex.Message |})
+                    rows.Add(box {| Index = i + 1; Fen = start; Moves = played; E1 = null; E2 = null; EvalDiff = Nullable<float>(); Error = ex.Message |})
                     failed <- true
                     stop <- true
                 | ex ->
                     error $"position {i + 1}: {ex.Message}"
-                    rows.Add(box {| Index = i + 1; Fen = fenText; E1 = null; E2 = null; EvalDiff = Nullable<float>(); Error = ex.Message |})
+                    rows.Add(box {| Index = i + 1; Fen = start; Moves = played; E1 = null; E2 = null; EvalDiff = Nullable<float>(); Error = ex.Message |})
                     failed <- true
         let n = results.Count
         let avg (f: Engines.SearchResult * Engines.SearchResult * float option -> float option) =

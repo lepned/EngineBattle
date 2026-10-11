@@ -526,7 +526,7 @@ How the games ended: missed wins, repetition, 50-move rule, stalemate...
 
 Usage: eb-cli pgn endings <pgn> [options]
 
-From the games with engine evals: the missed wins (a game an engine stood +4 in and did not win) per engine and how they ended, and how many games ended by repetition, the 50-move rule, stalemate or insufficient material.
+From the games with engine evals: the missed wins (a drawn game in which an engine stood above +4) per engine and how they ended, and how many games ended by repetition, the 50-move rule, stalemate or insufficient material.
 
 Arguments:
   <pgn>  a PGN file
