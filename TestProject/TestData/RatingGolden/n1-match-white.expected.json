@@ -1,0 +1,20 @@
+{
+  "source": "N1_BT6_1585k_vs_C1_640_34_LEPNED.pgn",
+  "anchor": null,
+  "ordo": "-Q -a 0 -W -d 33.79 -N 2 -z 200.24 -n 4 -s 1000 -U 0,1,2,3,4,5 -- C:/Dev/Chess/PGNs/N1_BT6_1585k_vs_C1_640_34_LEPNED.pgn",
+  "whiteAdvantage": 100.43,
+  "drawRate": 33.79,
+  "drawRateError": 1.49,
+  "players": [
+    {
+      "name": "LC0 BT6 1585k",
+      "rating": 7.52,
+      "error": 8.37
+    },
+    {
+      "name": "Ceres_C1_640_34_LEPNED_FP16",
+      "rating": -7.52,
+      "error": 8.37
+    }
+  ]
+}

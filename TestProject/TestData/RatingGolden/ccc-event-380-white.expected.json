@@ -1,0 +1,40 @@
+{
+  "source": "ccc_event_380.pgn",
+  "anchor": null,
+  "ordo": "-Q -a 0 -W -d 93.53 -N 2 -z 200.24 -n 4 -s 1000 -U 0,1,2,3,4,5 -- C:/Dev/Chess/PGNs/ccc_games/ccc_event_380.pgn",
+  "whiteAdvantage": 197.3,
+  "drawRate": 93.53,
+  "drawRateError": 2.76,
+  "players": [
+    {
+      "name": "Stockfish",
+      "rating": 109.83,
+      "error": 17.82
+    },
+    {
+      "name": "Torch",
+      "rating": 52.5,
+      "error": 18.24
+    },
+    {
+      "name": "Obsidian",
+      "rating": -1.09,
+      "error": 19.07
+    },
+    {
+      "name": "Lc0",
+      "rating": -39.79,
+      "error": 18.91
+    },
+    {
+      "name": "Integral",
+      "rating": -57.72,
+      "error": 17.91
+    },
+    {
+      "name": "Berserk",
+      "rating": -63.72,
+      "error": 18.87
+    }
+  ]
+}

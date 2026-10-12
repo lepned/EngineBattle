@@ -41,7 +41,6 @@ public class GlobalSettings
     public string[] RecentBrowsePaths { get; set; } = [];
 
     // Tool paths
-    public string OrdoExePath { get; set; } = "";
 
     // Engine defaults
     public string DefaultEnginePath { get; set; } = "";

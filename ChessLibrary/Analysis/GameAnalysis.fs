@@ -4,8 +4,6 @@ open System
 open System.IO
 open System.Text
 open System.Collections.Generic
-open CliWrap
-open CliWrap.Buffered
 
 open TypesDef.CoreTypes
 open Statistics
@@ -50,150 +48,10 @@ module Formatting =
 
 module OrdoHelper =
 
-  // Configuration (consider moving to a config file)
-  let defaultZValue = "200.24"
-  let defaultThreads = "4"
-  let defaultSkillLevel = "1000"
-  let defaultUserList = "0,1,2,3,4,5,6,7,8,9,10"
-  let defaultStatsFile = "stats.txt"
-
-  //glbchess uses this ordo commmand:
-  //ordo-win64.exe -Q -a 0 -A "Stockfish 17" -D -U "0,1,2,3,4,5,6,7,8,9,10" -s 2000 -n 6  -C ordo_CFS_matrix.csv -o ordo_rating.txt -c ordo_rating.csv -- Ceres.pgn
-
-  // Function to create the command with specified executable path, file, and engine name.
-  // drawRate: the games' draw rate (calibratedDrawRate) passed as -d, or Ordo's default 50 %.
-  // Never -D with simulations: Ordo re-fits the draw rate in every simulation, and on some
-  // samples that never ends (a 200-game PGN: -s 585 instant, -s 590 never finished).
-  let createOrdoCommand (executablePath: string) (fileName: string) (engineName: string) (drawRate: float option) =
-    // Test if the executable exists
-    if not (File.Exists(executablePath)) then
-        ConsoleUtils.redConsole "Ordo executable not found"
-
-    let baseArgsBeforeEngine = ["-Q"; "-a"; "0"; ]
-    let engineArgs =
-        match String.IsNullOrEmpty engineName with
-        | false -> ["-A"; engineName.Trim()] // Engine name as an argument
-        | true -> [] // Do not include the -A argument if engineName is not provided
-    let drawArgs =
-        match drawRate with
-        | Some rate -> ["-d"; rate.ToString("0.##", Globalization.CultureInfo.InvariantCulture)]
-        | None -> []
-    let baseArgsAfterEngine = [
-        "-N"; "0";
-        "-z"; defaultZValue;
-        "-n"; defaultThreads;
-        "-s"; defaultSkillLevel;
-        "-U"; defaultUserList;
-        "-j"; defaultStatsFile;
-        "--"; fileName // File name as an argument
-    ]
-    Cli.Wrap(executablePath)
-        .WithWorkingDirectory(Path.GetDirectoryName(executablePath))
-        .WithArguments(baseArgsBeforeEngine @ engineArgs @ drawArgs @ baseArgsAfterEngine)
-
   let calcPadding (minPadding: int) (delta: int) (selector: 'a -> string) (data: seq<'a>) =
     let lengths = data |> Seq.map (selector >> String.length)
     if Seq.isEmpty lengths then minPadding
     else max ((Seq.max lengths) + delta) minPadding
-
-  let addDataFromEBToOrdo (output: string) (engineData : PlayerResult seq) =
-    let lines = output.Split('\n')[3..] // Split the string into lines and remove the first three lines
-    let sb = new StringBuilder()
-    let minPadding = 8
-    let delta = 2 //extra padding for columns with values
-    let wScorePadding = calcPadding minPadding delta (fun (e: PlayerResult) -> e.WhiteScore.ToString()) engineData
-    let bScorePadding = calcPadding minPadding delta (fun (e: PlayerResult) -> e.BlackScore.ToString()) engineData
-    let pairsPadding  = calcPadding minPadding delta (fun (e: PlayerResult) -> e.PairsString) engineData
-    let formatSpeed (e: PlayerResult) =
-      let nps = Formatting.formatNPS e.MedSpeed
-      if e.EPS > 0.0 then $"{nps} ({Formatting.formatEPS e.EPS})" else nps
-    let speedPadding  = calcPadding minPadding delta formatSpeed engineData
-    let speedHeader =
-      let label = "Speed"
-      let diff = speedPadding - label.Length
-      if diff <= 0 then label
-      else
-        let left = diff / 2
-        let right = diff - left
-        (String.replicate left " ") + label + (String.replicate right " ")
-
-    let converted =
-      for line in lines do
-        match engineData |> Seq.tryFind (fun e -> line.Contains e.Player) with
-        | Some e ->
-            sb.Append (line.TrimEnd('\r')) |> ignore
-            sb.Append (e.WhiteScore.ToString().PadLeft(wScorePadding)) |> ignore
-            sb.Append (e.BlackScore.ToString().PadLeft(bScorePadding)) |> ignore
-            sb.Append (e.PairsString.PadLeft(pairsPadding)) |> ignore
-            sb.Append "   " |> ignore
-            let speed = formatSpeed e
-            sb.Append (speed.PadRight(speedPadding) + "\n") |> ignore
-        | None ->
-            match engineData |> Seq.tryFind (fun _ -> line.Contains "RATING") with
-            | Some _ ->
-                sb.Append (line.TrimEnd('\r')) |> ignore
-                sb.Append ("Wscore".PadLeft(wScorePadding)) |> ignore
-                sb.Append ("Bscore".PadLeft(bScorePadding)) |> ignore
-                sb.Append ("Pairs".PadLeft(pairsPadding)) |> ignore
-                sb.Append "   " |> ignore
-                sb.Append (speedHeader.PadLeft(speedPadding) + "\n") |> ignore
-            | _ -> sb.AppendLine line |> ignore
-      sb.ToString()
-    converted
-
-
-    // Execute the command asynchronously and capture the output
-  let runCommandAsync (cmd:Command) (engineData : PlayerResult seq) (timeoutSeconds: float) (cancellationToken: System.Threading.CancellationToken) =
-      task {
-          try
-              use cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-              cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds))
-              let sb = new StringBuilder()
-              let! result = cmd.ExecuteBufferedAsync(cts.Token)
-              //let msg = removeTopThreeLines (result.StandardOutput.Trim())
-              sb.Append "\n```" |> ignore
-              let msg = addDataFromEBToOrdo result.StandardOutput engineData
-              sb.Append msg |> ignore
-              sb.Append "```\n" |> ignore
-              if result.StandardError.Length > 0 then
-                //printfn "Standard Error: %s" result.StandardError
-                sb.AppendLine (sprintf "Standard Error: %s" result.StandardError) |> ignore
-              return sb.ToString()
-          with
-          | :? OperationCanceledException ->
-              return sprintf "Ordo command execution timed out after %.0f seconds" timeoutSeconds
-          | ex -> return sprintf "An error occurred: %s" (ex.Message)
-      }
-
-
-  /// The draw rate Ordo calibrates from a PGN (-D without error simulations: fast), in percent;
-  /// None when Ordo fails, prints none, or does not answer in time.
-  let calibratedDrawRate (executablePath: string) (fileName: string) (timeoutSeconds: float) (cancellationToken: System.Threading.CancellationToken) =
-      task {
-          try
-              use cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-              cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds))
-              let cmd =
-                  Cli.Wrap(executablePath)
-                      .WithWorkingDirectory(Path.GetDirectoryName(executablePath))
-                      .WithArguments([ "-Q"; "-a"; "0"; "-D"; "-N"; "0"; "-z"; defaultZValue; "--"; fileName ])
-                      .WithValidation(CommandResultValidation.None)
-              let! result = cmd.ExecuteBufferedAsync(cts.Token)
-              let m = System.Text.RegularExpressions.Regex.Match(result.StandardOutput, @"Draw rate \(equal opponents\) = ([0-9.]+) %")
-              return
-                  if m.Success then Some (Double.Parse(m.Groups.[1].Value, Globalization.CultureInfo.InvariantCulture))
-                  else None
-          with _ -> return None
-      }
-
-  /// Whether a table may be rated at the games' draw rate: one Ordo read, strictly between 0 and
-  /// 100 % (with -D the simulations at 0 or 100 % never finished: an 8-game Swiss ran past 300 s).
-  /// Error carries why not.
-  let drawCalibration (drawRate: float option) : Result<unit, string> =
-      match drawRate with
-      | Some rate when rate > 0.5 && rate < 99.5 -> Ok ()
-      | Some rate -> Error $"the games give a draw rate of {rate:F0}%%, which cannot be calibrated"
-      | None -> Error "Ordo could not calibrate the draw rate from these games"
 
   let lossCombinations = [ "00"; "01/2"; "1/20" ]
   let winCombinations = [ "11"; "11/2"; "1/21" ]
@@ -249,25 +107,27 @@ module OrdoHelper =
     sprintf "%-*s : %7s %6s %7s %7s %4s %6s   %*s %5s %5s %5s %5s %7s %7s %8s"
             n "# PLAYER" "ELO" "ERROR" "POINTS" "PLAYED" "(%)" "CFS%" speedPadding speedHeader "W" "D" "L" "D(%)" "WScore" "BScore" "Pairs"
 
-  let private formatElo (elo: float) (isChallenger: bool) =
-    if isChallenger then "0.0"
-    elif Double.IsNaN(elo) then "---"
+  let private formatElo (elo: float) =
+    if Double.IsNaN(elo) then "---"
     elif elo = System.Double.PositiveInfinity then ConsoleUtils.positiveInfinitySymbol
     elif elo = System.Double.NegativeInfinity then ConsoleUtils.negativeInfinitySymbol
     else sprintf "%7.1f" elo
 
-  let private formatError (error: float) (isChallenger: bool) =
-      if isChallenger then "----"
+  // an anchor has no error: its rating is the reference
+  let private formatError (error: float) =
+      if error = 0.0 then "----"
       elif Double.IsNaN(error) then "---"
       elif error = System.Double.PositiveInfinity then ConsoleUtils.positiveInfinitySymbol
       elif error = System.Double.NegativeInfinity then ConsoleUtils.negativeInfinitySymbol
       else error.ToString("F1")
 
   let writeEngineLineForPlayer (p: PlayerResult) n (speed: string) (speedPadding: int) =
-      let elo = formatElo p.Elo p.Challenger
-      let error = formatError p.Error p.Challenger
-      sprintf "%-*s : %7s %6s %7.1f %7d %4d %6d   %-*s %5d %5d %5d %5d %7.1f %7.1f %8s"
-              n p.Player elo error p.Points p.Played p.Percent p.CFS speedPadding speed p.Win p.Draw p.Loss p.D p.WhiteScore p.BlackScore p.PairsString
+      let elo = formatElo p.Elo
+      let error = formatError p.Error
+      // CFS against the next row; the last row has none
+      let cfs = if p.CFS < 0 then "---" else string p.CFS
+      sprintf "%-*s : %7s %6s %7.1f %7d %4d %6s   %-*s %5d %5d %5d %5d %7.1f %7.1f %8s"
+              n p.Player elo error p.Points p.Played p.Percent cfs speedPadding speed p.Win p.Draw p.Loss p.D p.WhiteScore p.BlackScore p.PairsString
 
   let printStatsMatrix (table: CrossTableEntry seq) =
     let endOfLine = "\n```\n"
@@ -314,21 +174,8 @@ module OrdoHelper =
           if Seq.isEmpty engines then 10
           else engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
 
-      // In a two player table, the first player is always the challenger
-      let players =
-          engines
-          |> Seq.mapi (fun idx p ->
-              let isChallenger =
-                  table |> Seq.length = 2 && idx = 0
-              { p with Challenger = isChallenger }
-          )
-          |> Seq.toList
-
-      // Sort: challengers first, then by Elo descending
-      let sortedPlayers =
-          let (challengers, rest) = players |> List.partition (fun p -> p.Challenger)
-          let restSorted = rest |> List.sortByDescending (fun e -> e.Elo)
-          challengers @ restSorted
+      // strongest first, as the fit orders them (the CFS is against the next row)
+      let sortedPlayers = engines |> Seq.sortByDescending (fun e -> e.Elo, e.Points) |> Seq.toList
 
       let speedStrings =
           sortedPlayers
@@ -425,12 +272,77 @@ module PGNCalculator =
       |> Seq.map PGNWriter.getResultsFromPGNGame
       |> Seq.toArray
 
-  let getFullStatFromResults results =
+  /// The games as the rating fit takes them (Player1 is White); an unfinished game is none.
+  let ratingGames (results: Result seq) =
+    results
+    |> Seq.choose (fun r ->
+        let outcome =
+          match r.Result with
+          | "1-0" -> Some RatingFit.WhiteWin
+          | "0-1" -> Some RatingFit.BlackWin
+          | "1/2-1/2" -> Some RatingFit.Draw
+          | _ -> None
+        outcome |> Option.map (fun o -> { RatingFit.White = r.Player1; RatingFit.Black = r.Player2; RatingFit.Outcome = o }))
+
+  /// One rating fit of every player at once (RatingFit, what Ordo did): with two players the
+  /// first is the anchor at 0, as the tables show it; otherwise the pool average is 0.
+  let ratingFit (players: string list) (results: Result seq) =
+    let games = ratingGames results |> Seq.toArray
+    if games.Length = 0 then None
+    else
+      let anchor = match players with [ a; _ ] -> Some a | _ -> None
+      Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = anchor } games)
+
+  /// Each player's Elo, error and CFS from the fit. The CFS is against the next player in rating
+  /// order (-1 for the last: no next). A player the fit has no games of keeps its own numbers.
+  let withRatingFit (fit: RatingFit.Fit option) (players: PlayerResult seq) =
+    match fit with
+    | None -> players |> Seq.toList
+    | Some f ->
+      let rated = f.Players |> List.map (fun p -> p.Name, p) |> dict
+      let next = f.Players |> List.map (fun p -> p.Name) |> List.pairwise |> dict
+      [ for p in players ->
+          match rated.TryGetValue p.Player with
+          | true, r ->
+              let cfs =
+                match next.TryGetValue p.Player with
+                | true, n -> let c = f.Cfs p.Player n in if Double.IsNaN c then -1 else int (Math.Round(100.0 * c))
+                | _ -> -1
+              { p with Elo = r.Rating; Error = r.Error; CFS = cfs }
+          | _ -> p ]
+
+  /// The lines under a table: the fit's white advantage and draw rate, and a note when the games
+  /// do not connect every player.
+  let ratingFitLines (fit: RatingFit.Fit option) =
+    match fit with
+    | None -> ""
+    | Some f ->
+        sprintf "White advantage = %.1f +/- %.1f\nDraw rate (equal opponents) = %.2f %% +/- %.2f\n" f.WhiteAdvantage f.WhiteAdvantageError f.DrawRate f.DrawRateError
+        + (if f.Groups.Length > 1 then sprintf "%d groups of players the games do not connect: ratings compare within a group only\n" f.Groups.Length else "")
+        // a perfect score has no rating of its own: a floor or a ceiling
+        + (f.Players
+           |> List.choose (fun p ->
+               match p.Bound with
+               | RatingFit.Floor -> Some (sprintf "%s won every game: rated as if one were a draw, so at least %.1f\n" p.Name p.Rating)
+               | RatingFit.Ceiling -> Some (sprintf "%s lost every game: rated as if one were a draw, so at most %.1f\n" p.Name p.Rating)
+               | RatingFit.Exact -> None)
+           |> String.concat "")
+
+  /// The players rated again with this anchor (None: the pool average), and the fit.
+  let rerate (anchor: string option) (results: Result seq) (players: PlayerResult seq) =
+    let games = ratingGames results |> Seq.toArray
+    let fit = if games.Length = 0 then None else Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = anchor } games)
+    withRatingFit fit players, fit
+
+  /// Every player's statistics, with the rating fit (also returned, for the lines under the table).
+  let getFullStatAndFit results =
+    let results = Seq.toArray results
     let players =
       [ for r in results do
           yield r.Player1
           yield r.Player2
       ] |> Seq.distinct |> List.ofSeq
+    let fit = ratingFit players results
     // Bucket the results by player in one pass. calculateStatisticsForPlayer only ever
     // looks at that player's own games, so handing it the pre-filtered list is
     // equivalent — but it turns an O(players x games) scan (which also re-materialized
@@ -456,6 +368,9 @@ module PGNCalculator =
               | _ -> Seq.empty
             let res = calculateStatisticsForPlayer player games
             yield res }
+    |> withRatingFit fit, fit
+
+  let getFullStatFromResults results = fst (getFullStatAndFit results) :> PlayerResult seq
 
   let opponentsList (results: Result list) p1 =
     let players = results |> List.collect (fun r -> [r.Player1; r.Player2]) |> List.distinct
@@ -486,7 +401,7 @@ module PGNCalculator =
       // Arbitrary user PGNs legitimately contain unscored games ("*" for
       // unfinished/aborted, or an empty Result). Skip those here instead of
       // failing the whole crosstable — the old failwith escaped out of a sort
-      // comparer and killed the OrdoResults circuit.
+      // comparer and killed the Ratings page's circuit.
       let results =
           results
           |> List.filter (fun r -> r.Result = "1-0" || r.Result = "0-1" || r.Result = "1/2-1/2")
@@ -633,15 +548,22 @@ module PGNCalculator =
     printfn "\n%s\n" idealized
 
 
+  /// Two players rated against an anchor (rating 0 and no error; the first listed when both are,
+  /// as after nothing but draws): the other one's error is the paired-openings (pentanomial)
+  /// error, the one the match's Elo line gives. Nothing at the pool average (the errors are the
+  /// fit's own) or with more players.
   let populatePentanomialError (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
-    if Seq.length players = 2 then
+    let players = Seq.toList players
+    match players |> List.tryFind (fun p -> p.Elo = 0.0 && p.Error = 0.0) with
+    | Some anchor when players.Length = 2 ->
       let matchups = Pentanomial.calculateAllMatchups pgnGames
       match matchups with
       | [ (_, counts) ] ->
           let _, error, _ = Pentanomial.pentanomialEloErrorAndLos counts
           for p in players do
-            p.Error <- error
+            if p.Player <> anchor.Player then p.Error <- error
       | _ -> ()
+    | _ -> ()
 
   let populateSpeedMetrics (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
     let avgSpeed =
@@ -686,7 +608,7 @@ module PGNCalculator =
       else
         printfn "Crosstable skipped: %d players exceeds the limit of %d" distinctPlayerCount maxCrosstablePlayers
         ResizeArray()
-    let playerRes = getFullStatFromResults allResults |> Seq.toList
+    let playerRes, fit = getFullStatAndFit allResults
     populateSpeedMetrics playerRes results
     populatePentanomialError playerRes results
     OrdoHelper.populatePairData playerRes cross
@@ -697,7 +619,7 @@ module PGNCalculator =
           printfn "Standings trimmed to the %d most active of %d players"
             maxConsoleStandingsPlayers playerRes.Length
           playerRes |> List.sortByDescending (fun p -> p.Played) |> List.truncate maxConsoleStandingsPlayers
-      let standings = OrdoHelper.getResultsAndPairsInConsoleFormat forConsole cross
+      let standings = OrdoHelper.getResultsAndPairsInConsoleFormat forConsole cross + ratingFitLines fit
       if playerRes.Length = 2 then
         standings + Pentanomial.formatSingleMatchupCompact results
       else standings
@@ -705,7 +627,9 @@ module PGNCalculator =
     consoleContent, playerRes, cross, allResults
 
   let calculateStatistics (engines:string list) results =
-      engines |> List.map (fun player -> calculateStatisticsForPlayer player results)
+      engines
+      |> List.map (fun player -> calculateStatisticsForPlayer player results)
+      |> withRatingFit (ratingFit engines results)
 
   let processStat (challengers: string list) (playerResults : _ list) =
     let challengerSet = Set(challengers)

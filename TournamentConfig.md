@@ -26,7 +26,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **PauseAfterRound**: A round number; the WebGUI stops the tournament once a round beyond it starts (0 = never). Console runs ignore it.
 - **DelayBetweenGames**: Delay between games, e.g. `00:00:20`.
 - **MoveOverhead**: Move overhead time, e.g. `00:00:00.100`. Sent to the engines as their move overhead and allowed as a margin before a loss on time. It is sent only to an engine with a spin option whose name contains "overhead" (e.g. `Move Overhead`, `MoveOverheadMs`), only when the value lies within that option's range, and not when the engine def sets that option itself. For an engine on a time per move (`MoveTime`) it is a margin only - not sent - and never less than 50 ms.
-- **OrdoExePath**: Path to the Ordo executable, used for the standings of console runs: the periodic summaries run Ordo on the output PGN, and a final pass with draw-rate calibration runs at the end. Empty = EngineBattle's own standings table. The GUI's Tournament creator fills it from the Ordo path in Settings.
+- **OrdoExePath**: Not used any more - the ratings in every table (Elo, error, CFS, the draw rate and the white advantage under it) are EngineBattle's own fit of all the games at once, the same model Ordo used. An old config that still has the field runs as before; the console says the field is ignored.
 - **ConsoleOnly**: Internal. Set automatically to `true` when the tournament runs from the console; there is no need to write it.
 
 > **Time format**: `hh:mm:ss` with an optional `.fff` for milliseconds. No field has an upper

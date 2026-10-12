@@ -20,7 +20,7 @@
         {
             <div class="settings-help-content">
                 <p><b>General</b> — Set your startup page and default engines. Default engines auto-load in analysis and review pages, saving you from re-browsing every session.</p>
-                <p><b>Paths & Tools</b> — PGN save path for analysis games and the Ordo rating tool path.</p>
+                <p><b>Paths & Tools</b> — PGN save path for analysis games.</p>
                 <p><b>Analysis</b> — Search limits, chart lines, MultiPV, and policy thresholds. These defaults apply when opening analysis pages.</p>
                 <p><b>Game Review</b> — Search mode, time, nodes, depth for game review. Advanced settings control accuracy curve and classification thresholds.</p>
                 <p><b>Folders</b> — Directory paths populate the file browser bookmarks and set initial browse locations. Configure these once and every file picker starts in the right place.</p>
@@ -75,7 +75,7 @@
                     <option value="/tools/eret-creator">ERET Creator</option>
                 </optgroup>
                 <optgroup label="Results & Stats">
-                    <option value="/results/ordo">Ordo Table</option>
+                    <option value="/results/ratings">Ratings</option>
                     <option value="/results/book-exit-speed">Book Exit Speed</option>
                     <option value="/results/engine-speed">Engine Speed</option>
                     <option value="/results/backend-metrics">Backend Metrics</option>
@@ -125,14 +125,6 @@
             <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => analysisGamesPath = v, analysisGamesPath, "*.pgn"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
         </div>
 
-        <div class="field-row">
-            <div class="field-group">
-                <label>Ordo Executable</label>
-                <input type="text" @bind="ordoExePath" />
-                <small>Full path to the Ordo rating tool</small>
-            </div>
-            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => ordoExePath = v, ordoExePath, "*.exe"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-        </div>
     </div>
 
     <div class="settings-section">
@@ -379,7 +371,6 @@
     private string puzzleConfigFolder = "";
     private string puzzleResultsFolder = "";
     private string analysisGamesPath = "";
-    private string ordoExePath = "";
     private string defaultSearchMode = "Nodes";
     private double defaultSearchTimeMs = 3000;
     private int defaultSearchNodes = 100000;
@@ -432,7 +423,6 @@
         puzzleConfigFolder = s.PuzzleConfigFolder;
         puzzleResultsFolder = s.PuzzleResultsFolder;
         analysisGamesPath = s.AnalysisGamesPath;
-        ordoExePath = s.OrdoExePath;
         defaultEnginePath = s.DefaultEnginePath;
         secondaryEnginePath = s.SecondaryEnginePath;
         defaultSearchMode = s.DefaultSearchMode;
@@ -483,7 +473,6 @@
             settings.PuzzleConfigFolder = puzzleConfigFolder ?? "";
             settings.PuzzleResultsFolder = puzzleResultsFolder ?? "";
             settings.AnalysisGamesPath = analysisGamesPath ?? "";
-            settings.OrdoExePath = ordoExePath ?? "";
             settings.DefaultEnginePath = defaultEnginePath ?? "";
             settings.SecondaryEnginePath = secondaryEnginePath ?? "";
             settings.DefaultSearchMode = defaultSearchMode ?? "Nodes";
@@ -534,7 +523,6 @@
         puzzleConfigFolder = defaults.PuzzleConfigFolder;
         puzzleResultsFolder = defaults.PuzzleResultsFolder;
         analysisGamesPath = defaults.AnalysisGamesPath;
-        ordoExePath = defaults.OrdoExePath;
         defaultEnginePath = defaults.DefaultEnginePath;
         secondaryEnginePath = defaults.SecondaryEnginePath;
         defaultSearchMode = defaults.DefaultSearchMode;

@@ -1,0 +1,99 @@
+{
+  "source": "Ladder.pgn",
+  "anchor": null,
+  "ordo": "-Q -a 0 -d 47.2 -N 2 -z 200.24 -n 4 -s 1000 -U 0,1,2,3,4,5 -- C:/Dev/Chess/PGNs/Ladder.pgn",
+  "drawRate": 47.2,
+  "drawRateError": 1.22,
+  "players": [
+    {
+      "name": "Stockfish 20250427",
+      "rating": 102.55,
+      "error": 33.27
+    },
+    {
+      "name": "Lc0-Bt4-it332",
+      "rating": 73.24,
+      "error": 30.71
+    },
+    {
+      "name": "Stockfish 20250321",
+      "rating": 60.72,
+      "error": 36.08
+    },
+    {
+      "name": "Obsidian 15.22",
+      "rating": 55.17,
+      "error": 52.44
+    },
+    {
+      "name": "Ceres BT4 it332",
+      "rating": 53.46,
+      "error": 30.2
+    },
+    {
+      "name": "Lc0-BT4-it332-TRT",
+      "rating": 46.64,
+      "error": 30.87
+    },
+    {
+      "name": "Obsidian 15.21",
+      "rating": 27.53,
+      "error": 35.03
+    },
+    {
+      "name": "Obsidian 15.14",
+      "rating": 13.51,
+      "error": 32.46
+    },
+    {
+      "name": "PlentyChess 5.0.0",
+      "rating": 5.12,
+      "error": 30.2
+    },
+    {
+      "name": "Berserk 20250321",
+      "rating": -19.07,
+      "error": 30.29
+    },
+    {
+      "name": "Ceres C1-640-34",
+      "rating": -19.19,
+      "error": 30.55
+    },
+    {
+      "name": "Berserk 20250113",
+      "rating": -43.0,
+      "error": 35.37
+    },
+    {
+      "name": "Dragon 3.3",
+      "rating": -50.28,
+      "error": 30.91
+    },
+    {
+      "name": "Integral v7.0.0",
+      "rating": -50.32,
+      "error": 123.7
+    },
+    {
+      "name": "Caissa 1.22",
+      "rating": -55.38,
+      "error": 33.83
+    },
+    {
+      "name": "Clover 8.1.11",
+      "rating": -56.88,
+      "error": 38.45
+    },
+    {
+      "name": "Alexandria-8.0",
+      "rating": -68.27,
+      "error": 35.32
+    },
+    {
+      "name": "RubiChess-20250505",
+      "rating": -75.52,
+      "error": 40.01
+    }
+  ]
+}

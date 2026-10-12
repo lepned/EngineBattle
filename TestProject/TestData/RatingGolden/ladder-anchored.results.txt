@@ -1,0 +1,1811 @@
+Stockfish 20250321	Lc0-BT4-it332-TRT	1-0
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.14	1-0
+Lc0-Bt4-it332	Ceres BT4 it332	1-0
+Stockfish 20250321	Obsidian 15.14	1-0
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Stockfish 20250321	1/2-1/2
+Obsidian 15.14	Lc0-Bt4-it332	1-0
+Dragon 3.3	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Lc0-Bt4-it332	1-0
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1/2-1/2
+Dragon 3.3	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1-0
+Ceres BT4 it332	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Stockfish 20250321	1-0
+Ceres BT4 it332	Dragon 3.3	1/2-1/2
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Ceres BT4 it332	1-0
+Lc0-Bt4-it332	Obsidian 15.14	1/2-1/2
+Lc0-BT4-it332-TRT	Dragon 3.3	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1-0
+Dragon 3.3	Obsidian 15.14	1-0
+Dragon 3.3	Berserk 20250113	1-0
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250113	1-0
+Obsidian 15.14	Berserk 20250113	1-0
+Lc0-Bt4-it332	Berserk 20250113	1-0
+Berserk 20250113	Dragon 3.3	1-0
+Ceres BT4 it332	Berserk 20250113	1-0
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1-0
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1-0
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1-0
+Dragon 3.3	Ceres C1-640-34	1-0
+Ceres BT4 it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1-0
+Lc0-Bt4-it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Berserk 20250113	1-0
+Ceres C1-640-34	Dragon 3.3	1/2-1/2
+Ceres C1-640-34	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1-0
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1/2-1/2
+Lc0-BT4-it332-TRT	Stockfish 20250427	1/2-1/2
+Obsidian 15.14	Stockfish 20250427	1-0
+Lc0-Bt4-it332	Stockfish 20250427	1-0
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1/2-1/2
+Stockfish 20250321	Stockfish 20250427	1-0
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1-0
+Stockfish 20250427	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Caissa 1.22	1-0
+Caissa 1.22	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250427	Caissa 1.22	1-0
+Berserk 20250113	Caissa 1.22	1-0
+Dragon 3.3	Caissa 1.22	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250321	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1-0
+Lc0-BT4-it332-TRT	Caissa 1.22	1-0
+Obsidian 15.14	Caissa 1.22	1-0
+Lc0-Bt4-it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Berserk 20250113	1-0
+Caissa 1.22	Dragon 3.3	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1/2-1/2
+Stockfish 20250427	Berserk 20250321	1-0
+Berserk 20250321	Berserk 20250113	1/2-1/2
+Berserk 20250321	Dragon 3.3	1-0
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Stockfish 20250321	1-0
+Stockfish 20250321	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Berserk 20250321	1-0
+PlentyChess 5.0.0	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1-0
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1-0
+PlentyChess 5.0.0	Obsidian 15.14	1-0
+PlentyChess 5.0.0	Lc0-Bt4-it332	1-0
+Berserk 20250321	PlentyChess 5.0.0	1-0
+Stockfish 20250427	PlentyChess 5.0.0	1-0
+Caissa 1.22	Berserk 20250321	1/2-1/2
+Berserk 20250113	PlentyChess 5.0.0	1-0
+Ceres C1-640-34	Berserk 20250321	1/2-1/2
+Dragon 3.3	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250321	1/2-1/2
+Ceres BT4 it332	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Berserk 20250321	1-0
+PlentyChess 5.0.0	Stockfish 20250321	1-0
+Berserk 20250321	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Berserk 20250321	1-0
+Caissa 1.22	PlentyChess 5.0.0	1-0
+Ceres C1-640-34	PlentyChess 5.0.0	1-0
+Berserk 20250113	Berserk 20250321	1-0
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1-0
+Dragon 3.3	Berserk 20250321	1-0
+Obsidian 15.14	PlentyChess 5.0.0	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1/2-1/2
+Lc0-Bt4-it332	PlentyChess 5.0.0	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250321	1-0
+PlentyChess 5.0.0	Stockfish 20250427	1-0
+Berserk 20250321	Caissa 1.22	1-0
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1-0
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1-0
+PlentyChess 5.0.0	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.14	1-0
+Berserk 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	Stockfish 20250427	1-0
+Alexandria-8.0	Berserk 20250113	1/2-1/2
+Alexandria-8.0	Dragon 3.3	1/2-1/2
+Alexandria-8.0	Ceres BT4 it332	1/2-1/2
+Alexandria-8.0	Stockfish 20250321	1-0
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Caissa 1.22	Alexandria-8.0	1/2-1/2
+Ceres C1-640-34	Alexandria-8.0	1-0
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Obsidian 15.14	Alexandria-8.0	1/2-1/2
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Alexandria-8.0	Berserk 20250321	1-0
+Stockfish 20250427	Alexandria-8.0	1-0
+Berserk 20250113	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1/2-1/2
+Ceres BT4 it332	Alexandria-8.0	1-0
+Stockfish 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	PlentyChess 5.0.0	1-0
+Alexandria-8.0	Caissa 1.22	1-0
+Alexandria-8.0	Ceres C1-640-34	1-0
+Alexandria-8.0	Lc0-BT4-it332-TRT	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1-0
+Alexandria-8.0	Lc0-Bt4-it332	1-0
+Berserk 20250321	Clover 8.1.11	1-0
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1-0
+Clover 8.1.11	Lc0-Bt4-it332	1-0
+PlentyChess 5.0.0	Clover 8.1.11	1-0
+Caissa 1.22	Clover 8.1.11	1/2-1/2
+Ceres C1-640-34	Clover 8.1.11	1/2-1/2
+Dragon 3.3	Clover 8.1.11	1-0
+Ceres BT4 it332	Clover 8.1.11	1-0
+Clover 8.1.11	Berserk 20250321	1-0
+Stockfish 20250427	Clover 8.1.11	1-0
+Lc0-BT4-it332-TRT	Clover 8.1.11	1-0
+Obsidian 15.14	Clover 8.1.11	1-0
+Lc0-Bt4-it332	Clover 8.1.11	1-0
+Clover 8.1.11	PlentyChess 5.0.0	1-0
+Clover 8.1.11	Caissa 1.22	1-0
+Clover 8.1.11	Ceres C1-640-34	1/2-1/2
+Clover 8.1.11	Dragon 3.3	1-0
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.21	1-0
+Obsidian 15.21	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Obsidian 15.14	1-0
+Obsidian 15.21	Ceres BT4 it332	1-0
+Obsidian 15.21	Stockfish 20250427	1-0
+Dragon 3.3	Obsidian 15.21	1-0
+Alexandria-8.0	Obsidian 15.21	1-0
+PlentyChess 5.0.0	Obsidian 15.21	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Obsidian 15.21	1/2-1/2
+Obsidian 15.21	Berserk 20250321	1-0
+Ceres C1-640-34	Obsidian 15.21	1-0
+Obsidian 15.14	Obsidian 15.21	1-0
+Ceres BT4 it332	Obsidian 15.21	1/2-1/2
+Stockfish 20250427	Obsidian 15.21	1-0
+Obsidian 15.21	Dragon 3.3	1-0
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1-0
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.21	Lc0-Bt4-it332	1-0
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1-0
+RubiChess-20250505	PlentyChess 5.0.0	1-0
+RubiChess-20250505	Ceres BT4 it332	1-0
+RubiChess-20250505	Stockfish 20250427	1-0
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1/2-1/2
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1-0
+Alexandria-8.0	RubiChess-20250505	1-0
+PlentyChess 5.0.0	RubiChess-20250505	1-0
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1-0
+RubiChess-20250505	Berserk 20250321	1-0
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1/2-1/2
+RubiChess-20250505	Lc0-Bt4-it332	1-0
+Obsidian 15.21	Caissa 1.22	1-0
+Caissa 1.22	Obsidian 15.21	1/2-1/2
+Stockfish 20250321	Lc0-BT4-it332-TRT	1-0
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1-0
+Dragon 3.3	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.14	1-0
+Lc0-Bt4-it332	Ceres BT4 it332	1-0
+Stockfish 20250321	Obsidian 15.14	1-0
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1-0
+Ceres BT4 it332	Stockfish 20250321	1-0
+Obsidian 15.14	Lc0-Bt4-it332	1-0
+Dragon 3.3	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Lc0-Bt4-it332	1-0
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1-0
+Dragon 3.3	Lc0-Bt4-it332	1-0
+Obsidian 15.14	Ceres BT4 it332	1-0
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1-0
+Ceres BT4 it332	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Stockfish 20250321	1/2-1/2
+Ceres BT4 it332	Dragon 3.3	1-0
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Ceres BT4 it332	1-0
+Lc0-Bt4-it332	Obsidian 15.14	1-0
+Lc0-BT4-it332-TRT	Dragon 3.3	1-0
+Lc0-Bt4-it332	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1-0
+Dragon 3.3	Obsidian 15.14	1-0
+Dragon 3.3	Berserk 20250113	1-0
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250113	1-0
+Obsidian 15.14	Berserk 20250113	1-0
+Lc0-Bt4-it332	Berserk 20250113	1-0
+Berserk 20250113	Dragon 3.3	1/2-1/2
+Ceres BT4 it332	Berserk 20250113	1-0
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1/2-1/2
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1-0
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1-0
+Dragon 3.3	Ceres C1-640-34	1-0
+Ceres BT4 it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1-0
+Lc0-Bt4-it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Berserk 20250113	1-0
+Ceres C1-640-34	Dragon 3.3	1-0
+Ceres C1-640-34	Ceres BT4 it332	1-0
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1-0
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250427	1-0
+Obsidian 15.14	Stockfish 20250427	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250427	1-0
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1-0
+Stockfish 20250321	Stockfish 20250427	1-0
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1/2-1/2
+Stockfish 20250427	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Caissa 1.22	1-0
+Caissa 1.22	Ceres C1-640-34	1-0
+Caissa 1.22	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250427	Caissa 1.22	1-0
+Berserk 20250113	Caissa 1.22	1/2-1/2
+Dragon 3.3	Caissa 1.22	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250321	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1-0
+Lc0-BT4-it332-TRT	Caissa 1.22	1-0
+Obsidian 15.14	Caissa 1.22	1-0
+Lc0-Bt4-it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Berserk 20250113	1/2-1/2
+Caissa 1.22	Dragon 3.3	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1-0
+Stockfish 20250321	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Berserk 20250321	1-0
+Berserk 20250321	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1/2-1/2
+Berserk 20250321	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1-0
+Berserk 20250321	Dragon 3.3	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.14	1/2-1/2
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+PlentyChess 5.0.0	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250321	PlentyChess 5.0.0	1/2-1/2
+Stockfish 20250427	PlentyChess 5.0.0	1/2-1/2
+Caissa 1.22	Berserk 20250321	1/2-1/2
+Berserk 20250113	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Berserk 20250321	1-0
+Dragon 3.3	PlentyChess 5.0.0	1-0
+Lc0-BT4-it332-TRT	Berserk 20250321	1-0
+Ceres BT4 it332	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250321	1/2-1/2
+Berserk 20250321	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Berserk 20250321	1-0
+Caissa 1.22	PlentyChess 5.0.0	1/2-1/2
+Stockfish 20250427	Berserk 20250321	1-0
+Ceres C1-640-34	PlentyChess 5.0.0	1-0
+Berserk 20250113	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1-0
+Dragon 3.3	Berserk 20250321	1-0
+Obsidian 15.14	PlentyChess 5.0.0	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1-0
+Lc0-Bt4-it332	PlentyChess 5.0.0	1-0
+PlentyChess 5.0.0	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250427	1/2-1/2
+Berserk 20250321	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1-0
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+PlentyChess 5.0.0	Ceres BT4 it332	1-0
+Berserk 20250321	Obsidian 15.14	1/2-1/2
+Berserk 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Berserk 20250113	1-0
+Alexandria-8.0	Dragon 3.3	1/2-1/2
+Alexandria-8.0	Ceres BT4 it332	1-0
+Alexandria-8.0	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Caissa 1.22	Alexandria-8.0	1/2-1/2
+Ceres C1-640-34	Alexandria-8.0	1-0
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Obsidian 15.14	Alexandria-8.0	1-0
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Alexandria-8.0	Berserk 20250321	1-0
+Stockfish 20250427	Alexandria-8.0	1-0
+Berserk 20250113	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1-0
+Ceres BT4 it332	Alexandria-8.0	1-0
+Stockfish 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	PlentyChess 5.0.0	1/2-1/2
+Alexandria-8.0	Caissa 1.22	1-0
+Alexandria-8.0	Ceres C1-640-34	1/2-1/2
+Alexandria-8.0	Lc0-BT4-it332-TRT	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1-0
+Alexandria-8.0	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250321	Clover 8.1.11	1-0
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1/2-1/2
+Clover 8.1.11	Lc0-Bt4-it332	1/2-1/2
+PlentyChess 5.0.0	Clover 8.1.11	1-0
+Caissa 1.22	Clover 8.1.11	1/2-1/2
+Ceres C1-640-34	Clover 8.1.11	1-0
+Dragon 3.3	Clover 8.1.11	1-0
+Ceres BT4 it332	Clover 8.1.11	1-0
+Clover 8.1.11	Berserk 20250321	1/2-1/2
+Stockfish 20250427	Clover 8.1.11	1-0
+Lc0-BT4-it332-TRT	Clover 8.1.11	1-0
+Obsidian 15.14	Clover 8.1.11	1-0
+Lc0-Bt4-it332	Clover 8.1.11	1-0
+Clover 8.1.11	PlentyChess 5.0.0	1/2-1/2
+Clover 8.1.11	Caissa 1.22	1-0
+Clover 8.1.11	Ceres C1-640-34	1-0
+Clover 8.1.11	Dragon 3.3	1-0
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.21	1/2-1/2
+Obsidian 15.21	Ceres C1-640-34	1-0
+Obsidian 15.21	Obsidian 15.14	1/2-1/2
+Obsidian 15.21	Ceres BT4 it332	1-0
+Obsidian 15.21	Stockfish 20250427	1/2-1/2
+Dragon 3.3	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Obsidian 15.21	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.21	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Obsidian 15.21	1-0
+Obsidian 15.21	Berserk 20250321	1-0
+Ceres C1-640-34	Obsidian 15.21	1-0
+Obsidian 15.14	Obsidian 15.21	1/2-1/2
+Ceres BT4 it332	Obsidian 15.21	1-0
+Stockfish 20250427	Obsidian 15.21	1-0
+Obsidian 15.21	Dragon 3.3	1/2-1/2
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.21	Lc0-Bt4-it332	1-0
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1-0
+RubiChess-20250505	PlentyChess 5.0.0	1/2-1/2
+RubiChess-20250505	Ceres BT4 it332	1/2-1/2
+RubiChess-20250505	Stockfish 20250427	1/2-1/2
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1-0
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1/2-1/2
+Alexandria-8.0	RubiChess-20250505	1/2-1/2
+PlentyChess 5.0.0	RubiChess-20250505	1-0
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1/2-1/2
+RubiChess-20250505	Berserk 20250321	1/2-1/2
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1/2-1/2
+RubiChess-20250505	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.21	Caissa 1.22	1-0
+Caissa 1.22	Obsidian 15.21	1/2-1/2
+Stockfish 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1-0
+Dragon 3.3	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.14	1-0
+Lc0-Bt4-it332	Ceres BT4 it332	1-0
+Stockfish 20250321	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Stockfish 20250321	1/2-1/2
+Obsidian 15.14	Lc0-Bt4-it332	1/2-1/2
+Dragon 3.3	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1-0
+Dragon 3.3	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres BT4 it332	Lc0-Bt4-it332	1-0
+Obsidian 15.14	Stockfish 20250321	1-0
+Ceres BT4 it332	Dragon 3.3	1-0
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Ceres BT4 it332	1-0
+Lc0-Bt4-it332	Obsidian 15.14	1-0
+Lc0-BT4-it332-TRT	Dragon 3.3	1-0
+Lc0-Bt4-it332	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1-0
+Dragon 3.3	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Berserk 20250113	1/2-1/2
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250113	1-0
+Obsidian 15.14	Berserk 20250113	1/2-1/2
+Lc0-Bt4-it332	Berserk 20250113	1-0
+Berserk 20250113	Dragon 3.3	1-0
+Ceres BT4 it332	Berserk 20250113	1-0
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1-0
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1-0
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1/2-1/2
+Dragon 3.3	Ceres C1-640-34	1/2-1/2
+Ceres BT4 it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1/2-1/2
+Lc0-Bt4-it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Berserk 20250113	1/2-1/2
+Ceres C1-640-34	Dragon 3.3	1-0
+Ceres C1-640-34	Ceres BT4 it332	1-0
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1-0
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1/2-1/2
+Lc0-BT4-it332-TRT	Stockfish 20250427	1-0
+Obsidian 15.14	Stockfish 20250427	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250427	1-0
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1-0
+Stockfish 20250321	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1-0
+Stockfish 20250427	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Caissa 1.22	1/2-1/2
+Stockfish 20250321	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Berserk 20250321	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Caissa 1.22	1/2-1/2
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Ceres C1-640-34	1/2-1/2
+Berserk 20250321	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250321	Dragon 3.3	1-0
+PlentyChess 5.0.0	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Obsidian 15.14	1-0
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+PlentyChess 5.0.0	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250321	PlentyChess 5.0.0	1-0
+Stockfish 20250427	PlentyChess 5.0.0	1-0
+Caissa 1.22	Berserk 20250321	1/2-1/2
+Berserk 20250113	PlentyChess 5.0.0	1-0
+Ceres C1-640-34	Berserk 20250321	1-0
+Stockfish 20250427	Caissa 1.22	1-0
+Dragon 3.3	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250321	1-0
+Berserk 20250113	Caissa 1.22	1-0
+Ceres BT4 it332	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Berserk 20250321	1/2-1/2
+Dragon 3.3	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250321	1/2-1/2
+Berserk 20250321	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Berserk 20250321	1/2-1/2
+Caissa 1.22	PlentyChess 5.0.0	1-0
+Caissa 1.22	Stockfish 20250321	1-0
+Stockfish 20250427	Berserk 20250321	1-0
+Ceres C1-640-34	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1/2-1/2
+Berserk 20250113	Berserk 20250321	1-0
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1-0
+Lc0-BT4-it332-TRT	Caissa 1.22	1/2-1/2
+Dragon 3.3	Berserk 20250321	1/2-1/2
+Obsidian 15.14	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Caissa 1.22	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1-0
+Lc0-Bt4-it332	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Caissa 1.22	1-0
+PlentyChess 5.0.0	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250427	1/2-1/2
+Berserk 20250321	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Berserk 20250113	1-0
+PlentyChess 5.0.0	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.14	1-0
+Caissa 1.22	Dragon 3.3	1/2-1/2
+Berserk 20250321	Clover 8.1.11	1-0
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1/2-1/2
+Clover 8.1.11	Lc0-Bt4-it332	1/2-1/2
+PlentyChess 5.0.0	Clover 8.1.11	1-0
+Caissa 1.22	Clover 8.1.11	1-0
+Ceres C1-640-34	Clover 8.1.11	1-0
+Dragon 3.3	Clover 8.1.11	1-0
+Ceres BT4 it332	Clover 8.1.11	1-0
+Clover 8.1.11	Berserk 20250321	1/2-1/2
+Stockfish 20250427	Clover 8.1.11	1-0
+Lc0-BT4-it332-TRT	Clover 8.1.11	1-0
+Obsidian 15.14	Clover 8.1.11	1-0
+Lc0-Bt4-it332	Clover 8.1.11	1-0
+Clover 8.1.11	PlentyChess 5.0.0	1/2-1/2
+Clover 8.1.11	Caissa 1.22	1-0
+Clover 8.1.11	Ceres C1-640-34	1/2-1/2
+Clover 8.1.11	Dragon 3.3	1-0
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Ceres BT4 it332	Alexandria-8.0	1-0
+Berserk 20250321	Obsidian 15.21	1-0
+Stockfish 20250427	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1-0
+Obsidian 15.21	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Obsidian 15.14	1-0
+Alexandria-8.0	PlentyChess 5.0.0	1-0
+Obsidian 15.21	Ceres BT4 it332	1/2-1/2
+Alexandria-8.0	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.21	Stockfish 20250427	1-0
+Alexandria-8.0	Lc0-Bt4-it332	1-0
+Dragon 3.3	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Obsidian 15.21	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.21	1-0
+Ceres C1-640-34	Alexandria-8.0	1-0
+Lc0-Bt4-it332	Obsidian 15.21	1-0
+Obsidian 15.14	Alexandria-8.0	1-0
+Alexandria-8.0	Ceres BT4 it332	1/2-1/2
+Obsidian 15.21	Berserk 20250321	1/2-1/2
+Alexandria-8.0	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Dragon 3.3	1-0
+Ceres C1-640-34	Obsidian 15.21	1/2-1/2
+Obsidian 15.14	Obsidian 15.21	1-0
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Ceres BT4 it332	Obsidian 15.21	1-0
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Stockfish 20250427	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Obsidian 15.21	Dragon 3.3	1-0
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1-0
+Berserk 20250321	Alexandria-8.0	1-0
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Alexandria-8.0	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Lc0-Bt4-it332	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1/2-1/2
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1/2-1/2
+RubiChess-20250505	PlentyChess 5.0.0	1/2-1/2
+RubiChess-20250505	Ceres BT4 it332	1/2-1/2
+RubiChess-20250505	Stockfish 20250427	1/2-1/2
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1-0
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1-0
+Alexandria-8.0	RubiChess-20250505	1-0
+PlentyChess 5.0.0	RubiChess-20250505	1/2-1/2
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1/2-1/2
+RubiChess-20250505	Berserk 20250321	1/2-1/2
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1-0
+RubiChess-20250505	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.14	1/2-1/2
+Lc0-Bt4-it332	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Obsidian 15.14	1-0
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Stockfish 20250321	1/2-1/2
+Obsidian 15.14	Lc0-Bt4-it332	1/2-1/2
+Dragon 3.3	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1/2-1/2
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1/2-1/2
+Dragon 3.3	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1-0
+Ceres BT4 it332	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Stockfish 20250321	1/2-1/2
+Ceres BT4 it332	Dragon 3.3	1-0
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Ceres BT4 it332	1/2-1/2
+Lc0-Bt4-it332	Obsidian 15.14	1/2-1/2
+Lc0-BT4-it332-TRT	Dragon 3.3	1-0
+Lc0-Bt4-it332	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1/2-1/2
+Dragon 3.3	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Berserk 20250113	1/2-1/2
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Berserk 20250113	1/2-1/2
+Obsidian 15.14	Berserk 20250113	1-0
+Lc0-Bt4-it332	Berserk 20250113	1/2-1/2
+Berserk 20250113	Dragon 3.3	1/2-1/2
+Ceres BT4 it332	Berserk 20250113	1/2-1/2
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1-0
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1/2-1/2
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1/2-1/2
+Dragon 3.3	Ceres C1-640-34	1/2-1/2
+Ceres BT4 it332	Ceres C1-640-34	1/2-1/2
+Ceres C1-640-34	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1/2-1/2
+Lc0-Bt4-it332	Ceres C1-640-34	1/2-1/2
+Ceres C1-640-34	Berserk 20250113	1/2-1/2
+Ceres C1-640-34	Dragon 3.3	1-0
+Ceres C1-640-34	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1/2-1/2
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1/2-1/2
+Lc0-BT4-it332-TRT	Stockfish 20250427	1/2-1/2
+Obsidian 15.14	Stockfish 20250427	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1/2-1/2
+Stockfish 20250321	Stockfish 20250427	1-0
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1-0
+Stockfish 20250427	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	PlentyChess 5.0.0	1/2-1/2
+Lc0-Bt4-it332	Berserk 20250321	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Caissa 1.22	1/2-1/2
+Stockfish 20250321	Caissa 1.22	1/2-1/2
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Ceres C1-640-34	1-0
+Berserk 20250321	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Lc0-BT4-it332-TRT	1-0
+Berserk 20250321	Dragon 3.3	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.14	1-0
+Caissa 1.22	Obsidian 15.14	1/2-1/2
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+PlentyChess 5.0.0	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1-0
+Berserk 20250321	PlentyChess 5.0.0	1/2-1/2
+Stockfish 20250427	PlentyChess 5.0.0	1-0
+Caissa 1.22	Berserk 20250321	1-0
+Berserk 20250113	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Berserk 20250321	1/2-1/2
+Stockfish 20250427	Caissa 1.22	1-0
+Dragon 3.3	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250321	1-0
+Berserk 20250113	Caissa 1.22	1/2-1/2
+Ceres BT4 it332	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.14	Berserk 20250321	1/2-1/2
+Dragon 3.3	Caissa 1.22	1-0
+PlentyChess 5.0.0	Stockfish 20250321	1/2-1/2
+Berserk 20250321	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1-0
+Stockfish 20250321	Berserk 20250321	1/2-1/2
+Caissa 1.22	PlentyChess 5.0.0	1/2-1/2
+Caissa 1.22	Stockfish 20250321	1/2-1/2
+Stockfish 20250427	Berserk 20250321	1/2-1/2
+Ceres C1-640-34	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1/2-1/2
+Berserk 20250113	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Caissa 1.22	1-0
+Dragon 3.3	Berserk 20250321	1/2-1/2
+Obsidian 15.14	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.14	Caissa 1.22	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1-0
+Lc0-Bt4-it332	PlentyChess 5.0.0	1/2-1/2
+Lc0-Bt4-it332	Caissa 1.22	1-0
+PlentyChess 5.0.0	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250427	1-0
+Berserk 20250321	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1-0
+Caissa 1.22	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Dragon 3.3	1-0
+Berserk 20250321	Clover 8.1.11	1/2-1/2
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1/2-1/2
+Clover 8.1.11	Lc0-Bt4-it332	1/2-1/2
+PlentyChess 5.0.0	Clover 8.1.11	1/2-1/2
+Caissa 1.22	Clover 8.1.11	1-0
+Ceres C1-640-34	Clover 8.1.11	1/2-1/2
+Dragon 3.3	Clover 8.1.11	1/2-1/2
+Ceres BT4 it332	Clover 8.1.11	1/2-1/2
+Clover 8.1.11	Berserk 20250321	1-0
+Stockfish 20250427	Clover 8.1.11	1/2-1/2
+Lc0-BT4-it332-TRT	Clover 8.1.11	1/2-1/2
+Obsidian 15.14	Clover 8.1.11	1/2-1/2
+Lc0-Bt4-it332	Clover 8.1.11	1/2-1/2
+Clover 8.1.11	PlentyChess 5.0.0	1/2-1/2
+Clover 8.1.11	Caissa 1.22	1/2-1/2
+Clover 8.1.11	Ceres C1-640-34	1/2-1/2
+Clover 8.1.11	Dragon 3.3	1/2-1/2
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Ceres BT4 it332	Alexandria-8.0	1-0
+Berserk 20250321	Obsidian 15.21	1/2-1/2
+Stockfish 20250427	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1/2-1/2
+Obsidian 15.21	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Obsidian 15.14	1/2-1/2
+Alexandria-8.0	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.21	Ceres BT4 it332	1/2-1/2
+Alexandria-8.0	Lc0-BT4-it332-TRT	1/2-1/2
+Obsidian 15.21	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Lc0-Bt4-it332	1/2-1/2
+Dragon 3.3	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Obsidian 15.21	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.21	1-0
+Alexandria-8.0	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.21	1/2-1/2
+Ceres C1-640-34	Alexandria-8.0	1/2-1/2
+Lc0-Bt4-it332	Obsidian 15.21	1/2-1/2
+Obsidian 15.14	Alexandria-8.0	1-0
+Alexandria-8.0	Ceres BT4 it332	1/2-1/2
+Obsidian 15.21	Berserk 20250321	1/2-1/2
+Alexandria-8.0	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Dragon 3.3	1/2-1/2
+Ceres C1-640-34	Obsidian 15.21	1/2-1/2
+Obsidian 15.14	Obsidian 15.21	1-0
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Ceres BT4 it332	Obsidian 15.21	1/2-1/2
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Stockfish 20250427	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Obsidian 15.21	Dragon 3.3	1-0
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1-0
+Berserk 20250321	Alexandria-8.0	1/2-1/2
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Alexandria-8.0	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Lc0-Bt4-it332	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1/2-1/2
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1-0
+RubiChess-20250505	PlentyChess 5.0.0	1/2-1/2
+RubiChess-20250505	Ceres BT4 it332	1/2-1/2
+RubiChess-20250505	Stockfish 20250427	1/2-1/2
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1-0
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1/2-1/2
+Alexandria-8.0	RubiChess-20250505	1/2-1/2
+PlentyChess 5.0.0	RubiChess-20250505	1/2-1/2
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1-0
+RubiChess-20250505	Berserk 20250321	1-0
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1/2-1/2
+RubiChess-20250505	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Lc0-BT4-it332-TRT	1-0
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.14	1-0
+Lc0-Bt4-it332	Ceres BT4 it332	1-0
+Stockfish 20250321	Obsidian 15.14	1-0
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Stockfish 20250321	1/2-1/2
+Obsidian 15.14	Lc0-Bt4-it332	1-0
+Dragon 3.3	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Lc0-Bt4-it332	1-0
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1/2-1/2
+Dragon 3.3	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1-0
+Ceres BT4 it332	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Stockfish 20250321	1-0
+Ceres BT4 it332	Dragon 3.3	1/2-1/2
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Ceres BT4 it332	1-0
+Lc0-Bt4-it332	Obsidian 15.14	1/2-1/2
+Lc0-BT4-it332-TRT	Dragon 3.3	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1-0
+Dragon 3.3	Obsidian 15.14	1-0
+Dragon 3.3	Berserk 20250113	1-0
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250113	1-0
+Obsidian 15.14	Berserk 20250113	1-0
+Lc0-Bt4-it332	Berserk 20250113	1-0
+Berserk 20250113	Dragon 3.3	1-0
+Ceres BT4 it332	Berserk 20250113	1-0
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1-0
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1-0
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1-0
+Dragon 3.3	Ceres C1-640-34	1-0
+Ceres BT4 it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1-0
+Lc0-Bt4-it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Berserk 20250113	1-0
+Ceres C1-640-34	Dragon 3.3	1/2-1/2
+Ceres C1-640-34	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1-0
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1/2-1/2
+Lc0-BT4-it332-TRT	Stockfish 20250427	1/2-1/2
+Obsidian 15.14	Stockfish 20250427	1-0
+Lc0-Bt4-it332	Stockfish 20250427	1-0
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1/2-1/2
+Stockfish 20250321	Stockfish 20250427	1-0
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1-0
+Stockfish 20250427	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Caissa 1.22	1-0
+Caissa 1.22	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250427	Caissa 1.22	1-0
+Berserk 20250113	Caissa 1.22	1-0
+Dragon 3.3	Caissa 1.22	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250321	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1-0
+Lc0-BT4-it332-TRT	Caissa 1.22	1-0
+Obsidian 15.14	Caissa 1.22	1-0
+Lc0-Bt4-it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Berserk 20250113	1-0
+Caissa 1.22	Dragon 3.3	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1/2-1/2
+Stockfish 20250427	Berserk 20250321	1-0
+Berserk 20250321	Berserk 20250113	1/2-1/2
+Berserk 20250321	Dragon 3.3	1-0
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Stockfish 20250321	1-0
+Stockfish 20250321	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Berserk 20250321	1-0
+PlentyChess 5.0.0	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1-0
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1-0
+PlentyChess 5.0.0	Obsidian 15.14	1-0
+PlentyChess 5.0.0	Lc0-Bt4-it332	1-0
+Berserk 20250321	PlentyChess 5.0.0	1-0
+Stockfish 20250427	PlentyChess 5.0.0	1-0
+Caissa 1.22	Berserk 20250321	1/2-1/2
+Berserk 20250113	PlentyChess 5.0.0	1-0
+Ceres C1-640-34	Berserk 20250321	1/2-1/2
+Dragon 3.3	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250321	1/2-1/2
+Ceres BT4 it332	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Berserk 20250321	1-0
+PlentyChess 5.0.0	Stockfish 20250321	1-0
+Berserk 20250321	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Berserk 20250321	1-0
+Caissa 1.22	PlentyChess 5.0.0	1-0
+Ceres C1-640-34	PlentyChess 5.0.0	1-0
+Berserk 20250113	Berserk 20250321	1-0
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1-0
+Dragon 3.3	Berserk 20250321	1-0
+Obsidian 15.14	PlentyChess 5.0.0	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1/2-1/2
+Lc0-Bt4-it332	PlentyChess 5.0.0	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250321	1-0
+PlentyChess 5.0.0	Stockfish 20250427	1-0
+Berserk 20250321	Caissa 1.22	1-0
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1-0
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1-0
+PlentyChess 5.0.0	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.14	1-0
+Berserk 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	Stockfish 20250427	1-0
+Alexandria-8.0	Berserk 20250113	1/2-1/2
+Alexandria-8.0	Dragon 3.3	1/2-1/2
+Alexandria-8.0	Ceres BT4 it332	1/2-1/2
+Alexandria-8.0	Stockfish 20250321	1-0
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Caissa 1.22	Alexandria-8.0	1/2-1/2
+Ceres C1-640-34	Alexandria-8.0	1-0
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Obsidian 15.14	Alexandria-8.0	1/2-1/2
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Alexandria-8.0	Berserk 20250321	1-0
+Stockfish 20250427	Alexandria-8.0	1-0
+Berserk 20250113	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1/2-1/2
+Ceres BT4 it332	Alexandria-8.0	1-0
+Stockfish 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	PlentyChess 5.0.0	1-0
+Alexandria-8.0	Caissa 1.22	1-0
+Alexandria-8.0	Ceres C1-640-34	1-0
+Alexandria-8.0	Lc0-BT4-it332-TRT	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1-0
+Alexandria-8.0	Lc0-Bt4-it332	1-0
+Berserk 20250321	Clover 8.1.11	1-0
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1-0
+Clover 8.1.11	Lc0-Bt4-it332	1-0
+PlentyChess 5.0.0	Clover 8.1.11	1-0
+Caissa 1.22	Clover 8.1.11	1/2-1/2
+Ceres C1-640-34	Clover 8.1.11	1/2-1/2
+Dragon 3.3	Clover 8.1.11	1-0
+Ceres BT4 it332	Clover 8.1.11	1-0
+Clover 8.1.11	Berserk 20250321	1-0
+Stockfish 20250427	Clover 8.1.11	1-0
+Lc0-BT4-it332-TRT	Clover 8.1.11	1-0
+Obsidian 15.14	Clover 8.1.11	1-0
+Lc0-Bt4-it332	Clover 8.1.11	1-0
+Clover 8.1.11	PlentyChess 5.0.0	1-0
+Clover 8.1.11	Caissa 1.22	1-0
+Clover 8.1.11	Ceres C1-640-34	1/2-1/2
+Clover 8.1.11	Dragon 3.3	1-0
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.21	1-0
+Obsidian 15.21	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Obsidian 15.14	1-0
+Obsidian 15.21	Ceres BT4 it332	1-0
+Obsidian 15.21	Stockfish 20250427	1-0
+Dragon 3.3	Obsidian 15.21	1-0
+Alexandria-8.0	Obsidian 15.21	1-0
+PlentyChess 5.0.0	Obsidian 15.21	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Obsidian 15.21	1/2-1/2
+Obsidian 15.21	Berserk 20250321	1-0
+Ceres C1-640-34	Obsidian 15.21	1-0
+Obsidian 15.14	Obsidian 15.21	1-0
+Ceres BT4 it332	Obsidian 15.21	1/2-1/2
+Stockfish 20250427	Obsidian 15.21	1-0
+Obsidian 15.21	Dragon 3.3	1-0
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1-0
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.21	Lc0-Bt4-it332	1-0
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1-0
+RubiChess-20250505	PlentyChess 5.0.0	1-0
+RubiChess-20250505	Ceres BT4 it332	1-0
+RubiChess-20250505	Stockfish 20250427	1-0
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1/2-1/2
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1-0
+Alexandria-8.0	RubiChess-20250505	1-0
+PlentyChess 5.0.0	RubiChess-20250505	1-0
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1-0
+RubiChess-20250505	Berserk 20250321	1-0
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1/2-1/2
+RubiChess-20250505	Lc0-Bt4-it332	1-0
+Obsidian 15.21	Caissa 1.22	1-0
+Caissa 1.22	Obsidian 15.21	1/2-1/2
+Stockfish 20250321	Lc0-BT4-it332-TRT	1-0
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1-0
+Dragon 3.3	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.14	1-0
+Lc0-Bt4-it332	Ceres BT4 it332	1-0
+Stockfish 20250321	Obsidian 15.14	1-0
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1-0
+Ceres BT4 it332	Stockfish 20250321	1-0
+Obsidian 15.14	Lc0-Bt4-it332	1-0
+Dragon 3.3	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Lc0-Bt4-it332	1-0
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1-0
+Dragon 3.3	Lc0-Bt4-it332	1-0
+Obsidian 15.14	Ceres BT4 it332	1-0
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1-0
+Ceres BT4 it332	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Stockfish 20250321	1/2-1/2
+Ceres BT4 it332	Dragon 3.3	1-0
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Ceres BT4 it332	1-0
+Lc0-Bt4-it332	Obsidian 15.14	1-0
+Lc0-BT4-it332-TRT	Dragon 3.3	1-0
+Lc0-Bt4-it332	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1-0
+Dragon 3.3	Obsidian 15.14	1-0
+Dragon 3.3	Berserk 20250113	1-0
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250113	1-0
+Obsidian 15.14	Berserk 20250113	1-0
+Lc0-Bt4-it332	Berserk 20250113	1-0
+Berserk 20250113	Dragon 3.3	1/2-1/2
+Ceres BT4 it332	Berserk 20250113	1-0
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1/2-1/2
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1-0
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1-0
+Dragon 3.3	Ceres C1-640-34	1-0
+Ceres BT4 it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1-0
+Lc0-Bt4-it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Berserk 20250113	1-0
+Ceres C1-640-34	Dragon 3.3	1-0
+Ceres C1-640-34	Ceres BT4 it332	1-0
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1-0
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250427	1-0
+Obsidian 15.14	Stockfish 20250427	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250427	1-0
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1-0
+Stockfish 20250321	Stockfish 20250427	1-0
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1/2-1/2
+Stockfish 20250427	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Caissa 1.22	1-0
+Caissa 1.22	Ceres C1-640-34	1-0
+Caissa 1.22	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250427	Caissa 1.22	1-0
+Berserk 20250113	Caissa 1.22	1/2-1/2
+Dragon 3.3	Caissa 1.22	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250321	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1-0
+Lc0-BT4-it332-TRT	Caissa 1.22	1-0
+Obsidian 15.14	Caissa 1.22	1-0
+Lc0-Bt4-it332	Caissa 1.22	1-0
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Berserk 20250113	1/2-1/2
+Caissa 1.22	Dragon 3.3	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1-0
+Stockfish 20250321	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Berserk 20250321	1-0
+Berserk 20250321	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1/2-1/2
+Berserk 20250321	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1-0
+Berserk 20250321	Dragon 3.3	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.14	1/2-1/2
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+PlentyChess 5.0.0	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250321	PlentyChess 5.0.0	1/2-1/2
+Stockfish 20250427	PlentyChess 5.0.0	1/2-1/2
+Caissa 1.22	Berserk 20250321	1/2-1/2
+Berserk 20250113	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Berserk 20250321	1-0
+Dragon 3.3	PlentyChess 5.0.0	1-0
+Lc0-BT4-it332-TRT	Berserk 20250321	1-0
+Ceres BT4 it332	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250321	1/2-1/2
+Berserk 20250321	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Berserk 20250321	1-0
+Caissa 1.22	PlentyChess 5.0.0	1/2-1/2
+Stockfish 20250427	Berserk 20250321	1-0
+Ceres C1-640-34	PlentyChess 5.0.0	1-0
+Berserk 20250113	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1-0
+Dragon 3.3	Berserk 20250321	1-0
+Obsidian 15.14	PlentyChess 5.0.0	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1-0
+Lc0-Bt4-it332	PlentyChess 5.0.0	1-0
+PlentyChess 5.0.0	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250427	1/2-1/2
+Berserk 20250321	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1-0
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+PlentyChess 5.0.0	Ceres BT4 it332	1-0
+Berserk 20250321	Obsidian 15.14	1/2-1/2
+Berserk 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Berserk 20250113	1-0
+Alexandria-8.0	Dragon 3.3	1/2-1/2
+Alexandria-8.0	Ceres BT4 it332	1-0
+Alexandria-8.0	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Caissa 1.22	Alexandria-8.0	1/2-1/2
+Ceres C1-640-34	Alexandria-8.0	1-0
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Obsidian 15.14	Alexandria-8.0	1-0
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Alexandria-8.0	Berserk 20250321	1-0
+Stockfish 20250427	Alexandria-8.0	1-0
+Berserk 20250113	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1-0
+Ceres BT4 it332	Alexandria-8.0	1-0
+Stockfish 20250321	Alexandria-8.0	1-0
+Alexandria-8.0	PlentyChess 5.0.0	1/2-1/2
+Alexandria-8.0	Caissa 1.22	1-0
+Alexandria-8.0	Ceres C1-640-34	1/2-1/2
+Alexandria-8.0	Lc0-BT4-it332-TRT	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1-0
+Alexandria-8.0	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250321	Clover 8.1.11	1-0
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1/2-1/2
+Clover 8.1.11	Lc0-Bt4-it332	1/2-1/2
+PlentyChess 5.0.0	Clover 8.1.11	1-0
+Caissa 1.22	Clover 8.1.11	1/2-1/2
+Ceres C1-640-34	Clover 8.1.11	1-0
+Dragon 3.3	Clover 8.1.11	1-0
+Ceres BT4 it332	Clover 8.1.11	1-0
+Clover 8.1.11	Berserk 20250321	1/2-1/2
+Stockfish 20250427	Clover 8.1.11	1-0
+Lc0-BT4-it332-TRT	Clover 8.1.11	1-0
+Obsidian 15.14	Clover 8.1.11	1-0
+Lc0-Bt4-it332	Clover 8.1.11	1-0
+Clover 8.1.11	PlentyChess 5.0.0	1/2-1/2
+Clover 8.1.11	Caissa 1.22	1-0
+Clover 8.1.11	Ceres C1-640-34	1-0
+Clover 8.1.11	Dragon 3.3	1-0
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.21	1/2-1/2
+Obsidian 15.21	Ceres C1-640-34	1-0
+Obsidian 15.21	Obsidian 15.14	1/2-1/2
+Obsidian 15.21	Ceres BT4 it332	1-0
+Obsidian 15.21	Stockfish 20250427	1/2-1/2
+Dragon 3.3	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Obsidian 15.21	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.21	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Obsidian 15.21	1-0
+Obsidian 15.21	Berserk 20250321	1-0
+Ceres C1-640-34	Obsidian 15.21	1-0
+Obsidian 15.14	Obsidian 15.21	1/2-1/2
+Ceres BT4 it332	Obsidian 15.21	1-0
+Stockfish 20250427	Obsidian 15.21	1-0
+Obsidian 15.21	Dragon 3.3	1/2-1/2
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.21	Lc0-Bt4-it332	1-0
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1-0
+RubiChess-20250505	PlentyChess 5.0.0	1/2-1/2
+RubiChess-20250505	Ceres BT4 it332	1/2-1/2
+RubiChess-20250505	Stockfish 20250427	1/2-1/2
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1-0
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1/2-1/2
+Alexandria-8.0	RubiChess-20250505	1/2-1/2
+PlentyChess 5.0.0	RubiChess-20250505	1-0
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1/2-1/2
+RubiChess-20250505	Berserk 20250321	1/2-1/2
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1/2-1/2
+RubiChess-20250505	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.21	Caissa 1.22	1-0
+Caissa 1.22	Obsidian 15.21	1/2-1/2
+Stockfish 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1-0
+Dragon 3.3	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.14	1-0
+Lc0-Bt4-it332	Ceres BT4 it332	1-0
+Stockfish 20250321	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Stockfish 20250321	1/2-1/2
+Obsidian 15.14	Lc0-Bt4-it332	1/2-1/2
+Dragon 3.3	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1-0
+Dragon 3.3	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres BT4 it332	Lc0-Bt4-it332	1-0
+Obsidian 15.14	Stockfish 20250321	1-0
+Ceres BT4 it332	Dragon 3.3	1-0
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250321	Ceres BT4 it332	1-0
+Lc0-Bt4-it332	Obsidian 15.14	1-0
+Lc0-BT4-it332-TRT	Dragon 3.3	1-0
+Lc0-Bt4-it332	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1-0
+Dragon 3.3	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Berserk 20250113	1/2-1/2
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250113	1-0
+Obsidian 15.14	Berserk 20250113	1/2-1/2
+Lc0-Bt4-it332	Berserk 20250113	1-0
+Berserk 20250113	Dragon 3.3	1-0
+Ceres BT4 it332	Berserk 20250113	1-0
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1-0
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1-0
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1/2-1/2
+Dragon 3.3	Ceres C1-640-34	1/2-1/2
+Ceres BT4 it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1/2-1/2
+Lc0-Bt4-it332	Ceres C1-640-34	1-0
+Ceres C1-640-34	Berserk 20250113	1/2-1/2
+Ceres C1-640-34	Dragon 3.3	1-0
+Ceres C1-640-34	Ceres BT4 it332	1-0
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1-0
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1/2-1/2
+Lc0-BT4-it332-TRT	Stockfish 20250427	1-0
+Obsidian 15.14	Stockfish 20250427	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250427	1-0
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1-0
+Stockfish 20250321	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1-0
+Stockfish 20250427	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Caissa 1.22	1/2-1/2
+Stockfish 20250321	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Berserk 20250321	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Caissa 1.22	1/2-1/2
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Ceres C1-640-34	1/2-1/2
+Berserk 20250321	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250321	Dragon 3.3	1-0
+PlentyChess 5.0.0	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Obsidian 15.14	1-0
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+PlentyChess 5.0.0	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250321	PlentyChess 5.0.0	1-0
+Stockfish 20250427	PlentyChess 5.0.0	1-0
+Caissa 1.22	Berserk 20250321	1/2-1/2
+Berserk 20250113	PlentyChess 5.0.0	1-0
+Ceres C1-640-34	Berserk 20250321	1-0
+Stockfish 20250427	Caissa 1.22	1-0
+Dragon 3.3	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250321	1-0
+Berserk 20250113	Caissa 1.22	1-0
+Ceres BT4 it332	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Berserk 20250321	1/2-1/2
+Dragon 3.3	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250321	1/2-1/2
+Berserk 20250321	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Berserk 20250321	1/2-1/2
+Caissa 1.22	PlentyChess 5.0.0	1-0
+Caissa 1.22	Stockfish 20250321	1-0
+Stockfish 20250427	Berserk 20250321	1-0
+Ceres C1-640-34	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1/2-1/2
+Berserk 20250113	Berserk 20250321	1-0
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1-0
+Lc0-BT4-it332-TRT	Caissa 1.22	1/2-1/2
+Dragon 3.3	Berserk 20250321	1/2-1/2
+Obsidian 15.14	PlentyChess 5.0.0	1-0
+Obsidian 15.14	Caissa 1.22	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1-0
+Lc0-Bt4-it332	PlentyChess 5.0.0	1-0
+Lc0-Bt4-it332	Caissa 1.22	1-0
+PlentyChess 5.0.0	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250427	1/2-1/2
+Berserk 20250321	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Berserk 20250113	1-0
+PlentyChess 5.0.0	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.14	1-0
+Caissa 1.22	Dragon 3.3	1/2-1/2
+Berserk 20250321	Clover 8.1.11	1-0
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1/2-1/2
+Clover 8.1.11	Lc0-Bt4-it332	1/2-1/2
+PlentyChess 5.0.0	Clover 8.1.11	1-0
+Caissa 1.22	Clover 8.1.11	1-0
+Ceres C1-640-34	Clover 8.1.11	1-0
+Dragon 3.3	Clover 8.1.11	1-0
+Ceres BT4 it332	Clover 8.1.11	1-0
+Clover 8.1.11	Berserk 20250321	1/2-1/2
+Stockfish 20250427	Clover 8.1.11	1-0
+Lc0-BT4-it332-TRT	Clover 8.1.11	1-0
+Obsidian 15.14	Clover 8.1.11	1-0
+Lc0-Bt4-it332	Clover 8.1.11	1-0
+Clover 8.1.11	PlentyChess 5.0.0	1/2-1/2
+Clover 8.1.11	Caissa 1.22	1-0
+Clover 8.1.11	Ceres C1-640-34	1/2-1/2
+Clover 8.1.11	Dragon 3.3	1-0
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Ceres BT4 it332	Alexandria-8.0	1-0
+Berserk 20250321	Obsidian 15.21	1-0
+Stockfish 20250427	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1-0
+Obsidian 15.21	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Obsidian 15.14	1-0
+Alexandria-8.0	PlentyChess 5.0.0	1-0
+Obsidian 15.21	Ceres BT4 it332	1/2-1/2
+Alexandria-8.0	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.21	Stockfish 20250427	1-0
+Alexandria-8.0	Lc0-Bt4-it332	1-0
+Dragon 3.3	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Obsidian 15.21	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.21	1-0
+Ceres C1-640-34	Alexandria-8.0	1-0
+Lc0-Bt4-it332	Obsidian 15.21	1-0
+Obsidian 15.14	Alexandria-8.0	1-0
+Alexandria-8.0	Ceres BT4 it332	1/2-1/2
+Obsidian 15.21	Berserk 20250321	1/2-1/2
+Alexandria-8.0	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Dragon 3.3	1-0
+Ceres C1-640-34	Obsidian 15.21	1/2-1/2
+Obsidian 15.14	Obsidian 15.21	1-0
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Ceres BT4 it332	Obsidian 15.21	1-0
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Stockfish 20250427	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Obsidian 15.21	Dragon 3.3	1-0
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1-0
+Berserk 20250321	Alexandria-8.0	1-0
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Alexandria-8.0	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Lc0-Bt4-it332	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1/2-1/2
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1/2-1/2
+RubiChess-20250505	PlentyChess 5.0.0	1/2-1/2
+RubiChess-20250505	Ceres BT4 it332	1/2-1/2
+RubiChess-20250505	Stockfish 20250427	1/2-1/2
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1-0
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1-0
+Alexandria-8.0	RubiChess-20250505	1-0
+PlentyChess 5.0.0	RubiChess-20250505	1/2-1/2
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1/2-1/2
+RubiChess-20250505	Berserk 20250321	1/2-1/2
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1-0
+RubiChess-20250505	Lc0-Bt4-it332	1-0
+Stockfish 20250321	Lc0-BT4-it332-TRT	1/2-1/2
+Lc0-Bt4-it332	Dragon 3.3	1-0
+Ceres BT4 it332	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.14	1/2-1/2
+Lc0-Bt4-it332	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Obsidian 15.14	1-0
+Dragon 3.3	Ceres BT4 it332	1/2-1/2
+Lc0-BT4-it332-TRT	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Stockfish 20250321	1/2-1/2
+Obsidian 15.14	Lc0-Bt4-it332	1/2-1/2
+Dragon 3.3	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Lc0-Bt4-it332	1/2-1/2
+Ceres BT4 it332	Lc0-BT4-it332-TRT	1/2-1/2
+Obsidian 15.14	Dragon 3.3	1-0
+Lc0-BT4-it332-TRT	Stockfish 20250321	1/2-1/2
+Dragon 3.3	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Ceres BT4 it332	1/2-1/2
+Stockfish 20250321	Dragon 3.3	1-0
+Obsidian 15.14	Lc0-BT4-it332-TRT	1-0
+Ceres BT4 it332	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.14	Stockfish 20250321	1/2-1/2
+Ceres BT4 it332	Dragon 3.3	1-0
+Lc0-Bt4-it332	Lc0-BT4-it332-TRT	1/2-1/2
+Stockfish 20250321	Ceres BT4 it332	1/2-1/2
+Lc0-Bt4-it332	Obsidian 15.14	1/2-1/2
+Lc0-BT4-it332-TRT	Dragon 3.3	1-0
+Lc0-Bt4-it332	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres BT4 it332	1/2-1/2
+Dragon 3.3	Obsidian 15.14	1/2-1/2
+Dragon 3.3	Berserk 20250113	1/2-1/2
+Berserk 20250113	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250321	1-0
+Lc0-BT4-it332-TRT	Berserk 20250113	1/2-1/2
+Obsidian 15.14	Berserk 20250113	1-0
+Lc0-Bt4-it332	Berserk 20250113	1/2-1/2
+Berserk 20250113	Dragon 3.3	1/2-1/2
+Ceres BT4 it332	Berserk 20250113	1/2-1/2
+Stockfish 20250321	Berserk 20250113	1-0
+Berserk 20250113	Lc0-BT4-it332-TRT	1/2-1/2
+Berserk 20250113	Obsidian 15.14	1-0
+Berserk 20250113	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	Ceres C1-640-34	1/2-1/2
+Ceres C1-640-34	Lc0-BT4-it332-TRT	1/2-1/2
+Ceres C1-640-34	Obsidian 15.14	1/2-1/2
+Ceres C1-640-34	Lc0-Bt4-it332	1/2-1/2
+Berserk 20250113	Ceres C1-640-34	1/2-1/2
+Dragon 3.3	Ceres C1-640-34	1/2-1/2
+Ceres BT4 it332	Ceres C1-640-34	1/2-1/2
+Ceres C1-640-34	Stockfish 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Ceres C1-640-34	1-0
+Obsidian 15.14	Ceres C1-640-34	1/2-1/2
+Lc0-Bt4-it332	Ceres C1-640-34	1/2-1/2
+Ceres C1-640-34	Berserk 20250113	1/2-1/2
+Ceres C1-640-34	Dragon 3.3	1-0
+Ceres C1-640-34	Ceres BT4 it332	1/2-1/2
+Berserk 20250113	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Dragon 3.3	1-0
+Stockfish 20250427	Ceres BT4 it332	1/2-1/2
+Stockfish 20250427	Stockfish 20250321	1-0
+Ceres C1-640-34	Stockfish 20250427	1/2-1/2
+Lc0-BT4-it332-TRT	Stockfish 20250427	1/2-1/2
+Obsidian 15.14	Stockfish 20250427	1/2-1/2
+Lc0-Bt4-it332	Stockfish 20250427	1/2-1/2
+Stockfish 20250427	Berserk 20250113	1-0
+Dragon 3.3	Stockfish 20250427	1/2-1/2
+Ceres BT4 it332	Stockfish 20250427	1/2-1/2
+Stockfish 20250321	Stockfish 20250427	1-0
+Stockfish 20250427	Ceres C1-640-34	1-0
+Stockfish 20250427	Lc0-BT4-it332-TRT	1-0
+Stockfish 20250427	Obsidian 15.14	1-0
+Stockfish 20250427	Lc0-Bt4-it332	1/2-1/2
+Stockfish 20250321	PlentyChess 5.0.0	1/2-1/2
+Lc0-Bt4-it332	Berserk 20250321	1-0
+Ceres BT4 it332	Caissa 1.22	1-0
+Berserk 20250321	Stockfish 20250321	1/2-1/2
+PlentyChess 5.0.0	Caissa 1.22	1/2-1/2
+Stockfish 20250321	Caissa 1.22	1/2-1/2
+Berserk 20250321	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Ceres C1-640-34	1-0
+Berserk 20250321	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Lc0-BT4-it332-TRT	1/2-1/2
+Caissa 1.22	Lc0-BT4-it332-TRT	1-0
+Berserk 20250321	Dragon 3.3	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.14	1-0
+Caissa 1.22	Obsidian 15.14	1/2-1/2
+Berserk 20250321	Ceres BT4 it332	1/2-1/2
+PlentyChess 5.0.0	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Lc0-Bt4-it332	1-0
+Berserk 20250321	PlentyChess 5.0.0	1/2-1/2
+Stockfish 20250427	PlentyChess 5.0.0	1-0
+Caissa 1.22	Berserk 20250321	1-0
+Berserk 20250113	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Berserk 20250321	1/2-1/2
+Stockfish 20250427	Caissa 1.22	1-0
+Dragon 3.3	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Berserk 20250321	1-0
+Berserk 20250113	Caissa 1.22	1/2-1/2
+Ceres BT4 it332	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.14	Berserk 20250321	1/2-1/2
+Dragon 3.3	Caissa 1.22	1-0
+PlentyChess 5.0.0	Stockfish 20250321	1/2-1/2
+Berserk 20250321	Lc0-Bt4-it332	1/2-1/2
+Caissa 1.22	Ceres BT4 it332	1-0
+Stockfish 20250321	Berserk 20250321	1/2-1/2
+Caissa 1.22	PlentyChess 5.0.0	1/2-1/2
+Caissa 1.22	Stockfish 20250321	1/2-1/2
+Stockfish 20250427	Berserk 20250321	1/2-1/2
+Ceres C1-640-34	PlentyChess 5.0.0	1/2-1/2
+Ceres C1-640-34	Caissa 1.22	1/2-1/2
+Berserk 20250113	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	PlentyChess 5.0.0	1/2-1/2
+Lc0-BT4-it332-TRT	Caissa 1.22	1-0
+Dragon 3.3	Berserk 20250321	1/2-1/2
+Obsidian 15.14	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.14	Caissa 1.22	1/2-1/2
+Ceres BT4 it332	Berserk 20250321	1-0
+Lc0-Bt4-it332	PlentyChess 5.0.0	1/2-1/2
+Lc0-Bt4-it332	Caissa 1.22	1-0
+PlentyChess 5.0.0	Berserk 20250321	1/2-1/2
+PlentyChess 5.0.0	Stockfish 20250427	1-0
+Berserk 20250321	Caissa 1.22	1/2-1/2
+PlentyChess 5.0.0	Berserk 20250113	1-0
+Berserk 20250321	Ceres C1-640-34	1/2-1/2
+Caissa 1.22	Stockfish 20250427	1/2-1/2
+PlentyChess 5.0.0	Dragon 3.3	1-0
+Berserk 20250321	Lc0-BT4-it332-TRT	1-0
+Caissa 1.22	Berserk 20250113	1/2-1/2
+PlentyChess 5.0.0	Ceres BT4 it332	1/2-1/2
+Berserk 20250321	Obsidian 15.14	1/2-1/2
+Caissa 1.22	Dragon 3.3	1-0
+Berserk 20250321	Clover 8.1.11	1/2-1/2
+Clover 8.1.11	Stockfish 20250427	1/2-1/2
+Clover 8.1.11	Lc0-BT4-it332-TRT	1/2-1/2
+Clover 8.1.11	Obsidian 15.14	1/2-1/2
+Clover 8.1.11	Lc0-Bt4-it332	1/2-1/2
+PlentyChess 5.0.0	Clover 8.1.11	1/2-1/2
+Caissa 1.22	Clover 8.1.11	1-0
+Ceres C1-640-34	Clover 8.1.11	1/2-1/2
+Dragon 3.3	Clover 8.1.11	1/2-1/2
+Ceres BT4 it332	Clover 8.1.11	1/2-1/2
+Clover 8.1.11	Berserk 20250321	1-0
+Stockfish 20250427	Clover 8.1.11	1/2-1/2
+Lc0-BT4-it332-TRT	Clover 8.1.11	1/2-1/2
+Obsidian 15.14	Clover 8.1.11	1/2-1/2
+Lc0-Bt4-it332	Clover 8.1.11	1/2-1/2
+Clover 8.1.11	PlentyChess 5.0.0	1/2-1/2
+Clover 8.1.11	Caissa 1.22	1/2-1/2
+Clover 8.1.11	Ceres C1-640-34	1/2-1/2
+Clover 8.1.11	Dragon 3.3	1/2-1/2
+Clover 8.1.11	Ceres BT4 it332	1/2-1/2
+Ceres BT4 it332	Alexandria-8.0	1-0
+Berserk 20250321	Obsidian 15.21	1/2-1/2
+Stockfish 20250427	Alexandria-8.0	1-0
+Dragon 3.3	Alexandria-8.0	1/2-1/2
+Obsidian 15.21	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Obsidian 15.14	1/2-1/2
+Alexandria-8.0	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.21	Ceres BT4 it332	1/2-1/2
+Alexandria-8.0	Lc0-BT4-it332-TRT	1/2-1/2
+Obsidian 15.21	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Lc0-Bt4-it332	1/2-1/2
+Dragon 3.3	Obsidian 15.21	1/2-1/2
+Alexandria-8.0	Obsidian 15.21	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.21	1-0
+Alexandria-8.0	Berserk 20250321	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.21	1/2-1/2
+Ceres C1-640-34	Alexandria-8.0	1/2-1/2
+Lc0-Bt4-it332	Obsidian 15.21	1/2-1/2
+Obsidian 15.14	Alexandria-8.0	1-0
+Alexandria-8.0	Ceres BT4 it332	1/2-1/2
+Obsidian 15.21	Berserk 20250321	1/2-1/2
+Alexandria-8.0	Stockfish 20250427	1/2-1/2
+Alexandria-8.0	Dragon 3.3	1/2-1/2
+Ceres C1-640-34	Obsidian 15.21	1/2-1/2
+Obsidian 15.14	Obsidian 15.21	1-0
+PlentyChess 5.0.0	Alexandria-8.0	1-0
+Ceres BT4 it332	Obsidian 15.21	1/2-1/2
+Lc0-BT4-it332-TRT	Alexandria-8.0	1-0
+Stockfish 20250427	Obsidian 15.21	1-0
+Lc0-Bt4-it332	Alexandria-8.0	1-0
+Obsidian 15.21	Dragon 3.3	1-0
+Obsidian 15.21	Alexandria-8.0	1-0
+Obsidian 15.21	PlentyChess 5.0.0	1-0
+Berserk 20250321	Alexandria-8.0	1/2-1/2
+Obsidian 15.21	Lc0-BT4-it332-TRT	1-0
+Alexandria-8.0	Ceres C1-640-34	1/2-1/2
+Obsidian 15.21	Lc0-Bt4-it332	1/2-1/2
+Alexandria-8.0	Obsidian 15.14	1/2-1/2
+Dragon 3.3	RubiChess-20250505	1-0
+RubiChess-20250505	Alexandria-8.0	1-0
+RubiChess-20250505	PlentyChess 5.0.0	1/2-1/2
+RubiChess-20250505	Ceres BT4 it332	1/2-1/2
+RubiChess-20250505	Stockfish 20250427	1/2-1/2
+Obsidian 15.21	RubiChess-20250505	1-0
+Berserk 20250321	RubiChess-20250505	1-0
+Ceres C1-640-34	RubiChess-20250505	1-0
+Lc0-BT4-it332-TRT	RubiChess-20250505	1-0
+Lc0-Bt4-it332	RubiChess-20250505	1-0
+RubiChess-20250505	Dragon 3.3	1/2-1/2
+Alexandria-8.0	RubiChess-20250505	1/2-1/2
+PlentyChess 5.0.0	RubiChess-20250505	1/2-1/2
+Ceres BT4 it332	RubiChess-20250505	1-0
+Stockfish 20250427	RubiChess-20250505	1-0
+RubiChess-20250505	Obsidian 15.21	1-0
+RubiChess-20250505	Berserk 20250321	1-0
+RubiChess-20250505	Ceres C1-640-34	1/2-1/2
+RubiChess-20250505	Lc0-BT4-it332-TRT	1/2-1/2
+RubiChess-20250505	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.21	Obsidian 15.22	1-0
+Obsidian 15.22	Berserk 20250321	1-0
+Obsidian 15.22	PlentyChess 5.0.0	1-0
+Obsidian 15.22	Ceres BT4 it332	1-0
+Obsidian 15.22	Stockfish 20250427	1-0
+Caissa 1.22	Obsidian 15.22	1-0
+Dragon 3.3	Obsidian 15.22	1/2-1/2
+Ceres C1-640-34	Obsidian 15.22	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.22	1/2-1/2
+Lc0-Bt4-it332	Obsidian 15.22	1-0
+Obsidian 15.22	Obsidian 15.21	1-0
+Berserk 20250321	Obsidian 15.22	1-0
+PlentyChess 5.0.0	Obsidian 15.22	1-0
+Ceres BT4 it332	Obsidian 15.22	1-0
+Stockfish 20250427	Obsidian 15.22	1-0
+Obsidian 15.22	Caissa 1.22	1-0
+Obsidian 15.22	Dragon 3.3	1-0
+Obsidian 15.22	Ceres C1-640-34	1-0
+Obsidian 15.22	Lc0-BT4-it332-TRT	1/2-1/2
+Obsidian 15.22	Lc0-Bt4-it332	1-0
+Obsidian 15.21	Obsidian 15.22	1-0
+Obsidian 15.22	Berserk 20250321	1-0
+Obsidian 15.22	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.22	Ceres BT4 it332	1-0
+Obsidian 15.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Obsidian 15.22	1/2-1/2
+Dragon 3.3	Obsidian 15.22	1/2-1/2
+Ceres C1-640-34	Obsidian 15.22	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.22	1-0
+Lc0-Bt4-it332	Obsidian 15.22	1-0
+Obsidian 15.22	Obsidian 15.21	1-0
+Berserk 20250321	Obsidian 15.22	0-1
+PlentyChess 5.0.0	Obsidian 15.22	1/2-1/2
+Ceres BT4 it332	Obsidian 15.22	1-0
+Stockfish 20250427	Obsidian 15.22	1-0
+Obsidian 15.22	Caissa 1.22	1-0
+Obsidian 15.22	Dragon 3.3	1-0
+Obsidian 15.22	Ceres C1-640-34	1-0
+Obsidian 15.22	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.22	Lc0-Bt4-it332	1-0
+Obsidian 15.21	Obsidian 15.22	1-0
+Obsidian 15.22	Berserk 20250321	1/2-1/2
+Obsidian 15.22	PlentyChess 5.0.0	1-0
+Obsidian 15.22	Ceres BT4 it332	1/2-1/2
+Obsidian 15.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Obsidian 15.22	1/2-1/2
+Dragon 3.3	Obsidian 15.22	1/2-1/2
+Obsidian 15.21	Caissa 1.22	1-0
+Ceres C1-640-34	Obsidian 15.22	1/2-1/2
+Lc0-BT4-it332-TRT	Obsidian 15.22	1/2-1/2
+Lc0-Bt4-it332	Obsidian 15.22	1-0
+Obsidian 15.22	Obsidian 15.21	1/2-1/2
+Berserk 20250321	Obsidian 15.22	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.22	0-1
+Ceres BT4 it332	Obsidian 15.22	1-0
+Stockfish 20250427	Obsidian 15.22	1-0
+Obsidian 15.22	Caissa 1.22	1/2-1/2
+Obsidian 15.22	Dragon 3.3	1-0
+Caissa 1.22	Obsidian 15.21	1/2-1/2
+Obsidian 15.22	Ceres C1-640-34	1/2-1/2
+Obsidian 15.22	Lc0-BT4-it332-TRT	1/2-1/2
+Obsidian 15.22	Lc0-Bt4-it332	1/2-1/2
+Obsidian 15.21	Obsidian 15.22	0-1
+Obsidian 15.22	Berserk 20250321	1-0
+Obsidian 15.22	PlentyChess 5.0.0	1/2-1/2
+Obsidian 15.22	Ceres BT4 it332	1/2-1/2
+Obsidian 15.22	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Obsidian 15.22	1/2-1/2
+Dragon 3.3	Obsidian 15.22	1/2-1/2
+Obsidian 15.21	Caissa 1.22	1/2-1/2
+Ceres C1-640-34	Obsidian 15.22	1-0
+Lc0-BT4-it332-TRT	Obsidian 15.22	1-0
+Lc0-Bt4-it332	Obsidian 15.22	1/2-1/2
+Obsidian 15.22	Obsidian 15.21	1/2-1/2
+Berserk 20250321	Obsidian 15.22	1/2-1/2
+PlentyChess 5.0.0	Obsidian 15.22	1/2-1/2
+Ceres BT4 it332	Obsidian 15.22	1/2-1/2
+Stockfish 20250427	Obsidian 15.22	0-1
+Obsidian 15.22	Caissa 1.22	1/2-1/2
+Obsidian 15.22	Dragon 3.3	0-1
+Caissa 1.22	Obsidian 15.21	1/2-1/2
+Obsidian 15.22	Ceres C1-640-34	1-0
+Obsidian 15.22	Lc0-BT4-it332-TRT	1-0
+Obsidian 15.22	Lc0-Bt4-it332	1-0
+Dragon 3.3	Integral v7.0.0	1-0
+Integral v7.0.0	Ceres C1-640-34	1/2-1/2
+Integral v7.0.0	Lc0-BT4-it332-TRT	1-0
+Integral v7.0.0	Ceres BT4 it332	1-0
+Integral v7.0.0	Stockfish 20250427	1/2-1/2
+Caissa 1.22	Integral v7.0.0	1/2-1/2
+Berserk 20250321	Integral v7.0.0	1/2-1/2
+PlentyChess 5.0.0	Integral v7.0.0	1-0
+Obsidian 15.22	Integral v7.0.0	1-0
+Lc0-Bt4-it332	Integral v7.0.0	1-0
+Integral v7.0.0	Dragon 3.3	1-0
+Ceres C1-640-34	Integral v7.0.0	0-1
+Lc0-BT4-it332-TRT	Integral v7.0.0	1-0
+Ceres BT4 it332	Integral v7.0.0	1-0
+Stockfish 20250427	Integral v7.0.0	1-0

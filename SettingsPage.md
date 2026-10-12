@@ -17,7 +17,6 @@ The Settings page (`/settings`) configures paths, defaults, and preferences used
 | Setting | Purpose |
 |---------|---------|
 | **Analysis Games** | PGN file where analysis games are appended when you click "Save game" on analysis pages. |
-| **Ordo Executable** | Full path to the Ordo rating tool, used by the Ordo Results page to compute ratings from PGN files. |
 
 ### Analysis
 
@@ -58,7 +57,7 @@ Directory paths that serve two purposes:
 |--------|---------|
 | **Engine Definitions** | Engine panels, analysis pages, Play vs Computer, the Engine creator |
 | **Openings** | Tournament creator, opening book tools |
-| **PGN Output** | Tournament results, analysis game saving, Ordo page |
+| **PGN Output** | Tournament results, analysis game saving, Ratings page |
 | **Tournament Configs** | Tournament page, tournament creator |
 | **Tablebase** | Tournament creator (Syzygy adjudication) and the Engine creator (`SyzygyPath` in new defs) |
 | **Neural Networks** | Engine panel weights browser, the Engine creator (`NetworkPath` in new defs) |

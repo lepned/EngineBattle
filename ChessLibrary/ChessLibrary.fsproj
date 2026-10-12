@@ -71,6 +71,7 @@
 
 		<!-- Analysis - Statistics (depends on types) -->
 		<Compile Include="Analysis\Statistics.fs" />
+		<Compile Include="Analysis\RatingFit.fs" />
 
 		<!-- Engine protocol (depends on types) -->
 		<Compile Include="Engine\EngineProtocol.fs" />

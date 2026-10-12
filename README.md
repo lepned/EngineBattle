@@ -57,7 +57,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 ### 📚 PGN and EPD Tools
 
 - **Speed Calculation:** Benchmark chess engines by calculating their median and average speeds from a PGN file, including the out-of-book speed (first search).
-- **Ordo Tables:** Automatically generate Ordo rating tables to rank engine performance based on tournament outcomes.
+- **Ratings:** Elo ratings of every engine from one fit of all the games (the model Ordo uses, computed by EngineBattle itself), with error bars and the confidence for superiority - in every standings table and on the Ratings page for any PGN.
 - **Opening Books from PGN:** Create custom opening books from existing PGN archives (such as TCEC games).
 - **Opening Books from EPD:** Generate opening books directly from EPD files.
 - **Chess960 Position Generation:** Quickly generate random Chess960 positions (EPD format) for diverse testing scenarios.
@@ -335,7 +335,7 @@ Note that parallel play applies to Round Robin and Gauntlet tournaments; Cup, Sw
 
 ### Running Parallel Games in the WebGUI
 
-Parallel play also works directly in the WebGUI: start a Round Robin or Gauntlet tournament with `NumberOfGamesInParallel` above 1 from the Tournament page (Ctrl+R) and the browser navigates to the multi-board grid (`/tournament-grid`) — one live tile per concurrent game, with standings and pentanomial stats filling in as games finish. Clicking a tile opens the single-board live view for that game. Single-game user adjudication (Ctrl+Alt+W/B/D) is not available during parallel runs, and the end-of-tournament Ordo summary is console-only, as for sequential GUI runs.
+Parallel play also works directly in the WebGUI: start a Round Robin or Gauntlet tournament with `NumberOfGamesInParallel` above 1 from the Tournament page (Ctrl+R) and the browser navigates to the multi-board grid (`/tournament-grid`) — one live tile per concurrent game, with standings and pentanomial stats filling in as games finish. Clicking a tile opens the single-board live view for that game. Single-game user adjudication (Ctrl+Alt+W/B/D) is not available during parallel runs.
 
 ### Watching Parallel Console Games Live in the WebGUI
 

@@ -62,11 +62,3 @@ let ``FirstDeviationIndex takes O-O and 0-0 as one castle`` () =
   let referenceSans = [| "e4"; "e5"; "Nf3"; "Nc6"; "Bc4"; "Bc5"; "O-O"; "Nf6"; "c3" |]
   let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory [||] referenceSans
   Assert.Equal(System.Nullable 8, idx)
-
-[<Fact>]
-let ``the Ordo table is rated at the games' draw rate only when it is strictly between 0 and 100 percent`` () =
-  let ok r = match r with Ok () -> true | Error _ -> false
-  Assert.True(ok (GameAnalysis.OrdoHelper.drawCalibration (Some 62.0)))
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration (Some 100.0)))
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration (Some 0.0)))
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration None))

@@ -73,7 +73,7 @@ let private oneBoard (logger: ILogger) (tourny: Tournament) callback cts adjudic
         Pgn = Some pgn
         ReferenceGames = referenceGames
         GamesAlreadyPlayed = gamesAlreadyPlayed
-        // the round robin's cadence on one board: the console's refresh runs Ordo
+        // the round robin's cadence on one board: the console's refresh re-reads the PGN
         PeriodicEvery = if tourny.ConsoleOnly then 10 else 2 }, logger)
   let runner =
     new GameRunner.GameRunner(

@@ -1,0 +1,165 @@
+module RatingFitTests
+
+open System
+open Xunit
+open ChessLibrary.RatingFit
+
+/// `wins` games won by White, `draws` drawn, `losses` won by Black, between the two.
+let private games white black (wins: int, draws: int, losses: int) =
+    [ for _ in 1 .. wins -> { White = white; Black = black; Outcome = WhiteWin }
+      for _ in 1 .. draws -> { White = white; Black = black; Outcome = Draw }
+      for _ in 1 .. losses -> { White = white; Black = black; Outcome = BlackWin } ]
+
+/// A scores the same with both colours, so the white advantage cancels.
+let private bothColours a b (w, d, l) = games a b (w, d, l) @ games b a (l, d, w)
+
+let private player (f: Fit) name = f.Players |> List.find (fun p -> p.Name = name)
+let private noWhite = { defaultOptions with WhiteAdvantage = Some 0.0 }
+
+[<Fact>]
+let ``two players: the difference is the Elo of the score, with the anchor at 0`` () =
+    // 740 of 1000 points: 400 log10(0.74 / 0.26) = 181.7
+    let g = bothColours "A" "B" (320, 100, 80)
+    let f = fit { noWhite with Anchor = Some "B" } g
+    Assert.Equal(0.0, (player f "B").Rating, 6)
+    Assert.Equal(0.0, (player f "B").Error, 6)
+    Assert.Equal(181.7, (player f "A").Rating, 1)
+    Assert.True((player f "A").Error > 10.0 && (player f "A").Error < 40.0)
+    Assert.Equal(1000, (player f "A").Games)
+    Assert.Equal((640, 200, 160), ((player f "A").Wins, (player f "A").Draws, (player f "A").Losses))
+    // without an anchor the pool average is 0
+    let f2 = fit noWhite g
+    Assert.Equal(-(player f2 "B").Rating, (player f2 "A").Rating, 6)
+    Assert.Equal((player f "A").Rating, (player f2 "A").Rating - (player f2 "B").Rating, 6)
+
+[<Fact>]
+let ``a symmetric field is all zeros`` () =
+    let g = games "A" "B" (1, 0, 1) @ games "B" "C" (1, 0, 1) @ games "C" "A" (1, 0, 1)
+    let f = fit noWhite g
+    for p in f.Players do Assert.Equal(0.0, p.Rating, 6)
+    Assert.Equal(0.5, f.Cfs "A" "B", 6)
+
+[<Fact>]
+let ``a perfect score is a floor or a ceiling, rated as if one game were a draw`` () =
+    let f = fit noWhite (games "A" "B" (10, 0, 0))
+    Assert.Equal(Floor, (player f "A").Bound)
+    Assert.Equal(Ceiling, (player f "B").Bound)
+    Assert.True((player f "A").Rating > (player f "B").Rating)
+    Assert.False(Double.IsInfinity (player f "A").Rating)
+    // 9.5 of 10: 400 log10(9.5 / 0.5) = 511.5 apart, less the rating prior's pull on ten games (about 1 %)
+    Assert.InRange((player f "A").Rating - (player f "B").Rating, 500.0, 511.5)
+    Assert.Equal((10, 0, 0), ((player f "A").Wins, (player f "A").Draws, (player f "A").Losses))
+
+[<Fact>]
+let ``unconnected pools are rated apart`` () =
+    let f = fit noWhite (bothColours "A" "B" (6, 2, 2) @ bothColours "C" "D" (2, 2, 6))
+    Assert.Equal(2, f.Groups.Length)
+    Assert.True(Double.IsNaN(f.Cfs "A" "C"))
+    Assert.False(Double.IsNaN(f.Cfs "A" "B"))
+    Assert.True((player f "A").Rating > 0.0 && (player f "D").Rating > 0.0)
+
+[<Fact>]
+let ``the draw model gives d0 for equal opponents and sums to one`` () =
+    Assert.Equal(0.4, drawProbability 0.4 0.5, 9)
+    Assert.Equal(0.75, drawProbability 0.75 0.5, 9)
+    Assert.Equal(0.0, drawProbability 0.0 0.5, 9)
+    for d0 in [ 0.05; 0.3; 0.5; 0.7; 0.95 ] do
+        for e in [ 0.01; 0.3; 0.5; 0.8; 0.99 ] do
+            let w, d, l = wdl d0 e
+            Assert.Equal(1.0, w + d + l, 9)
+            Assert.Equal(e, w + d / 2.0, 9)
+            Assert.True(w >= 0.0 && d >= 0.0 && l >= 0.0)
+    // d0 = 1/2 is D = 2 e (1 - e)
+    Assert.Equal(2.0 * 0.8 * 0.2, drawProbability 0.5 0.8, 9)
+    // a stronger player draws less
+    Assert.True(drawProbability 0.4 0.9 < drawProbability 0.4 0.6)
+
+[<Fact>]
+let ``the draw rate is fitted from the games`` () =
+    let f = fit noWhite (bothColours "A" "B" (150, 200, 150))
+    Assert.Equal(40.0, f.DrawRate, 0)
+    Assert.True(f.DrawRateError > 0.5 && f.DrawRateError < 5.0)
+    // given, it is used as it is
+    let f2 = fit { noWhite with DrawRate = Some 55.0 } (bothColours "A" "B" (150, 200, 150))
+    Assert.Equal(55.0, f2.DrawRate, 6)
+    Assert.Equal(0.0, f2.DrawRateError, 6)
+    // no draws at all: 0 and no error
+    let f3 = fit noWhite (bothColours "A" "B" (10, 0, 10))
+    Assert.Equal(0.0, f3.DrawRate, 6)
+
+[<Fact>]
+let ``errors shrink with the square root of the games, and with the confidence`` () =
+    let e games = (player (fit { noWhite with Anchor = Some "B" } (bothColours "A" "B" games)) "A").Error
+    Assert.Equal(2.0, e (30, 10, 10) / e (120, 40, 40), 2)
+    let at c = (player (fit { noWhite with Anchor = Some "B"; Confidence = c } (bothColours "A" "B" (30, 10, 10))) "A").Error
+    Assert.Equal(1.96, at 0.95 / at 0.6827, 2)
+    // more draws at the same score: a smaller error
+    Assert.True(e (20, 60, 20) < e (40, 20, 40))
+
+[<Fact>]
+let ``CFS says how sure it is that the first is stronger`` () =
+    let f = fit noWhite (bothColours "A" "B" (60, 20, 40))
+    Assert.True(f.Cfs "A" "B" > 0.5)
+    Assert.Equal(1.0, f.Cfs "A" "B" + f.Cfs "B" "A", 9)
+    let sure = fit noWhite (bothColours "A" "B" (600, 200, 400))
+    Assert.True(sure.Cfs "A" "B" > f.Cfs "A" "B")
+    Assert.True(sure.Cfs "A" "B" > 0.99)
+
+[<Fact>]
+let ``the white advantage is fitted, or fixed at 0`` () =
+    // both score 70 % with White: equal players, White 147 Elo up
+    let g = games "A" "B" (60, 20, 20) @ games "B" "A" (60, 20, 20)
+    let f = fit defaultOptions g
+    // the prior pulls a 200-game estimate some way towards 0; ten times the games most of the way back
+    Assert.True(f.WhiteAdvantage > 100.0 && f.WhiteAdvantage < 147.2)
+    let many = fit defaultOptions (games "A" "B" (600, 200, 200) @ games "B" "A" (600, 200, 200))
+    Assert.True(many.WhiteAdvantage > f.WhiteAdvantage && many.WhiteAdvantage > 140.0 && many.WhiteAdvantage < 147.2)
+    Assert.True(f.WhiteAdvantageError > 0.0)
+    Assert.Equal((player f "A").Rating, (player f "B").Rating, 6)
+    // six games where one side was perfect with one colour: finite, moderate numbers
+    let tiny = fit defaultOptions (games "A" "B" (2, 0, 1) @ games "B" "A" (0, 0, 3))
+    Assert.True(abs tiny.WhiteAdvantage < 200.0 && abs (player tiny "A").Rating < 600.0)
+    let f0 = fit noWhite g
+    Assert.Equal(0.0, f0.WhiteAdvantage, 6)
+    Assert.Equal(0.0, (player f0 "A").Rating, 6)
+
+[<Fact>]
+let ``simulated errors agree with the information matrix`` () =
+    let g = bothColours "A" "B" (300, 100, 100)
+    let exact = fit { noWhite with Anchor = Some "B" } g
+    let simulated = fit { noWhite with Anchor = Some "B"; Simulations = 400; Seed = 7 } g
+    Assert.Equal((player exact "A").Rating, (player simulated "A").Rating, 6)
+    // 400 replays estimate a standard deviation to about 3.5 %
+    Assert.InRange((player simulated "A").Error / (player exact "A").Error, 0.9, 1.1)
+    Assert.Equal(0.0, (player simulated "B").Error, 6)
+
+/// The stats pipeline (console tables, GUI standings, pgn elo) takes Elo, error and CFS from the fit.
+[<Fact>]
+let ``the player statistics carry the fit: two players anchored at the first, more at the average`` () =
+    let result w b r = ChessLibrary.TypesDef.CoreTypes.createResult w b (ResizeArray()) r ChessLibrary.MiscTypes.ResultReason.Checkmate 1000L
+    let pair a b (w, d, l) = [ for _ in 1 .. w -> result a b "1-0" ] @ [ for _ in 1 .. d -> result a b "1/2-1/2" ] @ [ for _ in 1 .. l -> result a b "0-1" ]
+    let two = pair "A" "B" (30, 40, 30) @ pair "B" "A" (20, 40, 40) |> ResizeArray
+    let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults two |> Seq.toList
+    let a, b = stats |> List.find (fun p -> p.Player = "A"), stats |> List.find (fun p -> p.Player = "B")
+    Assert.Equal(0.0, a.Elo, 6)
+    Assert.Equal(0.0, a.Error, 6)
+    Assert.True(b.Elo < 0.0 && b.Error > 0.0)
+    Assert.True(a.CFS > 50 && b.CFS = -1)
+    // three players: the fit at the average, the CFS against the next in rating order
+    let three = pair "A" "B" (60, 20, 20) @ pair "B" "A" (20, 20, 60) @ pair "B" "C" (60, 20, 20) @ pair "C" "B" (20, 20, 60) |> ResizeArray
+    let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults three |> Seq.toList
+    let find n = stats |> List.find (fun p -> p.Player = n)
+    Assert.Equal(0.0, (find "B").Elo, 6)
+    Assert.Equal(-(find "C").Elo, (find "A").Elo, 6)
+    Assert.True((find "A").CFS > 90 && (find "B").CFS > 90 && (find "C").CFS = -1)
+    Assert.True((find "B").Error > 0.0)
+
+[<Fact>]
+let ``a gauntlet rates the challenger against every opponent at once`` () =
+    // C beats B as much as B beats A; A plays only B, C plays only B
+    let g = bothColours "A" "B" (20, 20, 60) @ bothColours "B" "C" (20, 20, 60)
+    let f = fit { noWhite with Anchor = Some "B" } g
+    Assert.Equal(0.0, (player f "B").Rating, 6)
+    Assert.Equal(-(player f "A").Rating, (player f "C").Rating, 6)
+    Assert.Equal([ "C"; "B"; "A" ], f.Players |> List.map (fun p -> p.Name))
+    Assert.Equal(1, f.Groups.Length)

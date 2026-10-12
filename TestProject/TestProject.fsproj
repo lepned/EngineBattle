@@ -76,6 +76,8 @@
 		<Compile Include="ReviewModelTests.fs" />
 		<Compile Include="BroadcastFocusTests.fs" />
 		<Compile Include="ResourceMonitorTests.fs" />
+		<Compile Include="RatingFitTests.fs" />
+		<Compile Include="RatingGoldenTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
 		<Compile Include="BoardApiSurfaceTests.fs" />

@@ -1,0 +1,19 @@
+{
+  "source": "TCEC_Season_28_-_Superfinal.pgn",
+  "anchor": null,
+  "ordo": "-Q -a 0 -d 43.88 -N 2 -z 200.24 -n 4 -s 1000 -U 0,1,2,3,4,5 -- C:\\Dev\\Chess\\PGNs\\TCECgames\\TCEC_Season_28_-_Superfinal.pgn",
+  "drawRate": 43.88,
+  "drawRateError": 5.17,
+  "players": [
+    {
+      "name": "Stockfish dev-20250824-678d503d",
+      "rating": 26.26,
+      "error": 26.2
+    },
+    {
+      "name": "LCZero 0.33-dev-b4e98c1-BT4-6147500-it332",
+      "rating": -26.26,
+      "error": 26.2
+    }
+  ]
+}

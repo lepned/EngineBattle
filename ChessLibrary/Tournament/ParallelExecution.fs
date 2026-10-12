@@ -261,7 +261,7 @@ let parallelTournamentRun
       let concurrency = concurrencyFor tourny
 
       // Standings refresh. Console: every 10 games as before - each refresh re-reads the PGN
-      // and runs Ordo there, and the tuner's SPRT check hangs off it. GUI: every 2 games with
+      // and rates it, and the tuner's SPRT check hangs off it. GUI: every 2 games with
       // one board, what the sequential runner it replaces did, and every `concurrency` above.
       let periodicEvery = if tourny.ConsoleOnly then 10 else max 2 concurrency
 

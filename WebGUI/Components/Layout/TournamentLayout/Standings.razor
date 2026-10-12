@@ -36,7 +36,7 @@
                         <td class="data-cell name" title="@context.Player">@context.Player</td>
                         <td class="data-cell">@FormatPoints(context)</td>
                         <td class="data-cell">@FormatPerf(context)</td>
-                        <td class="data-cell center">@FormatEloWithError(context, context.Challenger, scoreTable.Length == 2 && Array.IndexOf(scoreTable, context) == 0)</td>
+                        <td class="data-cell center">@FormatEloWithError(context)</td>
                         <td class="data-cell center">@context.Win-@context.Draw-@context.Loss</td>
                         <td class="data-cell">
                             @if (ShowNPM)
@@ -161,17 +161,13 @@
         return value.ToString("F0");
     }
 
-    private string FormatEloWithError(PlayerResult res, bool isChallenger, bool onlyTwoPlayersAndTopRow)
+    // the fit's numbers as they are; an anchor (two players: the first) has no error, its rating is the reference
+    private string FormatEloWithError(PlayerResult res)
     {
         if (res.Played == 0)
         {
             return "---";
         }
-        if (onlyTwoPlayersAndTopRow)
-        {
-            return "0.0";
-        }
-
         var elo = CheckForNanAndInfinity(res.Elo, false);
         var pos = RuntimeUtilities.ConsoleUtils.positiveInfinitySymbol;
         var neg = RuntimeUtilities.ConsoleUtils.negativeInfinitySymbol;
@@ -179,13 +175,8 @@
         {
             return elo;
         }
-        var error = CheckForNanAndInfinity(res.Error, false);
-        if (isChallenger)
-        {
-            return $"{elo} (---)";
-        }
-        var ret = $"{elo} ({error})";
-        return ret;
+        var error = res.Error == 0.0 ? "---" : CheckForNanAndInfinity(res.Error, false);
+        return $"{elo} ({error})";
     }
 
     private string FormatPerf(PlayerResult res)

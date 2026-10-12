@@ -657,11 +657,6 @@
                 if (mainLogoSizeValue.Length > 0) sizes["MainLogoSize"] = mainLogoSizeValue;
             }
 
-            // Ordo
-            var ordoPath = SettingsService.Settings.OrdoExePath;
-            if (!string.IsNullOrEmpty(ordoPath))
-                root["OrdoExePath"] = ordoPath;
-
             // Engine setup
             root["EngineSetup"]!["EngineDefFolder"] = Slashes(engineDefsFolder);
             var engineList = new JsonArray();

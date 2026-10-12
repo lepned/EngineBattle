@@ -1,32 +1,36 @@
+@page "/results/ratings"
 @page "/results/ordo"
 @page "/ordo"
-@inject ILogger<OrdoResults> logger
+@inject ILogger<Ratings> logger
 @inject GlobalSettingsService SettingsService
 @inject IDialogService DialogService
+@inject IJSRuntime JS
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
-<PageTitle>Ordo Ratings</PageTitle>
+<PageTitle>Ratings</PageTitle>
 
 <div class="tool-page">
-	<h1>Ordo Ratings</h1>
-	<div class="tool-subtitle">Elo ratings, win/draw/loss and head-to-head statistics</div>
-
-	<div style="max-width:700px">
-		<div class="tool-input-group">
-			<label>Reference engine name</label>
-			<input class="tool-input" style="width:100%" @bind="refEngine" />
-		</div>
-		<div class="tool-input-group">
-			<label>Full path to the Ordo executable</label>
-			<div style="display:flex; align-items:stretch;">
-				<input class="tool-input" style="width:100%; border-right:none; border-top-right-radius:0; border-bottom-right-radius:0;" @bind="executablePath" />
-				<button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => executablePath = v, executablePath, "*.exe"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-			</div>
-		</div>
-	</div>
+	<h1>Ratings</h1>
+	<div class="tool-subtitle">Elo ratings of every player of a PGN from one fit of all its games (the model Ordo uses), with error bars, the confidence for superiority, win/draw/loss and speed</div>
 
 	<div class="tool-controls">
 		<button class="tool-upload-btn" @onclick="BrowsePgnFile" disabled="@isProcessing">Load pgn file</button>
+		@if (engineLineData.Count > 0)
+		{
+			<label style="margin-left:16px">Reference engine</label>
+			<select class="tool-input" style="width:320px" @bind="anchorChoice" @bind:after="RerateAsync">
+				<option value="">@(baseStats.Count == 2 ? $"{baseStats[0].Player} at 0 (the match's first player)" : "pool average at 0")</option>
+				@if (playerNames.Count == 2)
+				{
+					<option value="@PoolAverage">pool average at 0</option>
+				}
+				@foreach (var name in playerNames)
+				{
+					<option value="@name">@name at 0</option>
+				}
+			</select>
+			<button class="tool-upload-btn" style="margin-left:16px" @onclick="CopyTable" title="The table as text, as the console prints it, to the clipboard (and the console)">@copyLabel</button>
+		}
 	</div>
 
 	<div class="file-name">@fileOpenName</div>
@@ -40,7 +44,12 @@
 		</div>
 	}
 
-	<h2>Ordo-like table</h2>
+	@if (fitSummary.Length > 0)
+	{
+		<div class="file-name">@fitSummary</div>
+	}
+
+	<h2>Ratings</h2>
 	<div class="tool-table-container" style="max-width:1300px">
 		<table class="tool-table">
 			<thead>
@@ -51,7 +60,7 @@
 					<th>Points</th>
 					<th>Played</th>
 					<th>%</th>
-					<th>CFS%</th>
+					<th title="Confidence that this player is stronger than the next row">CFS%</th>
 					<th>Speed</th>
 					<th>W</th>
 					<th>D</th>
@@ -63,17 +72,16 @@
 				</tr>
 			</thead>
 			<tbody>
-				@for (int i = 0; i < engineLineData.Count; i++)
+				@foreach (var item in engineLineData)
 				{
-					var item = engineLineData[i];
 					<tr>
 						<td>@item.Player</td>
-						<td>@FormatElo(item, i)</td>
-						<td>@item.Error.ToString("F0")</td>
+						<td>@FormatElo(item)</td>
+						<td>@FormatError(item)</td>
 						<td>@item.Points</td>
 						<td>@item.Played</td>
 						<td>@item.Percent.ToString("F0")</td>
-						<td>@item.CFS.ToString("F0")</td>
+						<td>@(item.CFS < 0 ? "---" : item.CFS.ToString())</td>
 						<td>@FormatSpeedWithEps(item)</td>
 						<td>@item.Win</td>
 						<td>@item.Draw</td>
@@ -90,18 +98,26 @@
 </div>
 
 @code {
+	private const string PoolAverage = "*average*";
 
 	private List<PlayerResult> engineLineData = new();
+	private List<string> playerNames = new();
+	private List<PlayerResult> baseStats = new();
+	private Result[] allResults = Array.Empty<Result>();
+	private List<ChessLibrary.PGNTypes.PgnGame> loadedGames = new();
 	private string fileOpenName = "";
+	private string fitSummary = "";
+	private string anchorChoice = "";
+	private string copyLabel = "Copy table as text";
+	private Microsoft.FSharp.Core.FSharpOption<RatingFit.Fit> currentFit = null;
+	private List<CrossTableEntry> crossTable = new();
 	private Int64 testDuration = 0;
-	private string refEngine = string.Empty;
-	private string executablePath = "";
-	string FormatElo(PlayerResult p, int index)
-	{
-		if (engineLineData.Count == 2 && index == 0) return "0";
-		if (Double.IsNaN(p.Elo)) return "---";
-		return p.Elo.ToString("F0");
-	}
+
+	string FormatElo(PlayerResult p) => Double.IsNaN(p.Elo) ? "---" : p.Elo.ToString("F0");
+
+	// an anchor has no error: its rating is the reference
+	string FormatError(PlayerResult p) =>
+		p.Error == 0.0 ? "----" : Double.IsNaN(p.Error) ? "---" : Double.IsInfinity(p.Error) ? "∞" : p.Error.ToString("F0");
 
 	string FormatSpeedWithEps(PlayerResult p)
 	{
@@ -123,6 +139,64 @@
 		StateHasChanged();
 	}
 
+	/// The table with the chosen reference: the pipeline's own choice (two players: the first at 0,
+	/// otherwise the pool average), the pool average, or a player at 0. The fit runs off the
+	/// dispatcher: an archive of a thousand names takes a moment.
+	private async Task RerateAsync()
+	{
+		if (baseStats.Count == 0) return;
+		var choice = anchorChoice;
+		var (list, summary) = await Task.Run(() => RateWith(choice));
+		engineLineData = list;
+		fitSummary = summary;
+		StateHasChanged();
+	}
+
+	private (List<PlayerResult>, string) RateWith(string choice)
+	{
+		Microsoft.FSharp.Core.FSharpOption<string> anchor =
+			choice == "" ? (baseStats.Count == 2 ? Microsoft.FSharp.Core.FSharpOption<string>.Some(baseStats[0].Player) : null)
+			: choice == PoolAverage ? null
+			: Microsoft.FSharp.Core.FSharpOption<string>.Some(choice);
+		var (rated, fit) = GameAnalysis.PGNCalculator.rerate(anchor, allResults, baseStats);
+		var list = rated.ToList();
+		// two players: the paired-openings error, as the standings show it
+		GameAnalysis.PGNCalculator.populatePentanomialError(list, loadedGames);
+		currentFit = fit;
+		var summary = "";
+		if (fit != null)
+		{
+			var f = fit.Value;
+			var groups = f.Groups.Length > 1 ? $" · {f.Groups.Length} groups of players the games do not connect: ratings compare within a group only" : "";
+			summary = $"{allResults.Length:N0} games · white advantage {f.WhiteAdvantage:+0.0;-0.0;0.0} ± {f.WhiteAdvantageError:0.0} · draw rate for equal opponents {f.DrawRate:0.00} % ± {f.DrawRateError:0.00}{groups}";
+		}
+		return (list.OrderByDescending(e => e.Elo).ThenByDescending(e => e.Points).ToList(), summary);
+	}
+
+	/// The table with the chosen reference as the console prints it: to the clipboard, and to the console and the log.
+	private async Task CopyTable()
+	{
+		if (engineLineData.Count == 0) return;
+		var text = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(engineLineData, crossTable)
+		           + GameAnalysis.PGNCalculator.ratingFitLines(currentFit)
+		           + (engineLineData.Count == 2 ? Statistics.Pentanomial.formatSingleMatchupCompact(loadedGames) : "");
+		Console.WriteLine(text);
+		logger.LogInformation("{Table}", text);
+		try
+		{
+			await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+			copyLabel = "Copied ✓";
+		}
+		catch
+		{
+			copyLabel = "Written to the console";
+		}
+		StateHasChanged();
+		await Task.Delay(1500);
+		copyLabel = "Copy table as text";
+		try { StateHasChanged(); } catch (ObjectDisposedException) { }
+	}
+
 	private async Task BrowsePgnFile()
 	{
 		if (isProcessing) return;
@@ -140,6 +214,11 @@
 		var fullPath = (string)result.Data!;
 
 		engineLineData.Clear();
+		baseStats.Clear();
+		playerNames.Clear();
+		allResults = Array.Empty<Result>();
+		fitSummary = "";
+		anchorChoice = "";
 		var pgnName = Path.GetFileName(fullPath);
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
@@ -174,8 +253,8 @@
 			// Standings/crosstable only — deviation analysis is for EB's own tournaments
 			// (repeated openings) and does not belong in generic PGN result parsing; on a
 			// TCEC archive it multiplied the runtime tenfold for a meaningless number.
-			SetStatus($"Computing standings for {games.Count:N0} games…");
-			var (consoleRes, engineStats, cross, allResults) =
+			SetStatus($"Rating {games.Count:N0} games…");
+			var (consoleRes, engineStats, cross, results) =
 				await Task.Run(() => GameAnalysis.PGNCalculator.getEngineDataResults(games), ct);
 			ct.ThrowIfCancellationRequested();
 
@@ -189,30 +268,19 @@
 				return Statistics.Pentanomial.formatPerEngineDefault(games);
 			}, ct);
 			logger.LogInformation("Pentanomial results:\n{Penta}", pentaDefault);
-			testDuration = allResults.Sum(r => r.GameTime);
+			testDuration = results.Sum(r => r.GameTime);
 			var testTime = TimeSpan.FromMilliseconds(testDuration);
 			var msg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and  {testTime.Minutes} minutes";
 			logger.LogInformation(msg);
-			logger.LogInformation(consoleRes);
-			var ordered = engineStats.OrderByDescending(e => e.Points).ThenBy(e => e.Played).ToList();
-			engineLineData.AddRange(ordered);
+			logger.LogInformation("{Standings}", consoleRes);
+			loadedGames = games;
+			allResults = results;
+			crossTable = cross.ToList();
+			baseStats = engineStats.ToList();
+			playerNames = baseStats.Select(p => p.Player).OrderBy(n => n).ToList();
+			await RerateAsync();
 			logger.LogInformation("PGN file parsed {File}", pgnName);
 			StateHasChanged();
-			if (!string.IsNullOrEmpty(executablePath))
-			{
-				// User-triggered one-shot analysis, rated at the games' own draw rate (a quick -D
-				// pass reads it, then -d) or Ordo's default when there is none. The token makes
-				// Cancel work here too.
-				SetStatus("Reading the draw rate…");
-				var rate = await GameAnalysis.OrdoHelper.calibratedDrawRate(executablePath, fullPath, 60.0, ct);
-				var drawRate = GameAnalysis.OrdoHelper.drawCalibration(rate).IsOk ? rate : null;
-				SetStatus(drawRate != null ? "Running Ordo (at the games' draw rate)…" : "Running Ordo…");
-				var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine, drawRate);
-				var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
-				Console.WriteLine(ordoCommandString);
-				var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, 300.0, ct);
-				Console.WriteLine(ordo);
-			}
 
 			// The full W-D-L matrix is quadratic in players: for an archive PGN with
 			// 1384 engines it was a 27 MB string logged as one line. Cap it at a size
@@ -238,32 +306,5 @@
 			processingStatus = "";
 			StateHasChanged();
 		}
-	}
-
-	protected override Task OnInitializedAsync()
-	{
-		var s = SettingsService.Settings;
-		if (!string.IsNullOrEmpty(s.OrdoExePath))
-			executablePath = s.OrdoExePath;
-		return base.OnInitializedAsync();
-	}
-
-	private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
-	{
-		var initialDir = !string.IsNullOrEmpty(currentValue)
-			? (File.Exists(currentValue) ? Path.GetDirectoryName(currentValue) ?? ""
-			   : Directory.Exists(currentValue) ? currentValue
-			   : Path.GetDirectoryName(currentValue) ?? "")
-			: "";
-		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
-		{
-			{ x => x.InitialPath, initialDir },
-			{ x => x.FileFilter, filter },
-			{ x => x.Mode, FileBrowserMode.File }
-		};
-		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
-		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
-		var result = await dialog.Result;
-		if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
 	}
 }

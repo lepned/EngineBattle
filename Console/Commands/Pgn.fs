@@ -335,7 +335,7 @@ let standingsJson (players: TypesDef.CoreTypes.PlayerResult seq) (cross: TypesDe
              let ww, wd, wl = r.WhiteWDL
              let bw, bd, bl = r.BlackWDL
              {| Player = r.Player; Played = r.Played; Points = r.Points; Percent = r.Percent; Elo = num r.Elo
-                Error = num r.Error; Cfs = r.CFS; Win = r.Win; Draw = r.Draw; Loss = r.Loss
+                Error = num r.Error; Cfs = (if r.CFS < 0 then Nullable() else Nullable r.CFS); Win = r.Win; Draw = r.Draw; Loss = r.Loss
                 White = {| Win = ww; Draw = wd; Loss = wl |}; Black = {| Win = bw; Draw = bd; Loss = bl |} |} ]
        Pairs =
          [ for e in cross do
