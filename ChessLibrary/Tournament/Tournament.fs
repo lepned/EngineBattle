@@ -254,7 +254,7 @@ module Manager =
             if isLc0 then
               ConsoleUtils.printInColor ConsoleColor.Yellow $"The Lc0 binary used does not support value head testing: {engineConfig.Name}. Please make sure to use a binary that supports value head tests via an option called ValueOnly or by using command line argument valuehead for Lc0 rewrite"              
             else
-              let msg = $"The engine {engineConfig.Name} does not support value head testing, only Lc0 and Ceres supports it currently"
+              let msg = $"The engine {engineConfig.Name} does not support value head testing: supported are Lc0, Ceres and engines that list a ValueOnly UCI option"
               ConsoleUtils.printInColor ConsoleColor.Yellow msg
         if validationPassed then
           ConsoleUtils.printInColor ConsoleColor.Yellow "All engines passed validation for value head tests"

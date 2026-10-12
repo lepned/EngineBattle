@@ -215,7 +215,7 @@ Write a setting in the short form - the same notation as `match`'s `tc=` and `st
 | `"Tc": "moves/base+inc"` | a repeating period: after that many moves the base is added again | `"40/5:00+2"` 5 min per 40 moves + 2 s, `"40/300"` |
 | `"St": seconds` | a fixed time per move, no clock (`go movetime`) | `1`, `0.5`, `"0.5"` |
 | `"Nodes": n` | a node limit per move, no clock (`go nodes`) | `800`, `150000`; `1` plays a net's policy head alone |
-| `"ValueHead": true` | every move from a net's value head alone, no clock (Lc0 `go nodes 2`, Ceres `go value`) | Lc0 and Ceres only |
+| `"ValueHead": true` | every move from a net's value head alone, no clock (Lc0 ValueOnly or `valuehead`, others `go value`) | Lc0, Ceres and engines with a `ValueOnly` option that answer `go value` |
 
 - Seconds are the unit everywhere: the base (or `m:ss`), the increment and `St`. Decimals are fine
   (`"10+0.1"`, `"St": 0.25`); a trailing `s` is allowed (`"60s+1"`). There is no `m` unit - write
@@ -239,10 +239,11 @@ How each kind plays:
   GUI shows the limit (`800 nodes`) where a clock would be. `"Nodes": 1` is a network's policy head
   alone (its top move, no search) - for an engine without a network it is a minimal search.
 - **Value head (`ValueHead`)**: every move is chosen by the network's value head alone - Lc0 with
-  `go nodes 2` and its ValueOnly setting, Ceres with `go value`. No clock, no pondering. Only Lc0
-  and Ceres can play it: the engines with such a setting are checked before the first game, and a
-  run with any other engine there stops and names it. Like every setting it is per engine, so a
-  value-head net can play a searching engine.
+  its ValueOnly option set, or started with the `valuehead` argument (newer binaries), Ceres with
+  `go value`, and any other engine that lists a `ValueOnly` UCI option and answers `go value`. No
+  clock, no pondering. Only those engines can play it: the engines with such a setting are checked
+  before the first game, and a run with any other engine there stops and names it. Like every
+  setting it is per engine, so a value-head net can play a searching engine.
 
 The time settings in the GUI's banner and the PGN are written the same way: `1' + 1''`,
 `40/5' + 2''`, `1'' / move`, `800 nodes`.

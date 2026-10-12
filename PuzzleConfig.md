@@ -10,7 +10,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
 - **Type**: Comma-separated type(s) of puzzles to test. Available types:
   - `policy` — Top-1 policy accuracy + KLD. Tests if the engine's best policy move matches the puzzle solution.
   - `policy2`, `policy3`, `policy5` (or `policytop2`, etc.) — Top-N policy accuracy + KLD. Tests if the correct move is within the top N policy moves. Multiple policy types are merged into a single pass (e.g., `"policy, policy3, policy5"` evaluates each puzzle once).
-  - `value` — Value head test (Lc0: ValueOnly + `go nodes 1`, Ceres: `go value`). Tests if the value head's best move matches the puzzle solution.
+  - `value` — Value head test (Lc0: ValueOnly or `valuehead`, Ceres: `go value`, other engines that list `ValueOnly`: set + `go nodes 1`). Tests if the value head's best move matches the puzzle solution.
   - There is no top-N *value* test. Only the policy head exposes a ranking of every move;
     the value head answers with one best child move, in both Lc0 and Ceres. Use `policy3`
     and friends for top-N.

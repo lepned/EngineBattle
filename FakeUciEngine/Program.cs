@@ -20,6 +20,7 @@
 //   --live-stats        advertise LogLiveStats (EngineBattle then reports HasLiveStat)
 //   --ansi              colour stderr lines the way Ceres does
 //   --no-ponder         no Ponder option in the uci answer (an engine that cannot ponder)
+//   --value-only        advertise a ValueOnly option (an engine with a value-head mode, as older Lc0)
 //   --stderr-at-start N print N lines to stderr before reading anything
 //
 // Winboard / xboard mode (--xboard) speaks CECP instead:
@@ -70,6 +71,7 @@ static class FakeUciEngine
     static bool _liveStats;
     static bool _ansi;
     static bool _noPonder;
+    static bool _valueOnly;
     static bool _firstGoDone;
     static List<string> _movesFromStart = [];
     static bool _startpos = true;
@@ -94,6 +96,7 @@ static class FakeUciEngine
                 case "--live-stats": _liveStats = true; break;
                 case "--ansi": _ansi = true; break;
                 case "--no-ponder": _noPonder = true; break;
+                case "--value-only": _valueOnly = true; break;
                 case "--stderr-at-start": stderrAtStart = int.Parse(args[++i]); break;
                 case "--xboard": xboard = true; break;
                 case "--wb-features": wb.Features = args[++i]; break;
@@ -165,6 +168,7 @@ static class FakeUciEngine
         Out("option name Style type combo default Normal var Solid var Normal var Risky");
         Out("option name Clear Hash type button");
         if (_liveStats) Out("option name LogLiveStats type check default false");
+        if (_valueOnly) Out("option name ValueOnly type check default false");
         Out("option name FakeBestMove type string default <empty>");
         Out("option name FakeInfoCount type spin default 3 min 0 max 1000000");
         Out("option name FakeGoDelayMs type spin default 0 min 0 max 600000");

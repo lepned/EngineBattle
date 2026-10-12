@@ -170,9 +170,20 @@ let getPuzzleValueEngine config =
           if not ok then
               notReady engine
           Some engine
+      elif (probeDefaultOptionNames config).Contains "ValueOnly" then
+          // Neither Lc0 nor Ceres, but the engine lists a ValueOnly option (as older Lc0 binaries
+          // did): set, every go answers with the value-head move, `go nodes 1` included
+          let dict = Dictionary<string, obj>(config.Options)
+          dict.["ValueOnly"] <- true
+          let config = {config with Options = dict}
+          let engine = EngineHelper.createEngineWithoutValidation(config, None)
+          let ok = engine.WaitForReadyOk() // wait for readyok
+          if not ok then
+              notReady engine
+          Some engine
       else
-          // Neither the path nor the probed UCI identity says Lc0 or Ceres:
-          // the engine has no supported value-test mode.
+          // Neither the path nor the probed UCI identity says Lc0 or Ceres, and the engine has
+          // no ValueOnly option: it has no supported value-test mode.
           None
   with
       | ex ->
@@ -327,6 +338,7 @@ let bestQPuzzleValueOnly (engine:ChessEngine) (pos: Position) =
   if isCeres then
     engine.GoValue()
   else
+    // Lc0, or an engine with ValueOnly set by getPuzzleValueEngine
     engine.GoNodes 1
   while cont do
     let line = readLineChecked engine

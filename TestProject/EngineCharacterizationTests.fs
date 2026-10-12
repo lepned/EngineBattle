@@ -1446,3 +1446,22 @@ let ``Winboard does not ponder: SupportsPonder is false and go ponder and ponder
         eng.Stop()
         Assert.Equal<string[]>([| "?" |], syncedWb log eng.Write |> Array.skip before)
     finally stopTournament eng
+
+// ── Value-head tests ────────────────────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``an engine that lists a ValueOnly option passes value-test validation and gets it set`` () =
+    // Neither Lc0 nor Ceres by path or id name: the option alone makes it a value-head engine.
+    let log = newLogPath ()
+    match PuzzleEngineAnalysis.getPuzzleValueEngine (config log "--value-only" []) with
+    | None -> failwith "an engine listing ValueOnly was refused"
+    | Some eng ->
+        try
+            Assert.Equal(box true, eng.Config.Options.["ValueOnly"])
+            waitForSent log "setoption name ValueOnly value true"
+            Assert.Contains("setoption name ValueOnly value true", commands log)
+        finally eng.Quit()
+
+[<Fact>]
+let ``an engine that is neither Lc0 nor Ceres and lists no ValueOnly has no value-test mode`` () =
+    Assert.True((PuzzleEngineAnalysis.getPuzzleValueEngine (config (newLogPath ()) "" [])).IsNone)
