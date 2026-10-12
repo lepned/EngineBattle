@@ -325,17 +325,31 @@ let summary (p: Parsed) =
     | _ -> ()
     ExitOk
 
-/// The standings of a set of games as JSON (pgn elo --json, tournament run --json): each player's
-/// score, Elo and results, and every pair's results.
-let standingsJson (players: TypesDef.CoreTypes.PlayerResult seq) (cross: TypesDef.CoreTypes.CrossTableEntry seq) =
+/// The standings of a set of games as JSON (pgn elo --json, tournament run --json): the fit's
+/// anchor, white advantage and draw rate; each player's score, Elo, error, CFS (the confidence
+/// of being stronger than `CfsAgainst`, the next player by rating) and results, strongest first;
+/// and every pair's results.
+let standingsJson (fit: RatingFit.Fit option) (anchor: string option) (players: TypesDef.CoreTypes.PlayerResult seq) (cross: TypesDef.CoreTypes.CrossTableEntry seq) =
     // NaN or infinity (a 100% score has no finite Elo) is null in JSON
     let num (x: float) = if Double.IsFinite x then Nullable x else Nullable()
-    {| Players =
-         [ for r in players |> Seq.sortByDescending (fun r -> r.Points) ->
+    let ordered = players |> Seq.sortByDescending (fun r -> (if Double.IsNaN r.Elo then Double.NegativeInfinity else r.Elo), r.Points) |> Seq.toList
+    let next = ordered |> List.map (fun r -> r.Player) |> List.pairwise |> dict
+    {| Rating =
+         (match fit with
+          | Some f ->
+              box {| Anchor = (match anchor with Some a -> a | None -> null)
+                     WhiteAdvantage = Math.Round(f.WhiteAdvantage, 1); WhiteAdvantageError = Math.Round(f.WhiteAdvantageError, 1)
+                     DrawRate = Math.Round(f.DrawRate, 2); DrawRateError = Math.Round(f.DrawRateError, 2)
+                     Groups = f.Groups.Length |}
+          | None -> null)
+       Players =
+         [ for r in ordered ->
              let ww, wd, wl = r.WhiteWDL
              let bw, bd, bl = r.BlackWDL
              {| Player = r.Player; Played = r.Played; Points = r.Points; Percent = r.Percent; Elo = num r.Elo
-                Error = num r.Error; Cfs = (if r.CFS < 0 then Nullable() else Nullable r.CFS); Win = r.Win; Draw = r.Draw; Loss = r.Loss
+                Error = num r.Error; Cfs = (if r.CFS < 0 then Nullable() else Nullable r.CFS)
+                CfsAgainst = (match next.TryGetValue r.Player with | true, n when r.CFS >= 0 -> n | _ -> null)
+                Win = r.Win; Draw = r.Draw; Loss = r.Loss
                 White = {| Win = ww; Draw = wd; Loss = wl |}; Black = {| Win = bw; Draw = bd; Loss = bl |} |} ]
        Pairs =
          [ for e in cross do
@@ -344,18 +358,42 @@ let standingsJson (players: TypesDef.CoreTypes.PlayerResult seq) (cross: TypesDe
        // too many players for a crosstable (GameAnalysis.maxCrosstablePlayers)
        PairsSkipped = Seq.isEmpty cross && Seq.length players > 1 |}
 
+/// The standings JSON of rated players: the fit they carry, made again (it is deterministic) at
+/// their anchor - the one given, or the one the table has (two players: the one rated 0).
+let standingsJsonOf (anchor: string option) (results: TypesDef.CoreTypes.Result seq) (players: TypesDef.CoreTypes.PlayerResult seq) cross =
+    let anchor =
+        match anchor with
+        | Some a -> Some a
+        | None -> GameAnalysis.PGNCalculator.anchorOf players |> Option.map (fun p -> p.Player)
+    let _, fit = GameAnalysis.PGNCalculator.rerate anchor results players
+    standingsJson fit anchor players cross
+
 let eloSpec =
     { command [ "pgn"; "elo" ] Group "Ratings and results" with
-        Description = Some "Elo, score and results per engine pair from the games."
+        Description = Some "Every player's Elo from one fit of all the games (the model Ordo uses): the error at 95 %, the confidence of being stronger than the next player (CFS), score, results, speed, and under the table the white advantage and the draw rate for equal opponents the fit found. Two players: the first is the reference at 0; more: the pool average is 0. --anchor puts a player of your choice at 0."
         Args = [ pgnSubject ]
-        Options = [ json ]
-        Examples = [ "eb-cli pgn elo match.pgn", "The rating table" ] }
+        Options = [ value "anchor" "NAME" "The player whose rating is 0; the others are relative to it"; json ]
+        Examples =
+          [ "eb-cli pgn elo match.pgn", "The rating table"
+            "eb-cli pgn elo gauntlet.pgn --anchor \"Stockfish 17\"", "Every rating relative to Stockfish 17"
+            "eb-cli pgn elo match.pgn --json", "The table for a script" ] }
 
 let elo (p: Parsed) =
-    let games = FullPGNParser.parsePgnFile (pgnArg p)
-    let text, players, cross, _ = GameAnalysis.PGNCalculator.getEngineDataResults games
+    let games = FullPGNParser.parsePgnFile (pgnArg p) |> Seq.toList
+    let text, players, cross, results = GameAnalysis.PGNCalculator.getEngineDataResults games
+    let anchor = valueOf p "anchor"
+    let players, text =
+        match anchor with
+        | None -> players, text
+        | Some a ->
+            if not (players |> List.exists (fun r -> r.Player = a)) then
+                let names = String.Join(", ", players |> List.map (fun r -> r.Player))
+                raise (Usage $"no player named '{a}' in the PGN; the players: {names}")
+            let rated, fit = GameAnalysis.PGNCalculator.rerate (Some a) results players
+            GameAnalysis.PGNCalculator.populatePentanomialError rated games
+            rated, GameAnalysis.PGNCalculator.standingsText rated cross fit games
     if has p "json" then
-        printJson (envelope (name p.Command) true (box (standingsJson players cross)) [])
+        printJson (envelope (name p.Command) true (box (standingsJsonOf anchor results players cross)) [])
     else printfn "%s" text
     ExitOk
 

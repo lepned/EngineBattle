@@ -826,7 +826,7 @@ type TournamentOutcome =
     Failure: string option
     Results: TypesDef.CoreTypes.Result list
     Duration: TimeSpan
-    Standings: (TypesDef.CoreTypes.PlayerResult seq * TypesDef.CoreTypes.CrossTableEntry seq) option }
+    Standings: (TypesDef.CoreTypes.PlayerResult seq * TypesDef.CoreTypes.CrossTableEntry seq * TypesDef.CoreTypes.Result seq) option }
 
 let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.Extensions.Logging.ILogger) (ct: CancellationToken) =
   
@@ -959,15 +959,15 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
         Console.WriteLine msg
         logger.LogInformation(msg)
         if File.Exists tourny.PgnOutPath then
-            let consoleRes, players, cross, _ = PGNCalculator.getEngineDataResults (runner.GetPGNGames())
-            standings <- Some (Seq.ofList players, Seq.ofArray (cross.ToArray()))
+            let consoleRes, players, cross, allResults = PGNCalculator.getEngineDataResults (runner.GetPGNGames())
+            standings <- Some (Seq.ofList players, Seq.ofArray (cross.ToArray()), Seq.ofArray allResults)
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
         else
             let results = results |> ResizeArray
             let scoreTable = runner.GetPlayerResults(results)
             let table = runner.GenerateStatsCrosstable(results)
-            standings <- Some (Seq.ofArray (scoreTable.ToArray()), Seq.ofArray (table.ToArray()))
+            standings <- Some (Seq.ofArray (scoreTable.ToArray()), Seq.ofArray (table.ToArray()), Seq.ofArray (results.ToArray()))
             let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
@@ -1398,7 +1398,7 @@ let tournamentRun (p: Parsed) =
                     {| Name = tournament.Name; Mode = tournament.ModeLabel(); Config = path; Pgn = tournament.PgnOutPath
                        Seconds = Math.Round(outcome.Duration.TotalSeconds, 1)
                        Parallel = tournament.NumberOfGamesInParallel
-                       Standings = (match outcome.Standings with Some (players, cross) -> box (Commands.Pgn.standingsJson players cross) | None -> null)
+                       Standings = (match outcome.Standings with Some (players, cross, results) -> box (Commands.Pgn.standingsJsonOf None results players cross) | None -> null)
                        Games = games |}
                 let errors =
                     [ match outcome.Failure with

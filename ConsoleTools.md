@@ -545,17 +545,22 @@ Ratings and results
 
 Usage: eb-cli pgn elo <pgn> [options]
 
-Elo, score and results per engine pair from the games.
+Every player's Elo from one fit of all the games (the model Ordo uses): the error at 95 %, the confidence of being stronger than the next player (CFS), score, results, speed, and under the table the white advantage and the draw rate for equal opponents the fit found. Two players: the first is the reference at 0; more: the pool average is 0. --anchor puts a player of your choice at 0.
 
 Arguments:
   <pgn>  a PGN file
 
 Options:
-      --json  Print the result as JSON on stdout (everything else goes to stderr)
+      --anchor NAME  The player whose rating is 0; the others are relative to it
+      --json         Print the result as JSON on stdout (everything else goes to stderr)
 
 Examples:
   eb-cli pgn elo match.pgn
       The rating table
+  eb-cli pgn elo gauntlet.pgn --anchor "Stockfish 17"
+      Every rating relative to Stockfish 17
+  eb-cli pgn elo match.pgn --json
+      The table for a script
 ```
 ### pgn speed
 

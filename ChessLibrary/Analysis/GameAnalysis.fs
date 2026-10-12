@@ -334,6 +334,12 @@ module PGNCalculator =
     let fit = if games.Length = 0 then None else Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = anchor } games)
     withRatingFit fit players, fit
 
+  /// The standings as the console prints them: the table, the fit's lines under it and, for two
+  /// players, the paired-openings line.
+  let standingsText (players: PlayerResult list) (cross: CrossTableEntry seq) (fit: RatingFit.Fit option) (pgnGames: PGNTypes.PgnGame seq) =
+    let standings = OrdoHelper.getResultsAndPairsInConsoleFormat players cross + ratingFitLines fit
+    if players.Length = 2 then standings + Pentanomial.formatSingleMatchupCompact pgnGames else standings
+
   /// Every player's statistics, with the rating fit (also returned, for the lines under the table).
   let getFullStatAndFit results =
     let results = Seq.toArray results
@@ -548,14 +554,20 @@ module PGNCalculator =
     printfn "\n%s\n" idealized
 
 
-  /// Two players rated against an anchor (rating 0 and no error; the first listed when both are,
-  /// as after nothing but draws): the other one's error is the paired-openings (pentanomial)
-  /// error, the one the match's Elo line gives. Nothing at the pool average (the errors are the
-  /// fit's own) or with more players.
+  /// The anchor of a two-player table: the player rated 0 with no error (the first listed when
+  /// both are, as after nothing but draws); None at the pool average or with more players.
+  let anchorOf (players: PlayerResult seq) =
+    match Seq.toList players with
+    | [ _; _ ] as ps -> ps |> List.tryFind (fun p -> p.Elo = 0.0 && p.Error = 0.0)
+    | _ -> None
+
+  /// Two players rated against an anchor: the other one's error is the paired-openings
+  /// (pentanomial) error, the one the match's Elo line gives. Nothing at the pool average (the
+  /// errors are the fit's own) or with more players.
   let populatePentanomialError (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
     let players = Seq.toList players
-    match players |> List.tryFind (fun p -> p.Elo = 0.0 && p.Error = 0.0) with
-    | Some anchor when players.Length = 2 ->
+    match anchorOf players with
+    | Some anchor ->
       let matchups = Pentanomial.calculateAllMatchups pgnGames
       match matchups with
       | [ (_, counts) ] ->
@@ -619,10 +631,7 @@ module PGNCalculator =
           printfn "Standings trimmed to the %d most active of %d players"
             maxConsoleStandingsPlayers playerRes.Length
           playerRes |> List.sortByDescending (fun p -> p.Played) |> List.truncate maxConsoleStandingsPlayers
-      let standings = OrdoHelper.getResultsAndPairsInConsoleFormat forConsole cross + ratingFitLines fit
-      if playerRes.Length = 2 then
-        standings + Pentanomial.formatSingleMatchupCompact results
-      else standings
+      standingsText forConsole cross fit results
 
     consoleContent, playerRes, cross, allResults
 
