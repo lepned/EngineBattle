@@ -154,7 +154,10 @@ let validate (p: Parsed) =
     let checkedGames =
         let source = FullPGNParser.parsePgnFile path
         if threads = 1 then Seq.map checkGame source
-        else Linq.ParallelEnumerable.Select(Linq.ParallelEnumerable.AsOrdered(Linq.ParallelEnumerable.WithDegreeOfParallelism(Linq.ParallelEnumerable.AsParallel source, threads)), checkGame) :> seq<_>
+        else
+            // AsOrdered must follow AsParallel directly
+            let q = Linq.ParallelEnumerable.AsOrdered(Linq.ParallelEnumerable.AsParallel source)
+            Linq.ParallelEnumerable.Select(Linq.ParallelEnumerable.WithDegreeOfParallelism(q, threads), checkGame) :> seq<_>
     let csv =
         csvPath |> Option.map (fun out ->
             let w = new StreamWriter(out)
