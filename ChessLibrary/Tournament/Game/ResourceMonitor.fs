@@ -74,10 +74,17 @@ let formatBytes (bytes: int64) =
   let mb = float bytes / 1048576.0
   if mb >= 1024.0 then sprintf "%.1f GB" (mb / 1024.0) else sprintf "%.0f MB" mb
 
-/// Memory that kept growing from game to game: at least five games, and the last game's at least
-/// 30% and 200 MB above the first's.
-let growthSuspicious (games: int) (first: int64) (last: int64) =
-  games >= 5 && float last >= float first * 1.3 && last - first >= 200L * 1048576L
+/// Memory (one reading per game) that grew and is still growing at the end: at least six games,
+/// the last game's at least 30% and 200 MB above the first's, and the last third's mean at least
+/// 10% and 100 MB above the middle third's. A cache or search tree that fills up and then stays
+/// (Lc0, Ceres) is no leak.
+let growthSuspicious (ram: int64[]) =
+  let n = ram.Length
+  let mean (xs: int64[]) = xs |> Array.averageBy float
+  n >= 6
+  && float ram.[n - 1] >= float ram.[0] * 1.3 && ram.[n - 1] - ram.[0] >= 200L * 1048576L
+  && (let middle, last = mean ram.[n / 3 .. 2 * n / 3 - 1], mean ram.[2 * n / 3 ..]
+      last >= middle * 1.1 && last - middle >= 100.0 * 1048576.0)
 
 type private Tally =
   { mutable CpuSum: float
@@ -134,7 +141,7 @@ type Totals() =
             if t.GameRam.Count > 0 then sprintf "%s -> %s (%d games)" (formatBytes t.GameRam.[0]) (formatBytes t.GameRam.[t.GameRam.Count - 1]) t.GameRam.Count
             else "-"
           sb.AppendLine(sprintf "  %-*s  %15s  %9s  %s" width name cpu (formatBytes t.Peak) games) |> ignore
-          if t.GameRam.Count > 0 && growthSuspicious t.GameRam.Count t.GameRam.[0] t.GameRam.[t.GameRam.Count - 1] then
+          if growthSuspicious (t.GameRam.ToArray()) then
             warnings.Add(sprintf "  %s: memory grew from %s to %s over %d games - a leak?" name (formatBytes t.GameRam.[0]) (formatBytes t.GameRam.[t.GameRam.Count - 1]) t.GameRam.Count)
         for w in warnings do sb.AppendLine w |> ignore
         Some (sb.ToString()))

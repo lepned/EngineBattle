@@ -64,11 +64,9 @@ let ``FirstDeviationIndex takes O-O and 0-0 as one castle`` () =
   Assert.Equal(System.Nullable 8, idx)
 
 [<Fact>]
-let ``the final Ordo table calibrates the draw rate only from enough games at a rate it can calibrate`` () =
+let ``the Ordo table is rated at the games' draw rate only when it is strictly between 0 and 100 percent`` () =
   let ok r = match r with Ok () -> true | Error _ -> false
-  Assert.True(ok (GameAnalysis.OrdoHelper.drawCalibration 200 (Some 62.0)))
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 49 (Some 62.0)))
-  // 0 and 100 %: Ordo's error simulations never finish
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 200 (Some 100.0)))
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 200 (Some 0.0)))
-  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration 200 None))
+  Assert.True(ok (GameAnalysis.OrdoHelper.drawCalibration (Some 62.0)))
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration (Some 100.0)))
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration (Some 0.0)))
+  Assert.False(ok (GameAnalysis.OrdoHelper.drawCalibration None))

@@ -113,8 +113,12 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
             [||]
     let gamesToPlay =
         let openings = games |> Seq.truncate effectiveBookSize |> Seq.toList
-        if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpeningsForTournament tourny.Opening openings
-        else openings
+        // random openings are drawn in a random order already (take): shuffling again by the
+        // sample's size would give another order for another Rounds
+        if tourny.Opening.RandomOpenings then
+            ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Cyan
+                (sprintf "Random openings: Opening.Seed = %d (the same openings in the same order for any Rounds)." tourny.Opening.Seed)
+        openings
 
     // Build one ScheduleConfig and reuse it for both total-plan and diff.
     let scheduleCfg : Scheduler.ScheduleConfig =

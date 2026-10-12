@@ -129,35 +129,17 @@ let ``sampleWithSeed draws from the whole book and repeats for the same seed`` (
     Assert.False((r1 = sample 8))
 
 [<Fact>]
-let ``sampleWithSeed returns a short book whole and in order`` () =
-    Assert.True((sampleWithSeed 7 20 [ 1..5 ] = [| 1..5 |]))
+let ``sampleWithSeed returns a short book whole, in the seed's order`` () =
+    let all = sampleWithSeed 7 20 [ 1..5 ]
+    Assert.True((Array.sort all = [| 1..5 |]))
+    Assert.True((all = sampleWithSeed 7 5 [ 1..5 ]))
     Assert.True((sampleWithSeed 7 0 [ 1..5 ] = [||]))
 
-let private mkOpeningCfg (seed: int) : Opening =
-    { OpeningsPath = None
-      OpeningsTwice = false
-      OpeningsPly = 0
-      RandomOpenings = true
-      Seed = seed }
-
 [<Fact>]
-let ``shuffleOpeningsForTournament uses the Seed field and is stable across restarts`` () =
-    let openings = [ for i in 1..20 -> mkOpening i ]
-    let opening = mkOpeningCfg 12345
+let ``a larger sample starts with the smaller one, so raising Rounds continues the same openings`` () =
+    let book = [ 1..1089 ]
+    let r100 = sampleWithSeed 2025 100 book
+    let r500 = sampleWithSeed 2025 500 book
+    Assert.True((r500.[.. 99] = r100))
+    Assert.True((sampleWithSeed 2025 1089 book).[.. 499] = r500)
 
-    let r1 = shuffleOpeningsForTournament opening openings |> List.map (fun g -> g.Raw)
-    let r2 = shuffleOpeningsForTournament opening openings |> List.map (fun g -> g.Raw)
-
-    Assert.Equal<string list>(r1, r2)
-
-[<Fact>]
-let ``shuffleOpeningsForTournament with Seed=0 matches shuffleOpeningsWithSeed 0`` () =
-    // Seed=0 is the F# default for the int field; make sure the behavior is
-    // the same as passing 0 explicitly (i.e. no special "unset" handling).
-    let openings = [ for i in 1..20 -> mkOpening i ]
-    let opening = mkOpeningCfg 0
-
-    let viaHelper = shuffleOpeningsForTournament opening openings |> List.map (fun g -> g.Raw)
-    let viaDirect = shuffleOpeningsWithSeed 0 openings |> List.map (fun g -> g.Raw)
-
-    Assert.Equal<string list>(viaHelper, viaDirect)

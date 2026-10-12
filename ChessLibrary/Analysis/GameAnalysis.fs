@@ -61,11 +61,10 @@ module OrdoHelper =
   //ordo-win64.exe -Q -a 0 -A "Stockfish 17" -D -U "0,1,2,3,4,5,6,7,8,9,10" -s 2000 -n 6  -C ordo_CFS_matrix.csv -o ordo_rating.txt -c ordo_rating.csv -- Ceres.pgn
 
   // Function to create the command with specified executable path, file, and engine name.
-  // autoDrawRate adds Ordo's -D (--draw-auto): calibrate the Elo scale to the actual
-  // draw rate of the games. Accurate, but re-fitting the draw model inside each of the
-  // -s error simulations is ~200x slower (0.4s → 75s on a 200-game PGN), so periodic
-  // in-tournament summaries run without it and only the final summary uses it.
-  let createOrdoCommand (executablePath: string) (fileName: string) (engineName: string) (autoDrawRate: bool) =
+  // drawRate: the games' draw rate (calibratedDrawRate) passed as -d, or Ordo's default 50 %.
+  // Never -D with simulations: Ordo re-fits the draw rate in every simulation, and on some
+  // samples that never ends (a 200-game PGN: -s 585 instant, -s 590 never finished).
+  let createOrdoCommand (executablePath: string) (fileName: string) (engineName: string) (drawRate: float option) =
     // Test if the executable exists
     if not (File.Exists(executablePath)) then
         ConsoleUtils.redConsole "Ordo executable not found"
@@ -75,7 +74,10 @@ module OrdoHelper =
         match String.IsNullOrEmpty engineName with
         | false -> ["-A"; engineName.Trim()] // Engine name as an argument
         | true -> [] // Do not include the -A argument if engineName is not provided
-    let drawArgs = if autoDrawRate then ["-D"] else []
+    let drawArgs =
+        match drawRate with
+        | Some rate -> ["-d"; rate.ToString("0.##", Globalization.CultureInfo.InvariantCulture)]
+        | None -> []
     let baseArgsAfterEngine = [
         "-N"; "0";
         "-z"; defaultZValue;
@@ -184,16 +186,14 @@ module OrdoHelper =
           with _ -> return None
       }
 
-  /// Whether the final table may calibrate the draw rate (-D): it needs enough games, and a rate
-  /// the games can calibrate. At 0 or 100 % Ordo's error simulations do not converge (an 8-game
-  /// Swiss ran past 300 s), and below 50 games the rate is noise. Error carries why not.
-  let drawCalibration (games: int) (drawRate: float option) : Result<unit, string> =
-      if games < 50 then Error $"{games} games - draw-rate calibration needs at least 50"
-      else
-          match drawRate with
-          | Some rate when rate > 0.5 && rate < 99.5 -> Ok ()
-          | Some rate -> Error $"the games give a draw rate of {rate:F0}%%, which cannot be calibrated"
-          | None -> Error "Ordo could not calibrate the draw rate from these games"
+  /// Whether a table may be rated at the games' draw rate: one Ordo read, strictly between 0 and
+  /// 100 % (with -D the simulations at 0 or 100 % never finished: an 8-game Swiss ran past 300 s).
+  /// Error carries why not.
+  let drawCalibration (drawRate: float option) : Result<unit, string> =
+      match drawRate with
+      | Some rate when rate > 0.5 && rate < 99.5 -> Ok ()
+      | Some rate -> Error $"the games give a draw rate of {rate:F0}%%, which cannot be calibrated"
+      | None -> Error "Ordo could not calibrate the draw rate from these games"
 
   let lossCombinations = [ "00"; "01/2"; "1/20" ]
   let winCombinations = [ "11"; "11/2"; "1/21" ]

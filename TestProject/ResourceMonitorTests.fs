@@ -19,11 +19,16 @@ let ``a restarted process (another pid) or no time between readings gives 0`` ()
   Assert.Equal(0.0, cpuPercent (sample 1 10.0 5.0 0L) (sample 1 10.0 6.0 0L))
 
 [<Fact>]
-let ``growth is suspicious only over five games, 30 percent and 200 MB`` () =
-  Assert.True(growthSuspicious 5 (mb 1000L) (mb 1400L))
-  Assert.False(growthSuspicious 4 (mb 1000L) (mb 1400L))     // too few games
-  Assert.False(growthSuspicious 9 (mb 1000L) (mb 1250L))     // under 30 %
-  Assert.False(growthSuspicious 9 (mb 300L) (mb 450L))       // 50 % but only 150 MB
+let ``growth is suspicious only when it is still growing at the end`` () =
+  let ram (xs: int64 list) = xs |> List.map mb |> Array.ofList
+  Assert.True(growthSuspicious (ram [ 1000L; 1100L; 1200L; 1300L; 1400L; 1500L ]))
+  Assert.False(growthSuspicious (ram [ 1000L; 1100L; 1200L; 1300L; 1400L ]))         // too few games
+  Assert.False(growthSuspicious (ram [ 1000L; 1050L; 1100L; 1150L; 1200L; 1250L ]))  // under 30 %
+  Assert.False(growthSuspicious (ram [ 300L; 330L; 360L; 390L; 420L; 450L ]))        // 50 % but only 150 MB
+  // Lc0's cache: 953 MB to 4.7 GB in the first games, then flat - no leak
+  Assert.False(growthSuspicious (ram ([ 953L; 2500L; 4000L ] @ List.replicate 197 4700L)))
+  // a plateau then a climb at the end is still a leak
+  Assert.True(growthSuspicious (ram (List.replicate 100 1000L @ [ for i in 1L .. 100L -> 1000L + i * 10L ])))
 
 [<Fact>]
 let ``the closing table averages CPU over the engine's own turns and warns on growth`` () =

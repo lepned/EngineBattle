@@ -200,13 +200,14 @@
 			StateHasChanged();
 			if (!string.IsNullOrEmpty(executablePath))
 			{
-				// User-triggered one-shot analysis: draw-rate calibration (-D) for
-				// tournament-sized PGNs; on huge archives the calibrated simulations
-				// take far beyond any reasonable timeout, so fall back to the fast
-				// uncalibrated mode there. The token makes Cancel work here too.
-				var useDrawModel = games.Count <= 2000;
-				SetStatus(useDrawModel ? "Running Ordo (draw-rate calibrated)…" : "Running Ordo…");
-				var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine, useDrawModel);
+				// User-triggered one-shot analysis, rated at the games' own draw rate (a quick -D
+				// pass reads it, then -d) or Ordo's default when there is none. The token makes
+				// Cancel work here too.
+				SetStatus("Reading the draw rate…");
+				var rate = await GameAnalysis.OrdoHelper.calibratedDrawRate(executablePath, fullPath, 60.0, ct);
+				var drawRate = GameAnalysis.OrdoHelper.drawCalibration(rate).IsOk ? rate : null;
+				SetStatus(drawRate != null ? "Running Ordo (at the games' draw rate)…" : "Running Ordo…");
+				var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine, drawRate);
 				var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
 				Console.WriteLine(ordoCommandString);
 				var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, 300.0, ct);

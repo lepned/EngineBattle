@@ -26,7 +26,6 @@ module PairingHelper =
     let tournamentSalt = Scheduler.Shared.tournamentSalt
     let shuffleOpenings = Scheduler.Shared.shuffleOpenings
     let shuffleOpeningsWithSeed = Scheduler.Shared.shuffleOpeningsWithSeed
-    let shuffleOpeningsForTournament = Scheduler.Shared.shuffleOpeningsForTournament
     let sampleWithSeed (seed: int) (count: int) (source: seq<'T>) = Scheduler.Shared.sampleWithSeed seed count source
     let seededRandom = Scheduler.Shared.seededRandom
     let seededOrder = Scheduler.Shared.seededOrder

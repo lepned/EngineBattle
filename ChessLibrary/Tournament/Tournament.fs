@@ -304,10 +304,9 @@ module Manager =
                 latest <- next
             let (capturedData, ordoPath, pgnPath) = latest
             try
-                // Periodic summaries skip -D (draw-rate auto-calibration): with the
-                // error simulations it takes minutes instead of sub-second. The final
-                // end-of-tournament pass runs once WITH -D (see SendResponse).
-                let cmd = OrdoHelper.createOrdoCommand ordoPath pgnPath "" false
+                // Periodic summaries use Ordo's default draw rate; the end-of-tournament
+                // pass uses the games' own (see EndOfTournament).
+                let cmd = OrdoHelper.createOrdoCommand ordoPath pgnPath "" None
                 Console.WriteLine($"\n Ordo command: {cmd.Arguments} \n")
                 let! ordo = OrdoHelper.runCommandAsync cmd capturedData 15.0 cts.Token |> Async.AwaitTask
                 callback.Invoke (Update.GameSummary ordo)
@@ -386,31 +385,28 @@ module Manager =
               printfn "%s" msg
       | EndOfTournament _ ->
           callback.Invoke update
-          // Final summary: one accurate Ordo pass with automatic draw-rate calibration
-          // (-D). Runs inline (not via the agent) so it is guaranteed to finish before
-          // the console host exits, with a timeout sized for -D + 1000 simulations.
+          // Final summary: one Ordo pass at the games' own draw rate (-d, read by a quick -D
+          // pass). Runs inline (not via the agent) so it is guaranteed to finish before
+          // the console host exits.
           try
               let ordoPath = executablePath()
               if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then
                   let pgnGames = x.GetPGNGames()
                   if pgnGames.Count > 0 then
                       let _, data, _, _ = PGNCalculator.getEngineDataResults pgnGames
-                      // -D only where it can calibrate: a quick pass without simulations reads the
-                      // rate first, since at 0 or 100 % the simulations never finish
+                      // a quick -D pass without simulations reads the games' draw rate
                       let rate =
-                          if pgnGames.Count < 50 then None
-                          else
-                              OrdoHelper.calibratedDrawRate ordoPath tournament.PgnOutPath 30.0 cts.Token
-                              |> Async.AwaitTask |> Async.RunSynchronously
+                          OrdoHelper.calibratedDrawRate ordoPath tournament.PgnOutPath 30.0 cts.Token
+                          |> Async.AwaitTask |> Async.RunSynchronously
                       let ordo =
-                          match OrdoHelper.drawCalibration pgnGames.Count rate with
+                          match OrdoHelper.drawCalibration rate with
                           | Ok () ->
-                              let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" true
-                              Console.WriteLine($"\n Final Ordo pass (draw-rate calibrated, may take a while): {cmd.Arguments} \n")
-                              OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 300.0 cts.Token
+                              let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" rate
+                              Console.WriteLine($"\n Final Ordo pass (at the games' draw rate): {cmd.Arguments} \n")
+                              OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 60.0 cts.Token
                               |> Async.AwaitTask |> Async.RunSynchronously
                           | Error why ->
-                              let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" false
+                              let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" None
                               Console.WriteLine($"\n Final Ordo pass without draw-rate calibration ({why}): {cmd.Arguments} \n")
                               OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 60.0 cts.Token
                               |> Async.AwaitTask |> Async.RunSynchronously

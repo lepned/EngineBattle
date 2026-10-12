@@ -45,27 +45,15 @@ let seededOrder (seed: int) (purpose: string) (n: int) =
     (seededRandom seed purpose).Shuffle(order)
     order
 
-/// `count` items drawn at random from the whole of `source` (reservoir sampling), fixed by the
-/// seed, so a resume draws the same ones. A source no longer than `count` comes back whole, in order.
+/// `count` items drawn at random from the whole of `source`, in a random order: the first `count`
+/// of one order of the whole source fixed by the seed. A larger count keeps the smaller one's
+/// items in the same places, so raising Rounds and resuming continues the same openings. A source
+/// no longer than `count` comes back whole, in that order.
 let sampleWithSeed (seed: int) (count: int) (source: seq<'T>) : 'T[] =
-    let picked = ResizeArray<'T>(max 0 count)
-    if count > 0 then
-        let rng = seededRandom seed "opening sample"
-        let mutable i = 0
-        for item in source do
-            if i < count then picked.Add item
-            else
-                let j = rng.Next(i + 1)
-                if j < count then picked.[j] <- item
-            i <- i + 1
-    picked.ToArray()
-
-/// Apply the tournament's opening shuffle using `Opening.Seed`. Logs the
-/// effective seed so resume behavior is transparent.
-let shuffleOpeningsForTournament (opening: Opening) (openings: PgnGame list) =
-    ConsoleUtils.printInColor ConsoleColor.Cyan
-        (sprintf "Opening shuffle: using Opening.Seed = %d (stable across engine-list changes)." opening.Seed)
-    shuffleOpeningsWithSeed opening.Seed openings
+    let all = Seq.toArray source
+    seededOrder seed "opening sample" all.Length
+    |> Array.truncate (max 0 count)
+    |> Array.map (fun i -> all.[i])
 
 /// Move the head element to the tail. Used for per-round opponent rotation
 /// in Gauntlet when PreventMoveDeviation is enabled.
