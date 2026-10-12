@@ -1,6 +1,4 @@
 @page "/results/ratings"
-@page "/results/ordo"
-@page "/ordo"
 @inject ILogger<Ratings> logger
 @inject GlobalSettingsService SettingsService
 @inject IDialogService DialogService
@@ -177,7 +175,7 @@
 	private async Task CopyTable()
 	{
 		if (engineLineData.Count == 0) return;
-		var text = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(engineLineData, crossTable)
+		var text = GameAnalysis.StandingsTable.getResultsAndPairsInConsoleFormat(engineLineData, crossTable)
 		           + GameAnalysis.PGNCalculator.ratingFitLines(currentFit)
 		           + (engineLineData.Count == 2 ? Statistics.Pentanomial.formatSingleMatchupCompact(loadedGames) : "");
 		Console.WriteLine(text);
@@ -287,7 +285,7 @@
 			// a human could actually read.
 			if (cross.Count > 2 && cross.Count <= 30)
 			{
-				var crossTableConsole = await Task.Run(() => GameAnalysis.OrdoHelper.printStatsMatrix(cross), ct);
+				var crossTableConsole = await Task.Run(() => GameAnalysis.StandingsTable.printStatsMatrix(cross), ct);
 				logger.LogInformation(crossTableConsole);
 			}
 			logger.LogInformation("Done with calculation");

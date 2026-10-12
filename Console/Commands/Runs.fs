@@ -968,7 +968,7 @@ let runTournamentOutcome (tournament:Tournament.Tournament) (logger: Microsoft.E
             let scoreTable = runner.GetPlayerResults(results)
             let table = runner.GenerateStatsCrosstable(results)
             standings <- Some (Seq.ofArray (scoreTable.ToArray()), Seq.ofArray (table.ToArray()), Seq.ofArray (results.ToArray()))
-            let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
+            let consoleRes = StandingsTable.getResultsAndPairsInConsoleFormat scoreTable table
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
       

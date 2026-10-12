@@ -86,13 +86,13 @@ public partial class Tournaments
 				var summary = PlayerResults(results);
 				scoreTable = summary;
 				table = Crosstable(results);
-				GameAnalysis.OrdoHelper.populatePairData(summary, table);
+				GameAnalysis.StandingsTable.populatePairData(summary, table);
 				var pgnGames = await UpdateSpeed(0);
 				if (pgnGames.Count > 0)
 					GameAnalysis.PGNCalculator.populatePentanomialError(summary, pgnGames);
 				ApplyPairCount(pgnGames, e.Result.Player1, e.Result.Player2);
 				await InvokeAsync(StateHasChanged);
-				var resLog = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
+				var resLog = GameAnalysis.StandingsTable.getResultsAndPairsInConsoleFormat(summary, table);
 				if (summary.Count == 2 && pgnGames.Count > 0)
 					resLog += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGames);
 				Console.WriteLine(resLog);
@@ -131,7 +131,7 @@ public partial class Tournaments
 				results = pr.results.Where(JsonFeedService.IsScored).ToList();
 				scoreTable = PlayerResults(results);
 				table = Crosstable(results);
-				GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+				GameAnalysis.StandingsTable.populatePairData(scoreTable, table);
 				await InvokeAsync(StateHasChanged);
 				break;
 
@@ -378,7 +378,7 @@ public partial class Tournaments
 						var players = runner.GetPlayerResults(results);
 						scoreTable = players;
 						table = runner.GenerateStatsCrosstable(results);
-						GameAnalysis.OrdoHelper.populatePairData(players, table);
+						GameAnalysis.StandingsTable.populatePairData(players, table);
 						System.Collections.Generic.List<PGNTypes.PgnGame> gameData = null;
 						if (results.Count > 0)
 						{
@@ -387,7 +387,7 @@ public partial class Tournaments
 						gameData ??= runner.GetPGNGames();
 						GameAnalysis.PGNCalculator.populatePentanomialError(players, gameData);
 						ApplyPairCount(gameData);
-						var consoleInfo = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
+						var consoleInfo = GameAnalysis.StandingsTable.getResultsAndPairsInConsoleFormat(players, table);
 						if (players.Count == 2)
 							consoleInfo += Statistics.Pentanomial.formatSingleMatchupCompact(gameData);
 						Console.WriteLine(consoleInfo);
@@ -401,7 +401,7 @@ public partial class Tournaments
 						// Feed mode: standings come from accumulated results; pairings arrive via PairingList events.
 						scoreTable = PlayerResults(results);
 						table = Crosstable(results);
-						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+						GameAnalysis.StandingsTable.populatePairData(scoreTable, table);
 					}
 					tournament.TotalGames = totalNumberOfPairs; //runner.TotalGames;
 					await InvokeAsync(StateHasChanged);
@@ -421,7 +421,7 @@ public partial class Tournaments
 						tournament.TotalGames = totalNumberOfPairs;
 						scoreTable = PlayerResults(results);
 						table = Crosstable(results);
-						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+						GameAnalysis.StandingsTable.populatePairData(scoreTable, table);
 					}
 					else if (File.Exists(tourny.Info.PgnOutPath))
 					{
@@ -432,7 +432,7 @@ public partial class Tournaments
 						results = runner.GetResults();
 						scoreTable = runner.GetPlayerResults(results);
 						table = runner.GenerateStatsCrosstable(results);
-						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+						GameAnalysis.StandingsTable.populatePairData(scoreTable, table);
 						GameAnalysis.PGNCalculator.populateSpeedMetrics(scoreTable, pgnGamesEnd);
 						GameAnalysis.PGNCalculator.populatePentanomialError(scoreTable, pgnGamesEnd);
 						ApplyPairCount(pgnGamesEnd);
@@ -446,7 +446,7 @@ public partial class Tournaments
 						var durMsg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and {testTime.Minutes} minutes";
 						Console.WriteLine(durMsg);
 						tournament.PrintTournamentSummary();
-						var consoleRes = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(scoreTable, table);
+						var consoleRes = GameAnalysis.StandingsTable.getResultsAndPairsInConsoleFormat(scoreTable, table);
 						if (scoreTable.Count == 2)
 							consoleRes += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGamesEnd);
 						Console.WriteLine(consoleRes);

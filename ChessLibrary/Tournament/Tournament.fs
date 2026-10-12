@@ -343,7 +343,7 @@ module Manager =
                   else
                     let pRes = x.GetPlayerResults results
                     let cross = x.GenerateStatsCrosstable results
-                    let table = OrdoHelper.getResultsAndPairsInConsoleFormat pRes cross
+                    let table = StandingsTable.getResultsAndPairsInConsoleFormat pRes cross
                     callback.Invoke (Update.GameSummary table)
           with e ->
               let msg = $"Error generating periodic results: {e.Message}"

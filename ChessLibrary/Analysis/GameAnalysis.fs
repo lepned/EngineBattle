@@ -46,7 +46,8 @@ module Formatting =
 
     formatTime hours minutes seconds milliseconds
 
-module OrdoHelper =
+/// The standings tables as the console prints them: rows, header, pairs, the crosstable matrix.
+module StandingsTable =
 
   let calcPadding (minPadding: int) (delta: int) (selector: 'a -> string) (data: seq<'a>) =
     let lengths = data |> Seq.map (selector >> String.length)
@@ -337,7 +338,7 @@ module PGNCalculator =
   /// The standings as the console prints them: the table, the fit's lines under it and, for two
   /// players, the paired-openings line.
   let standingsText (players: PlayerResult list) (cross: CrossTableEntry seq) (fit: RatingFit.Fit option) (pgnGames: PGNTypes.PgnGame seq) =
-    let standings = OrdoHelper.getResultsAndPairsInConsoleFormat players cross + ratingFitLines fit
+    let standings = StandingsTable.getResultsAndPairsInConsoleFormat players cross + ratingFitLines fit
     if players.Length = 2 then standings + Pentanomial.formatSingleMatchupCompact pgnGames else standings
 
   /// Every player's statistics, with the rating fit (also returned, for the lines under the table).
@@ -544,7 +545,7 @@ module PGNCalculator =
     let header = sprintf "%-*s : %7s %6s %7s %10s" width "# PLAYER" "ELO" "ERROR" "POINTS" "PairsWDL"
     sb.AppendLine header |> ignore
 
-    let uho = OrdoHelper.getIdealized_UHO_Elo cross
+    let uho = StandingsTable.getIdealized_UHO_Elo cross
     for (player, score, elo, error, wins, draws, losses) in uho do
       let pairs = sprintf "%d-%d-%d" wins draws losses
       let line = sprintf "%-*s : %7.0f %6.0f %7.1f %10s" width player elo error score pairs
@@ -623,7 +624,7 @@ module PGNCalculator =
     let playerRes, fit = getFullStatAndFit allResults
     populateSpeedMetrics playerRes results
     populatePentanomialError playerRes results
-    OrdoHelper.populatePairData playerRes cross
+    StandingsTable.populatePairData playerRes cross
     let consoleContent =
       let forConsole =
         if playerRes.Length <= maxConsoleStandingsPlayers then playerRes

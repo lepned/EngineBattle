@@ -469,6 +469,5 @@ This application uses the following libraries, which are licensed under their re
 - **Serilog** - [Apache License 2.0](https://github.com/serilog/serilog/blob/dev/LICENSE)
 - **Fathom** - [MIT License](https://github.com/jdart1/Fathom/blob/master/LICENSE) (the Syzygy prober in `Syzygy/Syzygy.cs` is a C# port of Jon Dart's fork; the licence notice, naming Ronald de Man, basil00 and Jon Dart, is at the top of that file)
 - **Toolbelt.Blazor.HotKeys2** - [Mozilla Public License 2.0](https://github.com/jsakamoto/Toolbelt.Blazor.HotKeys/blob/master/LICENSE)
-- **CliWrap** - [MIT License](https://github.com/Tyrrrz/CliWrap/blob/master/License.txt)
 - **Chess piece images** (cburnett/wikipedia set from the chessboardjs project, plus the kosal and merida sets; each folder under `wwwroot/pieces` carries its own licence) - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
 - **plotly.js** - [MIT License](https://github.com/plotly/plotly.js/blob/master/LICENSE)
