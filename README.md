@@ -57,7 +57,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 ### 📚 PGN and EPD Tools
 
 - **Speed Calculation:** Benchmark chess engines by calculating their median and average speeds from a PGN file, including the out-of-book speed (first search).
-- **Ratings:** Elo ratings of every engine from one fit of all the games (the model Ordo uses, computed by EngineBattle itself), with error bars and the confidence for superiority - in every standings table and on the Ratings page for any PGN.
+- **Ratings:** Elo ratings of every engine from one fit of all the games (the model Ordo uses, computed by EngineBattle itself), with error bars and the confidence for superiority - in every standings table and on the Ratings page for any PGN. How to read them: [Ratings.md](Ratings.md).
 - **Opening Books from PGN:** Create custom opening books from existing PGN archives (such as TCEC games).
 - **Opening Books from EPD:** Generate opening books directly from EPD files.
 - **Chess960 Position Generation:** Quickly generate random Chess960 positions (EPD format) for diverse testing scenarios.
