@@ -56,7 +56,7 @@ let ``the fields are pawns, a comma as decimal point, and a centipawn value is t
 let ``a book evaluated before gets this run's MaxEval, not a second one`` () =
     let raw = "[Event \"x\"]\n[MaxEval \"80 by Old, e2e4\"]\n[White \"a\"]\n\n1. e4 e5 *"
     let game = { ChessLibrary.FullPGNParser.parseFullPgnGame raw with Raw = raw }
-    let r = ChessLibrary.PGNTypes.PgnEvaluationResult.Create(game, 95.0, 0.0, "g1f3", "New", "")
+    let r = ChessLibrary.PGNTypes.PgnEvaluationResult.Create(game, 95.0, "0.95", 0.0, "g1f3", "New", "")
     let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "eb_bookeval_%s.pgn" (System.Guid.NewGuid().ToString("N")))
     try
         writePgns path [ r ]
@@ -68,10 +68,21 @@ let ``a book evaluated before gets this run's MaxEval, not a second one`` () =
     finally System.IO.File.Delete path
 
 [<Fact>]
+let ``a mate is written as a mate in the MaxEval tag, not as pawns`` () =
+    let raw = "[Event \"x\"]\n\n1. e4 e5 *"
+    let game = { ChessLibrary.FullPGNParser.parseFullPgnGame raw with Raw = raw }
+    let r = ChessLibrary.PGNTypes.PgnEvaluationResult.Create(game, -2000.0, "-M2", 0.0, "d8h4", "New", "")
+    let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "eb_bookeval_%s.pgn" (System.Guid.NewGuid().ToString("N")))
+    try
+        writePgns path [ r ]
+        Assert.Contains("[MaxEval \"-M2 by New, d8h4\"]", System.IO.File.ReadAllText path)
+    finally System.IO.File.Delete path
+
+[<Fact>]
 let ``a wrapped comment that starts a line with a bracket stays in the movetext`` () =
     let raw = "[Event \"x\"]\n[White \"a\"]\n\n1. e4 { book move,\n[%clk 0:03:00] } e5 2. Nf3 ; rest of line\nNc6 *"
     let game = { ChessLibrary.FullPGNParser.parseFullPgnGame raw with Raw = raw }
-    let r = ChessLibrary.PGNTypes.PgnEvaluationResult.Create(game, 95.0, 0.0, "g1f3", "New", "")
+    let r = ChessLibrary.PGNTypes.PgnEvaluationResult.Create(game, 95.0, "0.95", 0.0, "g1f3", "New", "")
     let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "eb_bookeval_%s.pgn" (System.Guid.NewGuid().ToString("N")))
     try
         writePgns path [ r ]

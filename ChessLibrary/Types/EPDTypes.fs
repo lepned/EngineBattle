@@ -15,13 +15,16 @@ module EPDTypes =
   type EpdEvaluationResult =
       { EPD: EPDEntry
         MaxEval: float
+        /// MaxEval as shown: pawns (0.95) or a mate (M1, -M2), White's view
+        MaxEvalText: string
         EvalDiff: float
         MaxMove: string
         MaxEngine: string
         Summary: string }
-      static member Create(epd: EPDEntry, maxEval: float, evalDiff: float, maxMove: string, maxEngine: string, summary: string) =
+      static member Create(epd: EPDEntry, maxEval: float, maxEvalText: string, evalDiff: float, maxMove: string, maxEngine: string, summary: string) =
           { EPD = epd
             MaxEval = maxEval
+            MaxEvalText = maxEvalText
             EvalDiff = evalDiff
             MaxMove = maxMove
             MaxEngine = maxEngine

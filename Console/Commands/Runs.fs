@@ -1263,7 +1263,7 @@ let puzzleTrend (p: Parsed) =
 let bookEvalSpec =
     { command [ "book"; "eval" ] Group "Filter an opening book down to balanced openings, checked by engines" with
         Description =
-          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
+          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
         Args = [ arg "book" "an opening book (.pgn or .epd)" ]
         Options =
           [ value "engine" "ENGINE[,nodes=N|,movetime=MS]" "An engine, with its own limit after a comma if it has one; at least one" |> repeatable

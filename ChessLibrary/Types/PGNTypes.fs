@@ -82,13 +82,16 @@ module PGNTypes =
     type PgnEvaluationResult =
         { Pgn: PgnGame
           MaxEval: float
+          /// MaxEval as shown: pawns (0.95) or a mate (M1, -M2), White's view
+          MaxEvalText: string
           EvalDiff: float
           MaxMove: string
           MaxEngine: string
           Summary: string }
-        static member Create(pgn: PgnGame, maxEval: float, evalDiff: float, maxMove: string, maxEngine: string, summary: string) =
+        static member Create(pgn: PgnGame, maxEval: float, maxEvalText: string, evalDiff: float, maxMove: string, maxEngine: string, summary: string) =
             { Pgn = pgn
               MaxEval = maxEval
+              MaxEvalText = maxEvalText
               EvalDiff = evalDiff
               MaxMove = maxMove
               MaxEngine = maxEngine

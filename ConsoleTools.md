@@ -621,7 +621,7 @@ Filter an opening book down to balanced openings, checked by engines
 
 Usage: eb-cli book eval <book> [options]
 
-Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, either side) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
+Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
 
 Arguments:
   <book>  an opening book (.pgn or .epd)

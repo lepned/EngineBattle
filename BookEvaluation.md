@@ -38,7 +38,7 @@ For each engine you can configure:
 A position passes if:
 - Every engine's absolute eval is ≥ **Min eval**
 - No engine's absolute eval exceeds **Max eval**
-- The difference between the highest and lowest engine eval, with their signs, is < **Max eval diff** (with a single engine there is no difference to check). The evals are from the side to move, the same for every engine, so +0.9 from one engine and -0.9 from another is a difference of 1.8: the engines disagree on who is better, and the position is filtered out.
+- The difference between the highest and lowest engine eval, with their signs, is < **Max eval diff** (with a single engine there is no difference to check). The evals are from White's view, as everywhere in EngineBattle, so +0.9 from one engine and -0.9 from another is a difference of 1.8: the engines disagree on who is better, and the position is filtered out.
 
 This ensures the position is competitive (not dead drawn) but not busted (not clearly winning for one side), and that engines roughly agree on the assessment.
 
@@ -55,8 +55,8 @@ PGN openings that end in the same position (transpositions) are evaluated once; 
 
 Results are saved to `<output folder>/BookEvals/`:
 
-- **PGN input** → `BookEval_<book>_<engines>.pgn` — filtered PGN games with a `[MaxEval]` header added showing the highest eval (in pawns), which engine produced it, and the best move
-- **EPD input** → `BookEval_<book>_<engines>.epd` — filtered EPD lines with each engine's eval (in pawns) and best move
+- **PGN input** → `BookEval_<book>_<engines>.pgn` — filtered PGN games with a `[MaxEval]` header added showing the largest eval (in pawns or a mate such as M1 / -M2, White's view: negative when Black is better), which engine produced it, and the best move
+- **EPD input** → `BookEval_<book>_<engines>.epd` — filtered EPD lines with each engine's eval (in pawns or a mate such as M1 / -M2, White's view) and best move
 
 The results summary shows:
 - Positions analyzed and passed (with pass rate)

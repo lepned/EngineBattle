@@ -16,7 +16,7 @@ open ChessLibrary.EPDTypes
 open ChessLibrary.MiscTypes
 open ChessLibrary.PGNTypes
 
-/// Eval window in centipawns from the side to move, and the largest spread allowed between engines.
+/// Eval window in centipawns (its size: either side may be better), and the largest spread allowed between engines.
 type Filter =
     { MinEval: float
       MaxEval: float
@@ -46,7 +46,7 @@ let parseFilter (minEval: string) (maxEval: string) (maxDiff: string) (engineCou
 let bookEvalSpread (evals: float[]) =
     if evals.Length = 0 then 0.0 else Array.max evals - Array.min evals
 
-/// Whether a book position passes the filter. The evals are each engine's, from the side to move,
+/// Whether a book position passes the filter. The evals are each engine's, from White's view,
 /// in centipawns (all engines search the same FEN, so the signs compare). Every eval must lie
 /// within [minEval, maxEval] in size - either side may be the one that is better - and the engines
 /// must agree: the spread of the evals, sign included, below maxEvalDiff. The spread was taken of
@@ -93,13 +93,12 @@ let private goCommand (limit: SearchLimit) =
     | SearchLimit.NodeLimit n -> sprintf "go nodes %d" n
     | SearchLimit.TimeLimit ms -> sprintf "go movetime %d" ms
 
-/// Status evals are White's, in pawns; the filter works from the side to move, in centipawns,
-/// with a mate as 1000 per move (outside any sensible window).
-let private sideToMoveCp (whiteToMove: bool) (eval: EvalType) =
-    let sign = if whiteToMove then 1.0 else -1.0
+/// Status evals are White's, in pawns; the filter works in centipawns (White's view, as everywhere
+/// else in EB), with a mate as 1000 per move (outside any sensible window).
+let private whiteCp (eval: EvalType) =
     match eval with
-    | CP pawns -> Some (sign * pawns * 100.0)
-    | Mate m -> Some (sign * float m * 1000.0)
+    | CP pawns -> Some (pawns * 100.0)
+    | Mate m -> Some (float m * 1000.0)
     | NA -> None
 
 /// A running engine and the newest main-line status of its search.
@@ -119,8 +118,8 @@ let private start (e: BookEngine) =
     engine.EchoEngineText <- false
     { Engine = engine; Last = last; Limit = e.Limit }
 
-/// One search: (eval cp from the side to move, best move), or why there is none.
-let private search (s: Searcher) (fen: string) (whiteToMove: bool) = async {
+/// One search: (eval cp from White's view, the engine's eval, best move), or why there is none.
+let private search (s: Searcher) (fen: string) = async {
     lock s.Last (fun () -> s.Last.Value <- None)
     s.Engine.NewGame()
     let! outcome = s.Engine.Search(sprintf "position fen %s" (Board.UciFen fen), goCommand s.Limit)
@@ -131,8 +130,8 @@ let private search (s: Searcher) (fen: string) (whiteToMove: bool) = async {
         | AnalysisOutcome.Superseded, _ -> Error (sprintf "%s: search superseded" s.Engine.Name)
         | AnalysisOutcome.Completed None, _ -> Error (sprintf "%s found no move in %s" s.Engine.Name fen)
         | AnalysisOutcome.Completed (Some info), Some st ->
-            match sideToMoveCp whiteToMove st.Eval with
-            | Some cp -> Ok (cp, info.Move)
+            match whiteCp st.Eval with
+            | Some cp -> Ok (cp, st.Eval, info.Move)
             | None -> Error (sprintf "%s gave no score in %s" s.Engine.Name fen)
         | AnalysisOutcome.Completed (Some _), None ->
             Error (sprintf "%s gave no score in %s (search too short?)" s.Engine.Name fen)
@@ -141,7 +140,7 @@ let private search (s: Searcher) (fen: string) (whiteToMove: bool) = async {
 /// Searches every item's position with every engine (the engines in parallel, within the CPU's
 /// threads) and keeps the passing ones. An engine failure ends the run with what passed so far.
 let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fenOf: 'a -> string)
-                (make: 'a -> float -> float -> string -> string -> string -> 'r)
+                (make: 'a -> float -> string -> float -> string -> string -> string -> 'r)
                 (progress: Action<int, int>) (ct: Threading.CancellationToken) : Outcome<'r> =
     let items = Seq.toArray items
     let results = ResizeArray<'r * float * float>()
@@ -164,10 +163,9 @@ let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fen
                 match (try let fen = fenOf item in board.LoadFen fen; Some fen with _ -> None) with
                 | None -> skipped <- skipped + 1
                 | Some fen ->
-                    let whiteToMove = board.FEN().Split(' ').[1] = "w"
                     let evals =
                         searchers
-                        |> Seq.map (fun s -> search s fen whiteToMove)
+                        |> Seq.map (fun s -> search s fen)
                         |> fun cs -> Async.Parallel(cs, maxDegreeOfParallelism = degree)
                         |> Async.RunSynchronously
                     match evals |> Array.tryPick (function Error e -> Some e | Ok _ -> None) with
@@ -177,19 +175,24 @@ let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fen
                     | Some e -> failure <- Some e
                     | None ->
                         evaluated <- evaluated + 1
-                        let found = Array.map2 (fun r (s: Searcher) -> match r with Ok (cp, m) -> cp, m, s | Error _ -> 0.0, "", s) evals (searchers.ToArray())
-                        let signed = found |> Array.map (fun (cp, _, _) -> cp)
+                        let found = Array.map2 (fun r (s: Searcher) -> match r with Ok (cp, e, m) -> cp, e, m, s | Error _ -> 0.0, NA, "", s) evals (searchers.ToArray())
+                        let signed = found |> Array.map (fun (cp, _, _, _) -> cp)
                         if bookPositionPasses filter.MinEval filter.MaxEval filter.MaxDiff signed then
-                            let maxEval, maxMove, maxEngine =
-                                found |> Array.map (fun (cp, m, s) -> abs cp, m, s.Engine.Name) |> Array.max
+                            // the largest in size, its sign kept: who is better
+                            let maxEval, maxText, maxMove, maxEngine =
+                                found |> Array.maxBy (fun (cp, _, _, _) -> abs cp) |> fun (cp, e, m, s) -> cp, e.ToString(), m, s.Engine.Name
                             let spread = bookEvalSpread signed
-                            // in pawns, as the filter
+                            // in pawns, as the filter; a mate as M1 / -M2
                             let summary =
-                                (found
-                                 |> Array.map (fun (cp, m, s) -> sprintf "%s eval: %.2f (%s), %s" s.Engine.Name (cp / 100.0) s.Limit.Label m)
+                                "White's view: "
+                                + (found
+                                 |> Array.map (fun (_, e, m, s) -> sprintf "%s eval: %s (%s), %s" s.Engine.Name (e.ToString()) s.Limit.Label m)
                                  |> String.concat ", ")
-                                + (if engines.Length = 1 then "" else sprintf " max evalDiff: %.2f" (spread / 100.0))
-                            results.Add(make item maxEval spread maxMove maxEngine summary, maxEval, spread)
+                                // a mate's 1000 per move is no spread in pawns
+                                + (if engines.Length = 1 then ""
+                                   elif found |> Array.exists (fun (_, e, _, _) -> match e with Mate _ -> true | _ -> false) then " max evalDiff: -"
+                                   else sprintf " max evalDiff: %.2f" (spread / 100.0))
+                            results.Add(make item maxEval maxText spread maxMove maxEngine summary, maxEval, spread)
                 if progress <> null then progress.Invoke(i + 1, items.Length)
                 i <- i + 1
         with ex -> if not ct.IsCancellationRequested then failure <- Some ex.Message
@@ -206,7 +209,7 @@ let private run (engines: BookEngine list) (filter: Filter) (items: 'a seq) (fen
 
 /// EPD positions as they are.
 let evaluateEpds (engines: BookEngine list) (filter: Filter) (epds: seq<EPDEntry>) progress ct =
-    run engines filter epds (fun e -> e.FEN) (fun e mx d m n s -> EpdEvaluationResult.Create(e, mx, d, m, n, s)) progress ct
+    run engines filter epds (fun e -> e.FEN) (fun e mx t d m n s -> EpdEvaluationResult.Create(e, mx, t, d, m, n, s)) progress ct
 
 /// PGN openings by their final position, transpositions dropped first.
 let evaluatePgns (engines: BookEngine list) (filter: Filter) (pgns: seq<PgnGame>) progress ct =
@@ -217,7 +220,7 @@ let evaluatePgns (engines: BookEngine list) (filter: Filter) (pgns: seq<PgnGame>
         board.LoadFen(if String.IsNullOrWhiteSpace pgn.Fen then Chess.startPos else pgn.Fen)
         for move in DeviationAnalysis.movesFromPgn pgn do board.PlaySanMove move
         board.FEN()
-    let outcome = run engines filter unique fenOf (fun p mx d m n s -> PgnEvaluationResult.Create(p, mx, d, m, n, s)) progress ct
+    let outcome = run engines filter unique fenOf (fun p mx t d m n s -> PgnEvaluationResult.Create(p, mx, t, d, m, n, s)) progress ct
     { outcome with Removed = pgns.Length - unique.Count - unreadable; Skipped = outcome.Skipped + unreadable }
 
 /// "name (10,000N), name (500ms)" - the engines and limits, for file names and reports.
@@ -267,12 +270,12 @@ let writeEpds (path: string) (results: seq<EpdEvaluationResult>) =
 
 let private tagPair = Text.RegularExpressions.Regex(@"^\[[A-Za-z0-9_]+\s+""(?:[^""\\]|\\.)*""\]$")
 
-/// The passing PGN openings as they were read, each with a [MaxEval] tag (in pawns) after its own tags.
+/// The passing PGN openings as they were read, each with a [MaxEval] tag (pawns, White's view) after its own tags.
 let writePgns (path: string) (results: seq<PgnEvaluationResult>) =
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath path)) |> ignore
     use w = new StreamWriter(path, false, UTF8Encoding(false))
     for r in results do
-        let tag = sprintf "[MaxEval \"%.2f by %s, %s\"]" (r.MaxEval / 100.0) r.MaxEngine r.MaxMove
+        let tag = sprintf "[MaxEval \"%s by %s, %s\"]" r.MaxEvalText r.MaxEngine r.MaxMove
         let lines = (if isNull r.Pgn.Raw then "" else r.Pgn.Raw).Replace("\r\n", "\n").Split('\n') |> Array.map (fun l -> l.TrimEnd())
         // the tags are the leading [Name "value"] lines; from the first other line on it is movetext,
         // kept as it was - a wrapped comment can start a line with [%clk ...] too
