@@ -638,7 +638,6 @@ module TunerRunner =
         PreventMoveDeviation = hasDeviation
         PreventMoveDeviationFor = if preventDeviationFor <> null then preventDeviationFor else [||]
         Rounds = roundsNeeded
-        Challengers = 0
         DelayBetweenGames = TimeSpan.Zero
         MinMoveTimeInMS = 0
         PgnOutPath = pgnPath

@@ -21,8 +21,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **AllowPondering**: Allow engines to ponder during the opponent’s time, in every tournament mode. EngineBattle sets each engine's UCI `Ponder` option itself (a `Ponder` in an engine def is overridden), so nothing has to be added to the defs: `true` for an engine that will be asked to ponder, `false` otherwise. Pondering needs a clock: there is none on a time per move (`St`) or a node limit, nor with `PreventMoveDeviation` or the value/policy tests. When it is on, every engine is started once before the tournament, and all of them must be able to ponder (a UCI engine with a `Ponder` option), so that all play on equal terms: one that cannot, or a Winboard engine, stops the tournament with a message saying which. An engine that fails to start stops it too.
 - **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
-- **Challengers**: Number of challengers in the tournament.
-- **Rounds**: Number of rounds in the tournament. In round robin, and in a gauntlet with `RandomOpenings: false`, each round uses the next opening of the book, and a book shorter than `Rounds` starts over from its first opening. A gauntlet with `RandomOpenings: true` gives each opponent openings of its own instead - see `RandomOpenings`.
+- **Rounds**: Number of rounds in the tournament. In round robin, and in a gauntlet with `"Distribution": "shared"`, each round uses the next opening of the book, and a book shorter than `Rounds` starts over from its first opening. A gauntlet with `"Distribution": "spread"` gives each opponent openings of its own instead - see Gauntlet Options.
 - **PauseAfterRound**: A round number; the WebGUI stops the tournament once a round beyond it starts (0 = never). Console runs ignore it.
 - **DelayBetweenGames**: Delay between games, e.g. `00:00:20`.
 - **MoveOverhead**: Move overhead time, e.g. `00:00:00.100`. Sent to the engines as their move overhead and allowed as a margin before a loss on time. It is sent only to an engine with a spin option whose name contains "overhead" (e.g. `Move Overhead`, `MoveOverheadMs`), only when the value lies within that option's range, and not when the engine def sets that option itself. For an engine on a time per move (`MoveTime`) it is a margin only - not sent - and never less than 50 ms.
@@ -89,10 +88,16 @@ See `LiveFeedContract.md` for the wire protocol and the README section *Watching
 - **OpeningsTwice**: Use openings twice. With `true` every pair plays each opening with both colours. With `false` each opening is played once, and the colours swap from one opening (round robin) or round (gauntlet) to the next, so every engine gets White about as often as Black.
 
 > **Changed in version 1.9 - read before resuming an older tournament.** Before 1.9, a round robin with `OpeningsTwice: false` gave every pair the same colours in every round (with two engines the same one was White in every game), and a gauntlet gave the challenger White in every game. A round robin also stopped at the end of the book when `Rounds` was larger. A tournament of either kind started with an older version and resumed with 1.9 is planned the new way, and the games already played are matched against that plan: expect some openings to be played again with the colours swapped, and a finished round robin with `Rounds` larger than its book to show games left. Start such a tournament over, with a new `PgnOutPath`, rather than resuming it. Tournaments with `OpeningsTwice: true` and a book at least as long as `Rounds` are not affected.
-- **RandomOpenings**: True to play openings drawn at random from the whole book, in random order, for Round Robin and Gauntlet modes; `Seed` fixes the draw, so a resumed tournament gets the same openings - also after raising `Rounds`: the larger number keeps the smaller one's openings in the same rounds and adds new ones after them. A book no longer than the openings needed is used whole, shuffled. Cup and Swiss modes have their own RandomOpenings in CupOptions/SwissOptions. In a gauntlet it also decides how the openings are shared between the opponents:
-  - `false` (shared): the first `Rounds` openings of the book, in order, and every opponent plays the same opening in a round.
-  - `true` (spread): with more than one opponent, `Rounds` x opponents openings are drawn from the book and each opponent gets its own openings, none played against another opponent - in round *r* opponent *i* plays opening *r* x opponents + *i* of the shuffled list. A book shorter than that starts over from its first opening, so some openings are played against more than one opponent, and a warning is printed at the start.
-- **Seed**: Integer seed for everything random in a tournament. **Default: 0** (what you get if you omit the field). It shuffles the openings when the mode's `RandomOpenings` is on (this `RandomOpenings` for Round Robin and Gauntlet, the one in `CupOptions`/`SwissOptions`/`LadderOptions` for those modes), and it always makes the cup draw (the `Random` strategy, and the order within `ByRating` bands). The seed does not depend on engine names or the PGN path, so the same config, engines and book repeat the same draw and openings, on any machine. Set `Seed` to any integer you like to pick a different shuffle or draw. The seed is logged at tournament start.
+- **RandomOpenings**: True to play openings drawn at random from the whole book, in random order, in a round robin; `Seed` fixes the draw, so a resumed tournament gets the same openings - also after raising `Rounds`: the larger number keeps the smaller one's openings in the same rounds and adds new ones after them. A book no longer than the openings needed is used whole, shuffled. The other modes have their own `RandomOpenings` in `GauntletOptions`, `CupOptions`, `SwissOptions` and `LadderOptions`.
+- **Seed**: Integer seed for everything random in a tournament. **Default: 0** (what you get if you omit the field). It shuffles the openings when the mode's `RandomOpenings` is on (this `RandomOpenings` for a round robin, the one in `GauntletOptions`/`CupOptions`/`SwissOptions`/`LadderOptions` for those modes), and it always makes the cup draw (the `Random` strategy, and the order within `ByRating` bands). The seed does not depend on engine names or the PGN path, so the same config, engines and book repeat the same draw and openings, on any machine. Set `Seed` to any integer you like to pick a different shuffle or draw. The seed is logged at tournament start.
+
+### Gauntlet Options
+
+- **Challengers**: How many engines, from the top of `EngineDefList`, are the challengers; the rest are the opponents. Default 1.
+- **RandomOpenings**: True to draw the openings at random from the whole book, in random order (`Seed` fixes the draw); false for the book's order.
+- **Distribution**: How the openings are shared between the opponents. `"shared"` (the default): every opponent plays the same opening in a round, `Rounds` openings in all. `"spread"`: each opponent gets openings of its own, none played against another opponent, `Rounds` x opponents openings in all - in round *r* opponent *i* plays opening *r* x opponents + *i*. A book shorter than that starts over from its first opening, so some openings are played against more than one opponent, and a warning is printed at the start.
+
+A file from before these moved has `Challengers` at the top level and `Opening.RandomOpenings`, which meant both the random draw and `"spread"`; they are read as these settings when the block is absent.
 
 ### Cup Options
 
@@ -294,7 +299,6 @@ setting.
   "AllowPondering": false,
   "EngineStartupTimeoutInSec": 900,
   "PreventMoveDeviation": false,
-  "Challengers": 1,
   "Rounds": 50,
   "NumberOfGamesInParallel": 2,
   "PauseAfterRound": 0,
@@ -343,6 +347,11 @@ setting.
   "LadderOptions": {
     "GamePairsPerMatch": 4,
     "RandomOpenings": true
+  },
+  "GauntletOptions": {
+    "Challengers": 1,
+    "RandomOpenings": false,
+    "Distribution": "shared"
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

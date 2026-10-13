@@ -146,9 +146,61 @@ let ``a cup of three is refused by the validation, as the cup runner refuses it`
 [<Fact>]
 let ``a gauntlet is a gauntlet in any case`` () =
     let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
-    let t = { read (minimal "") with TournamentMode = "gauntlet"; Challengers = 2 }
+    let t = { read (minimal "") with TournamentMode = "gauntlet"; GauntletOptions = { GauntletOptions.Default with Challengers = 2 } }
     let t = { t with EngineSetup = { t.EngineSetup with Engines = [ engine "A"; engine "B" ] } }
     Assert.Contains(errorsOf t, fun m -> m.Contains "challengers")
+
+let private gauntlet (extra: string) =
+    sprintf """{ "Name": "t", "TournamentMode": "Gauntlet", "EngineSetup": { "EngineDefFolder": "", "EngineDefList": [] },
+               "TimeControl": { "TimeConfigs": [ { "Id": 1, "Tc": "60+1" } ] }%s }""" extra
+
+[<Fact>]
+let ``a gauntlet without GauntletOptions is one challenger, shared openings in the book's order`` () =
+    let t = read (gauntlet "")
+    Assert.Equal(GauntletOptions.Default, t.GauntletOptions)
+    Assert.False t.GauntletOptions.Spread
+
+[<Fact>]
+let ``GauntletOptions is read as written`` () =
+    let t = read (gauntlet """, "GauntletOptions": { "Challengers": 2, "RandomOpenings": true, "Distribution": "Spread" } """)
+    Assert.Equal(2, t.GauntletOptions.Challengers)
+    Assert.True t.GauntletOptions.RandomOpenings
+    Assert.True t.GauntletOptions.Spread
+    Assert.True t.RandomOpeningsForMode
+    // in a gauntlet Opening.RandomOpenings is not read any more
+    let t = read (gauntlet """, "GauntletOptions": { "Challengers": 1 }, "Opening": { "RandomOpenings": true } """)
+    Assert.False t.GauntletOptions.RandomOpenings
+    Assert.False t.RandomOpeningsForMode
+
+/// The older shape: a top-level Challengers, and Opening.RandomOpenings meaning both the random
+/// draw and the spread distribution.
+[<Fact>]
+let ``an older gauntlet file's Challengers and RandomOpenings fill GauntletOptions`` () =
+    let t = read (gauntlet """, "Challengers": 3, "Opening": { "RandomOpenings": true } """)
+    Assert.Equal(3, t.GauntletOptions.Challengers)
+    Assert.True t.GauntletOptions.RandomOpenings
+    Assert.True t.GauntletOptions.Spread
+    let t = read (gauntlet """, "Challengers": 2, "Opening": { "RandomOpenings": false } """)
+    Assert.Equal(2, t.GauntletOptions.Challengers)
+    Assert.False t.GauntletOptions.RandomOpenings
+    Assert.False t.GauntletOptions.Spread
+    // a given block wins over the old fields
+    let t = read (gauntlet """, "Challengers": 3, "GauntletOptions": { "Challengers": 1 } """)
+    Assert.Equal(1, t.GauntletOptions.Challengers)
+    // a round robin's Opening.RandomOpenings stays its own and does not touch the gauntlet block
+    let t = read (minimal """, "Challengers": 2, "Opening": { "RandomOpenings": true } """)
+    Assert.True t.Opening.RandomOpenings
+    Assert.True t.RandomOpeningsForMode
+    Assert.False t.GauntletOptions.RandomOpenings
+
+[<Fact>]
+let ``a gauntlet refuses no challengers and an unknown distribution`` () =
+    let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
+    let withEngines t = { t with EngineSetup = { t.EngineSetup with Engines = [ engine "A"; engine "B"; engine "C" ] } }
+    let t = withEngines (read (gauntlet """, "GauntletOptions": { "Challengers": 0 } """))
+    Assert.Contains(errorsOf t, fun m -> m.Contains "Challengers must be at least 1")
+    let t = withEngines (read (gauntlet """, "GauntletOptions": { "Distribution": "random" } """))
+    Assert.Contains(errorsOf t, fun m -> m.Contains "Distribution must be")
 
 [<Fact>]
 let ``engine defs that are not there are named together, with the folder they were looked for in`` () =

@@ -128,8 +128,8 @@ module Manager =
               if tourny.EngineSetup.EngineDefList.Length > 0 then
                 let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList            
                 let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
-                if isGauntlet && tourny.Challengers > 0 then
-                  for engine in engineList |> List.truncate tourny.Challengers do
+                if isGauntlet && tourny.GauntletOptions.Challengers > 0 then
+                  for engine in engineList |> List.truncate tourny.GauntletOptions.Challengers do
                     engine.IsChallenger <- true
                 else
                   for engine in engineList do
@@ -150,9 +150,7 @@ module Manager =
                   { baseOptions with Rounds = rounds }
                 let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
                 let ladderOptions = if obj.ReferenceEquals(tourny.LadderOptions, null) then ladderDefaults else tourny.LadderOptions
-                // Challengers is only used for Gauntlet mode; reset to 0 for other modes
-                let challengers = if isGauntlet then tourny.Challengers else 0
-                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; LadderOptions = ladderOptions; TournamentMode = tournamentMode; Challengers = challengers }
+                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; LadderOptions = ladderOptions; TournamentMode = tournamentMode }
                 Validation.validateTournamentInput updatedTourny
                 updatedTourny
               else 
@@ -171,10 +169,7 @@ module Manager =
                   { baseOptions with Rounds = rounds }
                 let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
                 let ladderOptions = if obj.ReferenceEquals(tourny.LadderOptions, null) then ladderDefaults else tourny.LadderOptions
-                // Challengers is only used for Gauntlet mode; reset to 0 for other modes
-                let isGauntlet = tournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
-                let challengers = if isGauntlet then tourny.Challengers else 0
-                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; LadderOptions = ladderOptions; TournamentMode = tournamentMode; Challengers = challengers }
+                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; LadderOptions = ladderOptions; TournamentMode = tournamentMode }
 
             let openingPath = 
               match tourny.Opening.OpeningsPath with

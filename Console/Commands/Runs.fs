@@ -1348,8 +1348,8 @@ let tournamentRun (p: Parsed) =
     match loadTournament path with
     | None -> raise (Usage $"not a tournament config: {path}")
     | Some(tourny, engineList) ->
-        if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) && tourny.Challengers > 0 then
-            for engine in engineList |> List.truncate tourny.Challengers do engine.IsChallenger <- true
+        if tourny.IsGauntlet && tourny.GauntletOptions.Challengers > 0 then
+            for engine in engineList |> List.truncate tourny.GauntletOptions.Challengers do engine.IsChallenger <- true
         else
             for engine in engineList do engine.IsChallenger <- false
         let tournament =
@@ -1359,8 +1359,7 @@ let tournamentRun (p: Parsed) =
                 ConsoleOnly = true
                 DelayBetweenGames = TimeSpan.Zero }
         // the GUI refuses to start a config with errors; so does the console
-        let checkable = { tournament with Challengers = (if tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) then tournament.Challengers else 0) }
-        match Validation.validateTournament checkable with
+        match Validation.validateTournament tournament with
         | Validation.Errors messages ->
             // with --json the errors are in the envelope, not only on stderr
             if has p "json" then raise (Usage ("the config has errors: " + String.Join("; ", messages)))

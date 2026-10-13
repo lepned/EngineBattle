@@ -31,7 +31,7 @@ public partial class Tournaments
 				IsLadderMode ?
 				$"Ladder, {tournament.EngineSetup.Engines.Count()} engines, {tournament.LadderOptions.GamePairsPerMatch} game pairs per match" :
 				IsGauntletMode ?
-				$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
+				$"{tournament.GauntletOptions.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
 				$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
 
 	// Parts for TournamentSummary. The mode summaries below stay as they are — the badge is
@@ -40,7 +40,7 @@ public partial class Tournaments
 		IsCupMode ? "Cup" :
 		IsSwissMode ? "Swiss" :
 		IsLadderMode ? "Ladder" :
-		IsGauntletMode ? $"{tournament.Challengers}-Gauntlet" :
+		IsGauntletMode ? $"{tournament.GauntletOptions.Challengers}-Gauntlet" :
 		$"{tournament.EngineSetup.Engines.Count()}-player RR";
 
 	string PairingBadge => tournament == null ? "" : tournament.Opening.OpeningsTwice ? "Double" : "Single";
@@ -55,7 +55,7 @@ public partial class Tournaments
 				IsSwissMode ? GetSwissSummary() :
 				IsLadderMode ? $"{tournament.EngineSetup.Engines.Count()} engines, {tournament.LadderOptions.GamePairsPerMatch} game pairs per match" :
 				$"{tournament.Rounds} rounds, {totalNumberOfPairs} games";
-			var order = tournament.Opening.RandomOpenings ? "random" : "sequential";
+			var order = tournament.RandomOpeningsForMode ? "random" : "sequential";
 			var twice = tournament.Opening.OpeningsTwice ? " ×2" : "";
 			var openings = $"{tournament.GetOpeningFileName()}, {tournament.Opening.OpeningsPly} ply, {order}{twice}";
 			return $"{format} · {openings}";
@@ -96,7 +96,7 @@ public partial class Tournaments
 				return
 					$"Openings, {tournament.Opening.OpeningsPly}ply, {orderText}, {uniqueText}, {tournament.GetOpeningFileName()}";
 			}
-			var orderText2 = tournament.Opening.RandomOpenings ? "random" : "sequential";
+			var orderText2 = tournament.RandomOpeningsForMode ? "random" : "sequential";
 			return
 				$"Openings, {tournament.Opening.OpeningsPly}ply, {orderText2}, {(tournament.Opening.OpeningsTwice ? "twice" : "single")}, {tournament.GetOpeningFileName()}";
 		}

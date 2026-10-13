@@ -65,6 +65,13 @@
                         <label>Challengers</label>
                         <input type="number" @bind="challengers" min="1" max="100" />
                     </div>
+                    <div class="field-group">
+                        <label>Openings per opponent</label>
+                        <select @bind="gauntletDistribution">
+                            <option value="shared">Shared: every opponent plays the round's opening</option>
+                            <option value="spread">Spread: each opponent its own openings</option>
+                        </select>
+                    </div>
                 }
                 @if (tournamentMode == "Ladder")
                 {
@@ -417,6 +424,7 @@
     private string tournamentMode = "RR";
     private int rounds = 50;
     private int challengers = 1;
+    private string gauntletDistribution = "shared";
     private bool preventMoveDeviation = false;
     private int ladderGamePairsPerMatch = 4;
 
@@ -631,7 +639,6 @@
             root["Name"] = tournamentName;
             root["TournamentMode"] = tournamentMode;
             root["Rounds"] = rounds;
-            root["Challengers"] = challengers;
             root["PreventMoveDeviation"] = preventMoveDeviation;
             root["DelayBetweenGames"] = FormatTimeSpan(delayBetweenGamesSec * 1000);
             root["MoveOverhead"] = FormatTimeSpan(moveOverheadMs);
@@ -683,7 +690,8 @@
             root["Opening"]!["OpeningsPath"] = Slashes(openingsPath);
             root["Opening"]!["OpeningsPly"] = openingsPly;
             root["Opening"]!["OpeningsTwice"] = openingsTwice;
-            root["Opening"]!["RandomOpenings"] = randomOpenings;
+            // a round robin's switch; every other mode has its own in its options block
+            root["Opening"]!["RandomOpenings"] = tournamentMode == "RR" && randomOpenings;
 
             // Adjudication
             root["Adjudication"]!["DrawOption"]!["Enabled"] = useDrawAdjudication;
@@ -704,6 +712,12 @@
                 root["LadderOptions"]!["GamePairsPerMatch"] = ladderGamePairsPerMatch;
                 root["LadderOptions"]!["RandomOpenings"] = randomOpenings;
             }
+
+            // Gauntlet options: the gauntlet's own block, left out of the other modes
+            if (tournamentMode == "Gauntlet")
+                root["GauntletOptions"] = new JsonObject { ["Challengers"] = challengers, ["RandomOpenings"] = randomOpenings, ["Distribution"] = gauntletDistribution };
+            else
+                root.Remove("GauntletOptions");
 
             // PGN output path (already a full .pgn path from auto-fill or user edit)
             root["PgnOutPath"] = Slashes(pgnOutPath);

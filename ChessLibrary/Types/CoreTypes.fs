@@ -645,6 +645,19 @@ module TypesDef =
       { GamePairsPerMatch: int
         RandomOpenings: bool
         StatePath: string }
+    /// A gauntlet's own settings. Challengers: that many from the top of EngineDefList; the rest
+    /// are the opponents. RandomOpenings: drawn from the whole book with Opening.Seed, as the other
+    /// modes' switch. Distribution: "shared" = every opponent plays the round's opening, "spread" =
+    /// each opponent its own slice of the book (Rounds x opponents openings in all).
+    type GauntletOptions =
+      { Challengers: int
+        RandomOpenings: bool
+        Distribution: string }
+      with
+        static member Default = { Challengers = 1; RandomOpenings = false; Distribution = "shared" }
+        member private x.Is (word: string) = not (isNull x.Distribution) && x.Distribution.Trim().Equals(word, StringComparison.OrdinalIgnoreCase)
+        member x.Spread = x.Is "spread"
+        member x.Shared = x.Is "shared"
     type EngineSetup =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
@@ -658,6 +671,8 @@ module TypesDef =
     ///   the live feed drops it (a viewer shows the games anyway).
     /// - A draw or win section without "Enabled" is on (written before the switch existed); tablebase
     ///   adjudication without "UseTBAdjudication" is on when it names a folder.
+    /// - A gauntlet's settings were a top-level Challengers and Opening.RandomOpenings (which also
+    ///   meant the spread distribution): GauntletOptions now, filled from them when it is missing.
     let readOlderShape (strict: bool) (file: Nodes.JsonObject) =
       let refuse (message: string) = if strict then raise (JsonException message)
       let missing (key: string) = isNull file.[key]
@@ -679,6 +694,17 @@ module TypesDef =
           elif flag "PolicyTest" then refuse "TestOptions.PolicyTest: policy-head play is a time control: give the engines one with \"Nodes\": 1 (the same go nodes 1, and per engine)"
       | _ -> ()
       file.Remove "TestOptions" |> ignore
+      let isTrue (node: Nodes.JsonNode) = match node with :? Nodes.JsonValue as v -> v.GetValueKind() = JsonValueKind.True | _ -> false
+      if isNull file.["GauntletOptions"] then
+          let gauntlet = Nodes.JsonObject()
+          match file.["Challengers"] with null -> () | v -> gauntlet.["Challengers"] <- v.DeepClone()
+          let mode = match file.["TournamentMode"] with :? Nodes.JsonValue as v -> (try v.GetValue<string>() with _ -> "") | _ -> ""
+          if not (isNull mode) && mode.Trim().Equals("gauntlet", StringComparison.OrdinalIgnoreCase) then
+              let random = match file.["Opening"] with :? Nodes.JsonObject as o -> isTrue o.["RandomOpenings"] | _ -> false
+              gauntlet.["RandomOpenings"] <- Nodes.JsonValue.Create random
+              gauntlet.["Distribution"] <- Nodes.JsonValue.Create(if random then "spread" else "shared")
+          file.["GauntletOptions"] <- gauntlet
+      file.Remove "Challengers" |> ignore
       match file.["Adjudication"] with
       | :? Nodes.JsonObject as adj ->
           for name in [ "DrawOption"; "WinOption" ] do
@@ -722,7 +748,6 @@ module TypesDef =
         PreventMoveDeviation: bool
         AllowPondering: bool
         EngineStartupTimeoutInSec: int
-        Challengers: int
         [<JsonIgnore>] mutable IsChess960: bool
         /// A cup, Swiss or ladder without a state file may start in a PGN that already has games
         /// (the GUI asked): otherwise it stops rather than mix two tournaments
@@ -742,6 +767,7 @@ module TypesDef =
         CupOptions: CupOptions
         SwissOptions: SwissOptions
         LadderOptions: LadderOptions
+        GauntletOptions: GauntletOptions
         PgnOutPath: string
         ReferencePGNPath: string
         EngineSetup: EngineSetup
@@ -774,6 +800,15 @@ module TypesDef =
 
         member x.ModeLabel() =
           if String.IsNullOrWhiteSpace x.TournamentMode then "RR" else x.TournamentMode
+
+        /// The mode's random-openings switch: every mode but the round robin has its own.
+        member x.RandomOpeningsForMode =
+          match x.ModeLabel().Trim().ToLowerInvariant() with
+          | "swiss" when not (obj.ReferenceEquals(x.SwissOptions, null)) -> x.SwissOptions.RandomOpenings
+          | "cup" when not (obj.ReferenceEquals(x.CupOptions, null)) -> x.CupOptions.RandomOpenings
+          | "ladder" when not (obj.ReferenceEquals(x.LadderOptions, null)) -> x.LadderOptions.RandomOpenings
+          | "gauntlet" when not (obj.ReferenceEquals(x.GauntletOptions, null)) -> x.GauntletOptions.RandomOpenings
+          | _ -> x.Opening.RandomOpenings
 
         member x.EffectiveSwissRounds() =
           if obj.ReferenceEquals(x.SwissOptions, null) then x.Rounds
@@ -852,8 +887,8 @@ module TypesDef =
 
         member x.GauntletText() =
           if x.IsGauntlet && x.EngineSetup.Engines.Length > 0 then
-            let players = x.EngineSetup.Engines |> Seq.truncate(x.Challengers)
-            let opponents = x.EngineSetup.Engines |> Seq.skip(x.Challengers)
+            let players = x.EngineSetup.Engines |> Seq.truncate(x.GauntletOptions.Challengers)
+            let opponents = x.EngineSetup.Engines |> Seq.skip(x.GauntletOptions.Challengers)
             let oppMsg = opponents |> Seq.fold (fun st e -> sprintf "%s %s, " st e.Name ) ""
             let mutable txt = "Gauntlet:"
             for p in players do
@@ -902,6 +937,9 @@ module TypesDef =
             elif mode.Equals("Cup", StringComparison.OrdinalIgnoreCase) && not (obj.ReferenceEquals(x.CupOptions, null)) then
               parts.Add(sprintf "random=%b" x.CupOptions.RandomOpenings)
               parts.Add(sprintf "unique=%s" (if x.CupOptions.UniquePerMatchOnly then "per match" else "global"))
+            elif mode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) && not (obj.ReferenceEquals(x.GauntletOptions, null)) then
+              parts.Add(sprintf "random=%b" x.GauntletOptions.RandomOpenings)
+              parts.Add(sprintf "distribution=%s" (if x.GauntletOptions.Spread then "spread" else "shared"))
             else
               parts.Add(sprintf "random=%b" x.Opening.RandomOpenings)
             String.Join(" | ", parts)
@@ -954,13 +992,7 @@ module TypesDef =
           match x.Opening.OpeningsPath with
           | Some path when not (String.IsNullOrWhiteSpace path) ->
               parts.Add $"Book={Path.GetFileName path}"
-              // a cup, Swiss or ladder draws its openings at random by its own option
-              let random =
-                match mode with
-                | "swiss" when not (obj.ReferenceEquals(x.SwissOptions, null)) -> x.SwissOptions.RandomOpenings
-                | "cup" when not (obj.ReferenceEquals(x.CupOptions, null)) -> x.CupOptions.RandomOpenings
-                | "ladder" when not (obj.ReferenceEquals(x.LadderOptions, null)) -> x.LadderOptions.RandomOpenings
-                | _ -> x.Opening.RandomOpenings
+              let random = x.RandomOpeningsForMode
               parts.Add (sprintf "OpeningsPly=%d" x.Opening.OpeningsPly)
               parts.Add (sprintf "OpeningsTwice=%b" x.Opening.OpeningsTwice)
               parts.Add (sprintf "RandomOpenings=%b" random)
@@ -1015,7 +1047,7 @@ module TypesDef =
           printfn "%s" (x.TablebaseText())
           printfn "%s" (x.AdjudicationText())
           if x.IsGauntlet then
-            let challengers = x.EngineSetup.Engines |> Seq.truncate(x.Challengers) |> Seq.length
+            let challengers = x.EngineSetup.Engines |> Seq.truncate(x.GauntletOptions.Challengers) |> Seq.length
             let gamesPerRound = x.TotalGames / (x.Rounds * 2) - challengers
             if challengers > 0 then
               let totalDeviationGames = float (gamesPerRound * x.Rounds * (if x.Opening.OpeningsTwice then 2 else 1))
@@ -1048,7 +1080,6 @@ module TypesDef =
           EngineStartupTimeoutInSec = 180
           DeviationCounter = 0
           PreventMoveDeviationFor = null
-          Challengers = 0
           Rounds = 0
           PauseAfterRound = 0
           TimeControl = Unchecked.defaultof<TimeControl>
@@ -1058,6 +1089,7 @@ module TypesDef =
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = ""; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "" }
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }
+          GauntletOptions = GauntletOptions.Default
           NumberOfGamesInParallel = 1
           GPUs = null
           Adjudication =

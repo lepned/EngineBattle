@@ -26,7 +26,7 @@ module ConsoleHelper =
     printfn "GPU: %s" tournament.GPU
     printfn "Tournament mode: %s" tournament.TournamentMode
     printfn "DoNotDeviate: %b" tournament.PreventMoveDeviation
-    printfn "Challengers: %d" tournament.Challengers
+    if tournament.IsGauntlet then printfn "Challengers: %d" tournament.GauntletOptions.Challengers
     printfn "Rounds: %d" tournament.Rounds
     printfn $"Delay between games: {tournament.DelayBetweenGames}"
     printfn $"Move overhead: {timeFormat tournament.MoveOverhead}"
@@ -409,7 +409,7 @@ module Validation =
       if engines |> Seq.length < 2 then
           Errors ["Fewer than two engines: EngineSetup.EngineDefList must name at least two engine defs (files in EngineSetup.EngineDefFolder)"]
       else if otherEngines < 1 then
-          Errors ["Gauntlet tournament configuration error: All engines are marked as challengers. In a gauntlet tournament, challengers need opponents to play against. Please either reduce the 'Challengers' parameter in tournament.json or add more engines to your EngineDefList so that some engines serve as non-challengers."]
+          Errors ["Gauntlet tournament configuration error: All engines are marked as challengers. In a gauntlet tournament, challengers need opponents to play against. Please either reduce GauntletOptions.Challengers in tournament.json or add more engines to your EngineDefList so that some engines serve as non-challengers."]
       else
           Ok
 
@@ -499,6 +499,12 @@ module Validation =
           || normalized = "ladder"
       if not isKnown then
           Errors ["TournamentMode must be one of: RR, Gauntlet, Cup, Swiss, Ladder."]
+      elif normalized = "gauntlet" && obj.ReferenceEquals(tourny.GauntletOptions, null) then
+          Errors ["GauntletOptions must be set when TournamentMode is Gauntlet."]
+      elif normalized = "gauntlet" && tourny.GauntletOptions.Challengers < 1 then
+          Errors ["GauntletOptions.Challengers must be at least 1: that many engines from the top of EngineDefList are the challengers."]
+      elif normalized = "gauntlet" && not (tourny.GauntletOptions.Shared || tourny.GauntletOptions.Spread) then
+          Errors [ sprintf "GauntletOptions.Distribution must be \"shared\" or \"spread\", not \"%s\"." tourny.GauntletOptions.Distribution ]
       elif normalized = "cup" && obj.ReferenceEquals(tourny.CupOptions, null) then
           Errors ["CupOptions must be set when TournamentMode is Cup."]
       // the cup runner refuses any other number at the start; say so before it
@@ -514,7 +520,7 @@ module Validation =
   let validateTournament (tourny: Tournament) =
       [
           // challengers count in a gauntlet only (the runner sets them to 0 otherwise)
-          validateEnginesPresent tourny.EngineSetup.Engines (if String.Equals(tourny.TournamentMode, "Gauntlet", StringComparison.OrdinalIgnoreCase) then tourny.Challengers else 0)
+          validateEnginesPresent tourny.EngineSetup.Engines (if tourny.IsGauntlet && not (obj.ReferenceEquals(tourny.GauntletOptions, null)) then tourny.GauntletOptions.Challengers else 0)
           validateTimeControl tourny
           validateTournamentModeOptions tourny
           validateOpeningPath tourny
@@ -607,7 +613,7 @@ module Validation =
       let mode = tourny.ModeLabel().Trim().ToLowerInvariant()
       let isRRorGauntlet = mode = "rr" || mode = "roundrobin" || mode = "round-robin" || mode = "gauntlet"
       [ yield! delayWarning tourny
-        if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then
+        if isRRorGauntlet && tourny.RandomOpeningsForMode && not tourny.Opening.OpeningsTwice then
             "RandomOpenings is enabled but OpeningsTwice is false. Each engine pair will play each opening from only one color side. Set OpeningsTwice to true for balanced color distribution."
         if tourny.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
             $"NumberOfGamesInParallel = {tourny.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."

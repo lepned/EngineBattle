@@ -158,7 +158,7 @@ let ``without -tbpieces, positions are probed as large as the tables go`` () =
 let ``gauntlet seeds are the challengers`` () =
     let m = mapped (sf @ lc0 @ [ "-engine"; "cmd=c"; "name=C"; "tc=1+0"; "-tournament"; "gauntlet"; "-seeds"; "2" ])
     let t = m.Tournament
-    Assert.Equal(("Gauntlet", 2), (t.TournamentMode, t.Challengers))
+    Assert.Equal(("Gauntlet", 2), (t.TournamentMode, t.GauntletOptions.Challengers))
     Assert.Equal<bool list>([ true; true; false ], t.EngineSetup.Engines |> List.map (fun e -> e.IsChallenger))
     hasNote "does not pair the seeds" m
 

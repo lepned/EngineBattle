@@ -55,13 +55,13 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
     let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
     let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
 
-    // The new Scheduler expects the book to already be sized for the chosen
-    // distribution. For Gauntlet + Spread (= RandomOpenings=true) with more
-    // than one opponent, that means `rounds × numOpp` distinct openings; for
-    // Gauntlet + Shared and all non-Gauntlet modes, just `rounds` openings.
+    // The scheduler expects the book sized for the distribution: a gauntlet with Spread and
+    // more than one opponent needs `rounds x numOpp` openings, everything else `rounds`.
+    // A gauntlet's random draw and distribution are its own options; a round robin's is Opening's.
     let numOpps = rest.Length
+    let randomOpenings = tourny.RandomOpeningsForMode
     let gauntletDistribution =
-        if tourny.Opening.RandomOpenings then Scheduler.Spread else Scheduler.Shared
+        if isGauntlet && tourny.GauntletOptions.Spread then Scheduler.Spread else Scheduler.Shared
     let effectiveBookSize =
         if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 then
             tourny.Rounds * numOpps
@@ -71,7 +71,7 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
     let mutable epdBook = false
     // random openings come from the whole book, not its first openings
     let take (openings: seq<PGNTypes.PgnGame>) =
-        if tourny.Opening.RandomOpenings then PairingHelper.sampleWithSeed tourny.Opening.Seed effectiveBookSize openings
+        if randomOpenings then PairingHelper.sampleWithSeed tourny.Opening.Seed effectiveBookSize openings
         else openings |> Seq.truncate effectiveBookSize |> Seq.toArray
     let games =
         match tourny.Opening.OpeningsPath with
@@ -115,7 +115,7 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
         let openings = games |> Seq.truncate effectiveBookSize |> Seq.toList
         // random openings are drawn in a random order already (take): shuffling again by the
         // sample's size would give another order for another Rounds
-        if tourny.Opening.RandomOpenings then
+        if randomOpenings then
             ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Cyan
                 (sprintf "Random openings: Opening.Seed = %d (the same openings in the same order for any Rounds)." tourny.Opening.Seed)
         openings
