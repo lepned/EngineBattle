@@ -412,7 +412,7 @@ let runEretTest (path: string) (json: bool) (ct: CancellationToken) =
     Cli.Output.printJson (Cli.Output.envelope "puzzle eret" (not ct.IsCancellationRequested) (box {| Config = path; Engines = engines |}) errors)
   Cli.Output.ExitOk
 
-/// A puzzle run from its config (a path that exists). With json the result (Console/PuzzleJsonSchema.md)
+/// A puzzle run from its config (a path that exists). With json the result (PuzzleJsonSchema.md)
 /// is printed as the envelope's result. Exit 1 when an engine failed or nothing was scored.
 let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
   let startedUtc = DateTime.UtcNow
@@ -748,7 +748,7 @@ let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
 
       // Always write the machine-readable twin beside the text summary, same basename.
       // Trend tooling reads these; nothing should have to parse the human-formatted table,
-      // whose column layout has drifted across many releases. See Console/PuzzleJsonSchema.md.
+      // whose column layout has drifted across many releases. See PuzzleJsonSchema.md.
       let pairedJsonFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.json")
       // a run stopped with Ctrl+C has no JSON twin: puzzle trend and the run report would read
       // its partial numbers as a finished checkpoint
@@ -782,7 +782,7 @@ let runPuzzles (path: string) (json: bool) (ct: CancellationToken) =
           RuntimeUtilities.ConsoleUtils.yellowConsole
               $"{writeFailures} output file(s) failed to write (see above). Folder: {escaped}"
 
-  // The result, in the schema of Console/PuzzleJsonSchema.md (the same document as the
+  // The result, in the schema of PuzzleJsonSchema.md (the same document as the
   // LichessSummary_<stamp>.json above), as the result of the --json envelope.
   let scored = scores |> Seq.filter (fun sc -> sc.TotalNumber > 0) |> Seq.length
   let ok = engineErrors.Value = 0 && scored > 0
@@ -1184,7 +1184,7 @@ let private configArg what = arg "config" what
 let puzzleRunSpec =
     { command [ "puzzle"; "run" ] Group "Run a Lichess puzzle test from a config" with
         Description =
-          Some "Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored."
+          Some "Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored."
         Args = [ configArg "a puzzle config (JSON)" ]
         Options = [ json ]
         Examples =
@@ -1433,7 +1433,7 @@ let tournamentValidate (p: Parsed) =
 
 let tuneRunSpec =
     { command [ "tune"; "run" ] Group "Tune engine parameters (Bayesian optimisation)" with
-        Description = Some "Runs the tuner config (Console/ConsoleTuner.md): Bayesian optimisation with SPRT matches, phase by phase; the state, history, best options and the dashboard go to its OutputDir. \"Resume\": true in the config goes on from the saved state. Ctrl+C stops at once."
+        Description = Some "Runs the tuner config (ConsoleTuner.md): Bayesian optimisation with SPRT matches, phase by phase; the state, history, best options and the dashboard go to its OutputDir. \"Resume\": true in the config goes on from the saved state. Ctrl+C stops at once."
         Args = [ configArg "a tuner config (JSON)" ]
         Examples = [ "eb-cli tune run tuner-config.json", "Tune" ] }
 

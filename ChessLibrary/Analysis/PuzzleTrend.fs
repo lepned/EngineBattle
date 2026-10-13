@@ -7,7 +7,7 @@ open System.Text.Json
 
 /// Aggregates puzzle results across many runs into per-training-run step curves.
 ///
-/// Input is the JSON written beside every puzzle summary (see Console/PuzzleJsonSchema.md).
+/// Input is the JSON written beside every puzzle summary (see PuzzleJsonSchema.md).
 /// The text summaries are deliberately NOT read: their column layout has drifted across
 /// many releases, while the JSON is a versioned contract.
 module PuzzleTrend =

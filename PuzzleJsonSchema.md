@@ -10,7 +10,7 @@ dotnet run --project Console -c Release -- puzzle run <config.json> --json > res
 ```
 
 With `--json`, stdout carries one JSON document and nothing else (the tables and progress go to
-stderr). It is eb-cli's envelope, the same for every command (ConsoleTools.md), and **the document
+stderr). It is eb-cli's envelope, the same for every command (eb-cli.md), and **the document
 this page describes is its `result`**:
 
 ```json

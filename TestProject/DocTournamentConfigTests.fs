@@ -64,8 +64,8 @@ let loadAndValidate (json: string) =
     finally Directory.Delete(dir, true)
 
 [<Fact>]
-let ``the minimal tournament config in ConsoleTools.md loads and validates`` () =
-    let t = loadAndValidate (blockAfter "### Minimal Tournament Configuration" (repoFile "ConsoleTools.md"))
+let ``the minimal tournament config in eb-cli.md loads and validates`` () =
+    let t = loadAndValidate (blockAfter "### Minimal Tournament Configuration" (repoFile "eb-cli.md"))
     Assert.False t.Adjudication.DrawOption.Enabled
 
 [<Fact>]

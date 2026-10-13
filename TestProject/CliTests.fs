@@ -152,18 +152,18 @@ let ``engine, limit and position options read the same in every command`` () =
   // a FEN that is not one
   let notFen = runReal [ "tablebase"; "8/8/8/9/8/8/8/8"; "w" ]
   Assert.Contains("not a valid FEN", (Assert.Throws<Usage>(fun () -> Cli.Groups.fen notFen "fen" |> ignore)).Data0)
-// ---------------------------------------------------------------- the reference in ConsoleTools.md
+// ---------------------------------------------------------------- the reference in eb-cli.md
 
 [<Fact>]
-let ``ConsoleTools.md carries every command's help as the program prints it`` () =
+let ``eb-cli.md carries every command's help as the program prints it`` () =
   // the repo root, from TestProject/bin/<config>/<tfm>
-  let doc = System.IO.File.ReadAllText(System.IO.Path.Combine(System.AppContext.BaseDirectory, "..", "..", "..", "..", "ConsoleTools.md")).Replace("\r\n", "\n")
+  let doc = System.IO.File.ReadAllText(System.IO.Path.Combine(System.AppContext.BaseDirectory, "..", "..", "..", "..", "eb-cli.md")).Replace("\r\n", "\n")
   for e in Registry.all do
     let help = (Cli.Help.command e.Spec).Replace("\r\n", "\n")
     // the doc states the exit codes once, not under every command
     let body = help.Substring(0, help.IndexOf("\nExit codes:")).TrimEnd()
     Assert.True(doc.Contains($"### {Cli.Spec.name e.Spec}\n"), $"no section for '{Cli.Spec.name e.Spec}'")
-    Assert.True(doc.Contains(body), $"the help of '{Cli.Spec.name e.Spec}' in ConsoleTools.md is not what eb-cli prints: write it again from 'eb-cli help {Cli.Spec.name e.Spec}'")
+    Assert.True(doc.Contains(body), $"the help of '{Cli.Spec.name e.Spec}' in eb-cli.md is not what eb-cli prints: write it again from 'eb-cli help {Cli.Spec.name e.Spec}'")
 // ---------------------------------------------------------------- review fixes
 
 [<Fact>]

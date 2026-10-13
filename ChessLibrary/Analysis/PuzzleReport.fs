@@ -22,7 +22,7 @@ module PuzzleReport =
     // ------------------------------------------------------------------
 
     /// One row of the summary's `scores` array. Mirrors PuzzleJsonOutput's
-    /// camelCase schema (see Console/PuzzleJsonSchema.md). estNodes fields are
+    /// camelCase schema (see PuzzleJsonSchema.md). estNodes fields are
     /// 0.0 both for non-policy rows and for runs written before those fields
     /// existed — consumers gate on `EstNodesP95 > 0`.
     type ScoreRow =

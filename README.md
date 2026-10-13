@@ -108,7 +108,7 @@ Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **o
 
 Each zip has the WebGUI (`EngineBattle`) and the console (`eb-cli`) side by side, the way cutechess
 ships `cutechess-cli` with its GUI. The console runs engine matches from one command line
-([MatchMode.md](MatchMode.md)) and the other console tools ([ConsoleTools.md](ConsoleTools.md)).
+([MatchMode.md](MatchMode.md)) and the other console tools ([eb-cli.md](eb-cli.md)).
 
 On Windows there is also **EngineBattle-Desktop** (`EngineBattle-Desktop-win-x64.zip` or `-win-arm64`): the same application in its own window, with a native menu, remembered zoom and F11 full screen - no browser involved. Pick it if you prefer an app to a browser tab; everything else is identical. The desktop zip holds only the window: download the matching `EngineBattle-win-x64.zip` (or `-win-arm64`) as well and extract both into the same folder, so that `EngineBattleDesktop.exe` sits next to `EngineBattle.exe`.
 
@@ -193,7 +193,7 @@ eb-cli pgn parse <file.pgn>
 eb-cli gui [<page>] [--port N]
 ```
 
-`eb-cli` alone lists every command, `eb-cli help <command>` explains one. Every command follows the same rules - options, `--json`, exit codes, Ctrl+C - described in [ConsoleTools.md](ConsoleTools.md), with the full reference.
+`eb-cli` alone lists every command, `eb-cli help <command>` explains one. Every command follows the same rules - options, `--json`, exit codes, Ctrl+C - described in [eb-cli.md](eb-cli.md), with the full reference.
 
 #### Position queries (`position`)
 

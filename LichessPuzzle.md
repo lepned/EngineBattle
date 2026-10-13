@@ -117,7 +117,7 @@ Open a terminal and run (`eb-cli` from the download, or `dotnet run --project Co
 
 Replace `c:/Dev/Chess/EB/puzzleconfig.json` with the path to your `PuzzleConfig.json`.
 
-- `puzzle run` runs the puzzle test (`--json` prints the result as JSON, see [Console/PuzzleJsonSchema.md](Console/PuzzleJsonSchema.md)).
+- `puzzle run` runs the puzzle test (`--json` prints the result as JSON, see [PuzzleJsonSchema.md](PuzzleJsonSchema.md)).
 - The last argument is the full path to your `PuzzleConfig.json`.
 
 ---

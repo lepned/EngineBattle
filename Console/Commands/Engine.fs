@@ -169,7 +169,7 @@ let newDef (p: Parsed) =
 
 let benchSpec =
     { command [ "engine"; "bench" ] Group "Measure engine speed (NPS) across option sets, from a benchmark config" with
-        Description = Some "Runs the benchmark config (engine, option sets, positions, duration; see Console/ConsoleBenchmark.md) and writes the summary to its SummaryOutputPath, or logs/benchmark-summary-<time>.txt."
+        Description = Some "Runs the benchmark config (engine, option sets, positions, duration; see ConsoleBenchmark.md) and writes the summary to its SummaryOutputPath, or logs/benchmark-summary-<time>.txt."
         Args = [ arg "config" "a benchmark config (JSON)" ]
         Examples = [ "eb-cli engine bench benchmark-options.json", "Run the benchmark" ] }
 

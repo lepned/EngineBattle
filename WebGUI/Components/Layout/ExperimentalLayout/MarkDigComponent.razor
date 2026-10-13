@@ -24,13 +24,19 @@
     public string FileName { get; set; }
     private string markdownContent = string.Empty;
 
-    private static readonly System.Text.RegularExpressions.Regex DocLink = new(@"\]\((?:\./)?([A-Za-z0-9_]+)\.md(#[^)]*)?\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex DocLink = new(@"\]\((?:\./)?([A-Za-z0-9_-]+)\.md(#[^)]*)?\)", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    protected override async Task OnInitializedAsync()
+    private string loadedName;
+
+    // On every change of FileName, not once: a link from one document to another keeps this
+    // instance with a new parameter, and OnInitialized would leave the old text on the page.
+    protected override async Task OnParametersSetAsync()
     {
+        var name = FileName ?? "";
+        if (name == loadedName) return;
+        loadedName = name;
         try
         {
-            var name = FileName ?? "";
             if (name.Length == 0 || Path.GetFileName(name) != name)
             {
                 markdownContent = $"<p>Documentation file not found: {FileName}</p>";

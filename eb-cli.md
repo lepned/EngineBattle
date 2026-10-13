@@ -1,4 +1,4 @@
-# Console Tools (eb-cli)
+# eb-cli
 
 `eb-cli` is EngineBattle on the command line: engine analysis and comparison, tablebase lookups,
 PGN tools, puzzle tests, book evaluation, tournaments, tuning, and engine matches.
@@ -73,7 +73,7 @@ The same rules hold for every command (`match` excepted - see below).
   ```
 
   `result` has each command's own fields; `puzzle run`'s is the document of
-  [Console/PuzzleJsonSchema.md](Console/PuzzleJsonSchema.md).
+  [PuzzleJsonSchema.md](PuzzleJsonSchema.md).
 - **Exit codes:**
 
   | Code | Meaning |
@@ -442,7 +442,7 @@ Measure engine speed (NPS) across option sets, from a benchmark config
 
 Usage: eb-cli engine bench <config>
 
-Runs the benchmark config (engine, option sets, positions, duration; see Console/ConsoleBenchmark.md) and writes the summary to its SummaryOutputPath, or logs/benchmark-summary-<time>.txt.
+Runs the benchmark config (engine, option sets, positions, duration; see ConsoleBenchmark.md) and writes the summary to its SummaryOutputPath, or logs/benchmark-summary-<time>.txt.
 
 Arguments:
   <config>  a benchmark config (JSON)
@@ -657,7 +657,7 @@ Run a Lichess puzzle test from a config
 
 Usage: eb-cli puzzle run <config> [options]
 
-Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of Console/PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored.
+Runs the Lichess puzzle test of a puzzle config (PuzzleConfig.md): the tables on stdout, the result files in its FailedPuzzlesOutputFolder (LichessSummary_<stamp>.txt and .json, failed puzzles, per-theme tables). --json prints the result document of PuzzleJsonSchema.md as the envelope's result. The first Ctrl+C keeps the rating groups that finished and writes no .json summary, so puzzle trend never reads a partial run. Exit 1 when an engine failed or nothing was scored.
 
 Arguments:
   <config>  a puzzle config (JSON)
@@ -764,7 +764,7 @@ Tune engine parameters (Bayesian optimisation)
 
 Usage: eb-cli tune run <config>
 
-Runs the tuner config (Console/ConsoleTuner.md): Bayesian optimisation with SPRT matches, phase by phase; the state, history, best options and the dashboard go to its OutputDir. "Resume": true in the config goes on from the saved state. Ctrl+C stops at once.
+Runs the tuner config (ConsoleTuner.md): Bayesian optimisation with SPRT matches, phase by phase; the state, history, best options and the dashboard go to its OutputDir. "Resume": true in the config goes on from the saved state. Ctrl+C stops at once.
 
 Arguments:
   <config>  a tuner config (JSON)
@@ -907,5 +907,5 @@ engine without a network, like Stockfish, uses `"search"` with `"Nodes": "10000"
 - [SwissMode.md](SwissMode.md) - Swiss tournament mode details
 - [CupMode.md](CupMode.md) - Knockout/Cup tournament mode details
 - [LadderMode.md](LadderMode.md) - Ladder tournament mode details
-- [Console/ConsoleTuner.md](Console/ConsoleTuner.md) - Bayesian tuner configuration
+- [ConsoleTuner.md](ConsoleTuner.md) - Bayesian tuner configuration
 

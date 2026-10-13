@@ -2,7 +2,7 @@
 
 Tools for asking *"what is each piece worth to this network?"* — both contextually (one
 position) and globally (the net's implied piece values). Four eb-cli commands
-(`eb-cli help <command>` lists every option; ConsoleTools.md has them all):
+(`eb-cli help <command>` lists every option; eb-cli.md has them all):
 
 - `piece-values position` — **contextual** values in a single position (leave-one-out).
 - `piece-values fit` — **global** values via regression over many positions.

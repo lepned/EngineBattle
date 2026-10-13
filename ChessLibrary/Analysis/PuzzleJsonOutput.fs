@@ -6,7 +6,7 @@ module PuzzleJsonOutput
 // This module is the EngineBattle side of a stable public contract used by
 // external tooling (e.g. the Python SPSA tuner) to consume puzzle-run results
 // without parsing stdout. The schema is documented in
-// `Console/PuzzleJsonSchema.md`.
+// `PuzzleJsonSchema.md`.
 //
 // Versioning rules:
 //   * `schemaVersion` is bumped only on BREAKING changes (rename or removal

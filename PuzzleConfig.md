@@ -57,7 +57,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   whether the flag is on or off — this only adds `positionsCorrect`/`positionsScored`/
   `positionAccuracy` to the result JSON, which are `0` when the flag is off so a consumer can
   tell "not measured" from "measured as zero". (Comparability across BUILDS is a separate
-  matter — see the stalemate discontinuity noted in `Console/PuzzleJsonSchema.md`.) For the `value` test — and the value half of
+  matter — see the stalemate discontinuity noted in `PuzzleJsonSchema.md`.) For the `value` test — and the value half of
   `policyvalue`, which honours the flag the same way — it also costs engine time, since positions after a
   mistake are queried where they would otherwise be skipped; the policy tests already query
   every position, so there the flag only changes what is reported.
