@@ -41,6 +41,8 @@ program uses, computed by EngineBattle itself. Nothing has to be installed or po
 - **Errors** come from the information matrix of the fit under the draw model (the sandwich
   `H⁻¹ J H⁻¹`), the quantity Ordo estimates by replaying the games a thousand times; computed
   exactly instead. The CFS between two players follows from the covariance of their ratings.
+  The draw rate the error bars use carries a weak prior (the weight of four games at 50 %), so
+  a first draw does not count as certainty that every game will be drawn.
 - **Two weak priors** keep the numbers finite where the games alone cannot: a Gaussian prior on
   the reported white advantage (standard deviation 300 Elo, so six games of nothing but White
   wins give a number, and an unbalanced book's 200-270 Elo are read within a few percent after a

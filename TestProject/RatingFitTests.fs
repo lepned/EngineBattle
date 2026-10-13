@@ -92,11 +92,21 @@ let ``the draw rate is fitted from the games`` () =
 [<Fact>]
 let ``errors shrink with the square root of the games, and with the confidence`` () =
     let e games = (player (fit { noWhite with Anchor = Some "B" } (bothColours "A" "B" games)) "A").Error
-    Assert.Equal(2.0, e (30, 10, 10) / e (120, 40, 40), 2)
+    // the error bars' draw rate is shrunk a little at 100 games, so not exactly 2
+    Assert.Equal(2.0, e (30, 10, 10) / e (120, 40, 40), 1)
     let at c = (player (fit { noWhite with Anchor = Some "B"; Confidence = c } (bothColours "A" "B" (30, 10, 10))) "A").Error
     Assert.Equal(1.96, at 0.95 / at 0.6827, 2)
     // more draws at the same score: a smaller error
     Assert.True(e (20, 60, 20) < e (40, 20, 40))
+
+[<Fact>]
+let ``one drawn game leaves the rating wide open`` () =
+    let f = fit { noWhite with Anchor = Some "B" } (games "A" "B" (0, 1, 0))
+    Assert.Equal(0.0, (player f "A").Rating, 6)
+    Assert.True((player f "A").Error > 300.0, sprintf "error %.1f" (player f "A").Error)
+    // five draws: still hundreds, not tens
+    let f5 = fit { noWhite with Anchor = Some "B" } (games "A" "B" (0, 5, 0))
+    Assert.True((player f5 "A").Error > 100.0)
 
 [<Fact>]
 let ``CFS says how sure it is that the first is stronger`` () =

@@ -326,7 +326,7 @@ module PGNCalculator =
                 | true, n -> let c = f.Cfs p.Player n in if Double.IsNaN c then -1 else int (Math.Round(100.0 * c))
                 | _ -> -1
               { p with CFS = cfs }
-          else p ]
+          else { p with CFS = -1 } ]
 
   /// The lines under a table: the fit's white advantage and draw rate, and a note when the games
   /// do not connect every player.

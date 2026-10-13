@@ -485,9 +485,15 @@ let fit (options: Options) (games: Game seq) : Fit =
         let anchorAt = options.Anchor |> Option.bind (fun a -> pool.Names |> Array.tryFindIndex ((=) a))
         let shift = match anchorAt with Some i -> r.[i] | None -> 0.0
         let ratings = r |> Array.map (fun x -> x - shift)
-        // the errors' draw model stops short of "every game a draw": at 1 the variance of every
-        // outcome is 0 and five opening draws would print no errors at all
-        let d0Errors = min d0 0.99
+        // the error bars' draw rate carries a Beta(2,2) prior (the weight of four games at 1/2): a
+        // first draw is no certainty that every game draws, which at a rate of 1 would make the
+        // rating certain too (an error of 34 after one game); from fifty games on it moves the rate under 0.02
+        let d0Errors =
+            match options.DrawRate with
+            | Some _ -> min d0 0.99
+            | None ->
+                let games = pool.Pairs |> Array.sumBy (fun p -> p.Games)
+                (d0 * games + 2.0) / (games + 4.0)
         let v =
             if options.Simulations > 0 then simulate pool r w options.WhiteAdvantage d0Errors anchorAt options.Simulations (options.Seed + 1000 * poolNr)
             else sandwich fitted r w fitW d0Errors anchorAt
