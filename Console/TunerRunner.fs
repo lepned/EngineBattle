@@ -641,7 +641,6 @@ module TunerRunner =
         Challengers = 0
         DelayBetweenGames = TimeSpan.Zero
         MinMoveTimeInMS = 0
-        OrdoExePath = ""
         PgnOutPath = pgnPath
         ReferencePGNPath = if String.IsNullOrWhiteSpace referencePgnPath then "" else referencePgnPath
         NumberOfGamesInParallel = cfg.ParallelGames

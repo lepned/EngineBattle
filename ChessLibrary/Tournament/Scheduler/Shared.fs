@@ -6,24 +6,6 @@ open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.PGNTypes
 open ChessLibrary.RuntimeUtilities
 
-/// Salt composed from the PGN output path and the sorted engine names.
-/// Preserved for backward compatibility with any caller that wants
-/// salt-based shuffling explicitly; the tournament runners no longer use
-/// this (they pass `Opening.Seed` directly to `shuffleOpeningsWithSeed`).
-let tournamentSalt (pgnOutPath: string) (engines: EngineConfig list) =
-    let names = engines |> List.map (fun e -> e.Name) |> List.sort |> String.concat ","
-    pgnOutPath + "|" + names
-
-/// Deterministic shuffle derived from an arbitrary salt string (MD5-seeded RNG).
-let shuffleOpenings (salt: string) (openings: PgnGame list) =
-    let arr = openings |> List.toArray
-    let bytes = System.Text.Encoding.UTF8.GetBytes($"{arr.Length}|{salt}")
-    let hashBytes = System.Security.Cryptography.MD5.HashData(bytes)
-    let seed = abs (BitConverter.ToInt32(hashBytes, 0))
-    let rng = Random(seed)
-    rng.Shuffle(arr)
-    arr |> Array.toList
-
 /// Deterministic shuffle from an explicit integer seed. When `Opening.Seed`
 /// is left at its default (0), callers get a fixed, reproducible order;
 /// setting any other value in tournament.json picks a different permutation.

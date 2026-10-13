@@ -23,8 +23,6 @@ open ChessUtilities
 module PairingHelper =
 
     // ---- Shuffle / rotation (Scheduler.Shared) ----------------------------
-    let tournamentSalt = Scheduler.Shared.tournamentSalt
-    let shuffleOpenings = Scheduler.Shared.shuffleOpenings
     let shuffleOpeningsWithSeed = Scheduler.Shared.shuffleOpeningsWithSeed
     let sampleWithSeed (seed: int) (count: int) (source: seq<'T>) = Scheduler.Shared.sampleWithSeed seed count source
     let seededRandom = Scheduler.Shared.seededRandom

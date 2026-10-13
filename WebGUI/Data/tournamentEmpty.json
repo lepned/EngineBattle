@@ -61,36 +61,15 @@
     "RandomOpenings": false
   },
   "PgnOutPath": "",
-  "ReferencePGNPath": "",
   "EngineSetup": {
     "EngineDefFolder": "",
     "EngineDefList": []
   },
   "TimeControl": {
     "TimeConfigs": [
-      {
-        "Id": 1,
-        "Fixed": "00:01:00.000",
-        "Increment": "00:00:01.000",
-        "NodeLimit": false,
-        "Nodes": 1
-      },
-      {
-        "Id": 2,
-        "Fixed": "00:03:00.000",
-        "Increment": "00:00:02.000",
-        "NodeLimit": false,
-        "Nodes": 1
-      },
-      {
-        "Id": 3,
-        "Fixed": "00:05:00.000",
-        "Increment": "00:00:03.000",
-        "NodeLimit": false,
-        "Nodes": 100
-      }
-    ],
-    "WmovesToGo": 0,
-    "BmovesToGo": 0
+      { "Id": 1, "Tc": "60+1" },
+      { "Id": 2, "Tc": "3:00+2" },
+      { "Id": 3, "Tc": "5:00+3" }
+    ]
   }
 }

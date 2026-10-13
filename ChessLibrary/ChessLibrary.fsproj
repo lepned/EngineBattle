@@ -153,7 +153,6 @@
 		<Compile Include="Internal\Chess960TestPositions.fs" />
 		<Compile Include="Internal\Perft.fs" />
 		<Compile Include="Internal\Test.fs" />
-		<None Include="Internal\Script1.fsx" />
 
 		<!-- Tournament support modules (depend on engine, parser, etc.) -->
 		<Compile Include="Tournament\TournamentTypes.fs" />

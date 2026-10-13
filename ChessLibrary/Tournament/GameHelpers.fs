@@ -19,8 +19,6 @@ open ChessLibrary.EngineProtocol
 open ChessLibrary.TournamentTypes
 open ChessLibrary.GameReplay
 
-// Alias for backward compatibility with existing code that calls Formatting.createResultWithEval
-module Formatting = ChessLibrary.TypesDef.CoreTypes
 
 /// The result for a loss on time. `remaining` is the loser's clock after the move
 /// (Clock.remainingAfter), below zero; how far below is the result's TimeOverrunMs.
@@ -29,7 +27,7 @@ let lostOnTimeResult (playing: string) (opponent: string) (isWhite: bool) (gameM
     let resStr = if isWhite then "0-1" else "1-0"
     let player1, player2 = if isWhite then playing, opponent else opponent, playing
     let overrun = int64 (Math.Round(max 0.0 (-remaining.TotalMilliseconds)))
-    { Formatting.createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals with TimeOverrunMs = overrun }
+    { createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals with TimeOverrunMs = overrun }
 
 /// Checks if the app is shutting down
 let isAppShuttingDown (cts: CancellationTokenSource) =
@@ -56,10 +54,10 @@ let handleGameExceptionAsync
 
     // Helper to create results
     let createCancelResult () =
-        Formatting.createResult white black moves "1/2-1/2" ResultReason.Cancel dur
+        createResult white black moves "1/2-1/2" ResultReason.Cancel dur
 
     let createDisconnectedResult engineName resultStr =
-        Formatting.createResult white black moves resultStr (ResultReason.Disconnected engineName) dur
+        createResult white black moves resultStr (ResultReason.Disconnected engineName) dur
 
     // Enhanced diagnostics check
     let checkEngineWithDiagnostics (eng: ChessEngine) =

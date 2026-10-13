@@ -1348,8 +1348,6 @@ let tournamentRun (p: Parsed) =
     match loadTournament path with
     | None -> raise (Usage $"not a tournament config: {path}")
     | Some(tourny, engineList) ->
-        if not (String.IsNullOrWhiteSpace tourny.OrdoExePath) then
-            Cli.Output.info "OrdoExePath is not used any more: the ratings are EngineBattle's own"
         if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) && tourny.Challengers > 0 then
             for engine in engineList |> List.truncate tourny.Challengers do engine.IsChallenger <- true
         else

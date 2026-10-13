@@ -79,27 +79,8 @@ let ``opening hash uses fen when present (epd style)`` () =
     Assert.Equal(expected, hash)
 
 // ============================================================================
-// Opening shuffle (salt-based and seed-based)
+// Opening shuffle (seed-based)
 // ============================================================================
-
-[<Fact>]
-let ``shuffleOpenings produces same order for same salt across calls`` () =
-    let openings = [ for i in 1..20 -> mkOpening i ]
-    let salt = "C:/output/test.pgn|Alpha,Beta"
-
-    let r1 = shuffleOpenings salt openings |> List.map (fun g -> g.Raw)
-    let r2 = shuffleOpenings salt openings |> List.map (fun g -> g.Raw)
-
-    Assert.Equal<string list>(r1, r2)
-
-[<Fact>]
-let ``shuffleOpenings with different salts produces different order`` () =
-    let openings = [ for i in 1..20 -> mkOpening i ]
-
-    let r1 = shuffleOpenings "salt-A" openings |> List.map (fun g -> g.Raw)
-    let r2 = shuffleOpenings "salt-B" openings |> List.map (fun g -> g.Raw)
-
-    Assert.NotEqual<string list>(r1, r2)
 
 [<Fact>]
 let ``shuffleOpeningsWithSeed is deterministic for same seed`` () =

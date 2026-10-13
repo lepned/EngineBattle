@@ -668,17 +668,13 @@
             var tcArray = new JsonArray();
             for (int i = 0; i < timeControls.Count; i++)
             {
+                // the short form, as the documentation writes it: "5:00+3" or a node count
                 var tc = timeControls[i];
-                var totalMs = (tc.Minutes * 60 + tc.Seconds) * 1000;
-                var incMs = tc.IncrementSeconds * 1000;
-                var tcNode = new JsonObject
-                {
-                    ["Id"] = i + 1,
-                    ["Fixed"] = FormatTimeSpan(totalMs),
-                    ["Increment"] = FormatTimeSpan(incMs),
-                    ["NodeLimit"] = tc.IsNodeLimit,
-                    ["Nodes"] = tc.IsNodeLimit ? tc.Nodes : 1
-                };
+                var tcNode = new JsonObject { ["Id"] = i + 1 };
+                if (tc.IsNodeLimit)
+                    tcNode["Nodes"] = tc.Nodes;
+                else
+                    tcNode["Tc"] = $"{tc.Minutes}:{tc.Seconds:D2}+{tc.IncrementSeconds}";
                 tcArray.Add(tcNode);
             }
             root["TimeControl"]!["TimeConfigs"] = tcArray;
@@ -719,7 +715,7 @@
             // an older template's block would say it twice (the loader reads it as these keys)
             root.Remove("TestOptions");
 
-            var generatedJson = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var generatedJson = root.ToJsonString(PrettyJson);
             var genWarnings = new List<string>();
             if (generateWarning != null)
                 genWarnings.Add(generateWarning);
@@ -764,7 +760,7 @@
             try
             {
                 var node = JsonNode.Parse(content);
-                content = node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+                content = node!.ToJsonString(PrettyJson);
             }
             catch { }
 
@@ -1050,6 +1046,10 @@
         var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         return Path.Combine(folder, $"{baseName}_{ts}{extension}");
     }
+
+    // Indented, and "+" and the like written as they are (the default escapes "+" to +)
+    private static readonly JsonSerializerOptions PrettyJson =
+        new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static string FormatTimeSpan(int totalMs)
     {

@@ -4,14 +4,13 @@ open System
 open System.IO
 open System.Diagnostics
 open Microsoft.Extensions.Logging
+open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.MiscTypes
 open ChessLibrary.Chess
 open ChessLibrary.PositionTypes
 open EngineBattle.Tablebases
 
-// Alias for backward compatibility with existing code that calls Formatting.createResultWithEval
-module Formatting = ChessLibrary.TypesDef.CoreTypes
 
 /// Abstracted function to count evaluations based on a condition
 let countEvalsBasedOnCondition (evaluations: EvalType list) conditionFunc =
@@ -121,7 +120,7 @@ let adjudicateByEval
     // tournament's own evaluation rules below. Repetition, insufficient material, the 50-move
     // rule, checkmate and stalemate come first, in terminalAdjudication.
     let tbAdjudication () =
-      let tb result = Formatting.createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicateTB dur (firstTwoEvals ()) |> Some
+      let tb result = createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicateTB dur (firstTwoEvals ()) |> Some
       let whiteToMove = board.Position.STM = 0uy
       match tbOutput with
       | Some TbWdl.Win -> tb (if whiteToMove then "1-0" else "0-1")
@@ -134,11 +133,11 @@ let adjudicateByEval
     // reported as Checkmate so the PGN gets its #.
     let terminalAdjudication () =
       if board.InsufficientMaterial() then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
+          let res = createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
           Some res
 
       elif board.ClaimThreeFoldRep () then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Repetition dur (firstTwoEvals())
+          let res = createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Repetition dur (firstTwoEvals())
           Some res
 
       elif board.AnyLegalMove() |> not then
@@ -146,17 +145,17 @@ let adjudicateByEval
           let check = ChessLibrary.MoveGeneration.InCheck &mypos <> 0UL
           if check then
               if playedLastMove = player1 then
-                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.Checkmate dur  (firstTwoEvals())
+                  let res = createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.Checkmate dur  (firstTwoEvals())
                   Some res
               else
-                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.Checkmate dur (firstTwoEvals())
+                  let res = createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.Checkmate dur (firstTwoEvals())
                   Some res
           else
-              let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Stalemate dur (firstTwoEvals())
+              let res = createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Stalemate dur (firstTwoEvals())
               Some res
 
       elif board.Position.Count50 >= 100uy then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
+          let res = createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
           Some res
       // Nothing terminal about this position — the branches below decide, or nobody does.
       else
@@ -186,18 +185,18 @@ let adjudicateByEval
               let ismate = board.AnyLegalMove() |> not && (ChessLibrary.MoveGeneration.InCheck &pos <> 0UL)
               if ismate then
                   let gameRes = if pos.STM = 0uy then "0-1" else "1-0"
-                  let res = Formatting.createResultWithEval player1 player2 gameMoveList gameRes ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+                  let res = createResultWithEval player1 player2 gameMoveList gameRes ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
                   Some res
 
               elif evals.Length >= 2 && not (evalsAgreeOnWinner evals.[0] evals.[1]) then
                   logger.LogDebug("High evals but engines disagree on winner (signs differ) - not adjudicating")
                   None
               else
-                  let res = Formatting.createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+                  let res = createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
                   Some res
 
       elif tourny.Adjudication.DrawOption.Enabled && moves >= (tourny.Adjudication.DrawOption.MinDrawMove * 2 + drawPlyLength) && tooLowEvals() then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+          let res = createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
           Some res
 
       else

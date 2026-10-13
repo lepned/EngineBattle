@@ -737,7 +737,6 @@ module TypesDef =
         PauseAfterRound: int
         DelayBetweenGames: TimeSpan
         MoveOverhead: TimeSpan
-        OrdoExePath: string
         Adjudication: Adjudication
         Opening: Opening
         CupOptions: CupOptions
@@ -1052,7 +1051,6 @@ module TypesDef =
           Challengers = 0
           Rounds = 0
           PauseAfterRound = 0
-          OrdoExePath = String.Empty
           TimeControl = Unchecked.defaultof<TimeControl>
           LiveFeed = LiveFeedConfig.Empty
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
