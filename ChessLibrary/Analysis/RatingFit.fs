@@ -1,8 +1,5 @@
-/// Ratings of every player of a set of games at once, in process (what EB used Ordo for): a
-/// Bradley-Terry maximum-likelihood fit with a draw as half a win (Ordo's "predicted score =
-/// observed score" solution), an anchor or the pool average at 0, Ordo's draw model for the error
-/// bars and the draw rate for equal opponents, and the confidence for superiority between players.
-/// Pure: games in, numbers out.
+/// Ratings of every player of a set of games at once (Ordo's model, in process): Bradley-Terry with
+/// a draw as half a win, an anchor or the pool average at 0, Ordo's draw model for the errors, CFS.
 module ChessLibrary.RatingFit
 
 open System
@@ -23,8 +20,9 @@ type Game =
 type Options =
     { /// This player is fixed at 0 and the errors are relative to it; None = the pool average is 0
       Anchor: string option
-      /// White's advantage in Elo; None = fitted from the games, with a weak prior (whiteAdvantagePriorSd)
-      /// that keeps a handful of games from sending it anywhere
+      /// White's advantage as the ratings count it: Some 0.0 (default; a score is an Elo whatever the
+      /// colours, as in Ordo, fastchess and the pentanomial line) or None = fitted with the ratings.
+      /// The fit reports the advantage the games show either way.
       WhiteAdvantage: float option
       /// The draw rate for equal opponents, in percent; None = fitted from the games
       DrawRate: float option
@@ -37,7 +35,7 @@ type Options =
 
 let defaultOptions =
     { Anchor = None
-      WhiteAdvantage = None
+      WhiteAdvantage = Some 0.0
       DrawRate = None
       Confidence = 0.95
       Simulations = 0
@@ -67,6 +65,7 @@ type Fit =
       /// For equal opponents, in percent, with its error (0 when it was given or lies at 0 or 100)
       DrawRate: float
       DrawRateError: float
+      /// What the games show, given the ratings (in them only when Options.WhiteAdvantage is None)
       WhiteAdvantage: float
       WhiteAdvantageError: float
       /// The pools the games connect; players of different pools cannot be compared
@@ -79,18 +78,13 @@ type Fit =
 /// Standard Elo: a 400-point difference is a 10:1 expected score.
 let beta = Math.Log 10.0 / 400.0
 
-/// The prior on a fitted white advantage: Gaussian, mean 0, this standard deviation in Elo. A few
-/// hundred games outweigh it (the games' information grows with their number, the prior's does
-/// not: at 1 000 games it moves the estimate by about 1 %); without it six games can put the
-/// advantage anywhere.
-let whiteAdvantagePriorSd = 100.0
+/// Gaussian prior (mean 0, this sd in Elo) on the white advantage: six games of White wins stay
+/// finite, an unbalanced book's 200-270 Elo are still read within a few percent after a few dozen games.
+let whiteAdvantagePriorSd = 300.0
 
-/// The prior on every rating: Gaussian, mean 0, this standard deviation in Elo. Far too wide to
-/// move a rated player (0.2 Elo on 300 Elo from 50 games), it keeps a field whose games split it
-/// into two camps with every game between them won by the same camp - a four-player round
-/// robin after its first round can - from running to thousands of Elo with errors of millions:
-/// no finite maximum exists without it. It also makes the problem strictly concave, so no rating
-/// has to be held during the solve.
+/// Gaussian prior on every rating: too wide to move a rated player (0.2 Elo on 300 from 50 games),
+/// it keeps a field split into two camps (a 4-player RR after round one) finite and the problem
+/// strictly concave, so no rating is held during the solve.
 let ratingPriorSd = 2000.0
 
 /// The expected score of a player `diff` Elo stronger than the opponent.
@@ -120,7 +114,7 @@ let wdl (d0: float) (e: float) =
 type private Pair =
     { W: int
       B: int
-      mutable Games: int
+      mutable Games: float
       /// White's points
       mutable Score: float
       mutable WhiteWins: int
@@ -159,10 +153,10 @@ let private pools (games: Game seq) : Pool list =
                 match pairs.TryGetValue(struct (w, b)) with
                 | true, p -> p
                 | _ ->
-                    let p = { W = w; B = b; Games = 0; Score = 0.0; WhiteWins = 0; Draws = 0; BlackWins = 0 }
+                    let p = { W = w; B = b; Games = 0.0; Score = 0.0; WhiteWins = 0; Draws = 0; BlackWins = 0 }
                     pairs.[struct (w, b)] <- p
                     p
-            p.Games <- p.Games + 1
+            p.Games <- p.Games + 1.0
             match g.Outcome with
             | WhiteWin -> p.Score <- p.Score + 1.0; p.WhiteWins <- p.WhiteWins + 1
             | Draw -> p.Score <- p.Score + 0.5; p.Draws <- p.Draws + 1
@@ -191,47 +185,53 @@ let private pools (games: Game seq) : Pool list =
 /// Each player's points and games.
 let private totals (pool: Pool) =
     let score = Array.zeroCreate<float> pool.Names.Length
-    let games = Array.zeroCreate<int> pool.Names.Length
+    let games = Array.zeroCreate<float> pool.Names.Length
     for p in pool.Pairs do
         score.[p.W] <- score.[p.W] + p.Score
-        score.[p.B] <- score.[p.B] + float p.Games - p.Score
+        score.[p.B] <- score.[p.B] + p.Games - p.Score
         games.[p.W] <- games.[p.W] + p.Games
         games.[p.B] <- games.[p.B] + p.Games
     score, games
 
-/// Perfect scores (every game won or lost) have no finite rating. As Ordo: one of the player's
-/// games is counted as a draw and the rating becomes a floor or a ceiling. Returns the pairs to
-/// fit (copies) and each player's bound.
+/// A perfect score (every game won or lost) gets one virtual draw against the opponent it met most
+/// (half a game with each colour), while still perfect once earlier ones are in; the rating is then
+/// a floor or a ceiling. Real games stay as played (Ordo converts one, which changes the opponent too).
 let private boundPerfectScores (pool: Pool) =
-    let pairs = pool.Pairs |> Array.map copyPair
-    let fitted = { pool with Pairs = pairs }
-    // marked from the games as played; a converted draw is only needed while the score is still perfect
     let score0, games0 = totals pool
-    let bounds = Array.init pool.Names.Length (fun i -> if games0.[i] = 0 then Exact elif score0.[i] = float games0.[i] then Floor elif score0.[i] = 0.0 then Ceiling else Exact)
-    for i in 0 .. pool.Names.Length - 1 do
-        let score, games = totals fitted
-        if games.[i] > 0 && score.[i] = float games.[i] then
-            // a win of i turned into a draw: the pair with the most games where it won
-            let k = fitted.ByPlayer.[i] |> Array.filter (fun k -> let p = pairs.[k] in if p.W = i then p.WhiteWins > 0 else p.BlackWins > 0) |> Array.maxBy (fun k -> pairs.[k].Games)
-            let p = pairs.[k]
-            if p.W = i then (p.WhiteWins <- p.WhiteWins - 1; p.Score <- p.Score - 0.5)
-            else (p.BlackWins <- p.BlackWins - 1; p.Score <- p.Score + 0.5)
-            p.Draws <- p.Draws + 1
-        elif games.[i] > 0 && score.[i] = 0.0 then
-            let k = fitted.ByPlayer.[i] |> Array.filter (fun k -> let p = pairs.[k] in if p.W = i then p.BlackWins > 0 else p.WhiteWins > 0) |> Array.maxBy (fun k -> pairs.[k].Games)
-            let p = pairs.[k]
-            if p.W = i then (p.BlackWins <- p.BlackWins - 1; p.Score <- p.Score + 0.5)
-            else (p.WhiteWins <- p.WhiteWins - 1; p.Score <- p.Score - 0.5)
-            p.Draws <- p.Draws + 1
-    fitted, bounds
+    let bounds = Array.init pool.Names.Length (fun i -> if games0.[i] = 0.0 then Exact elif score0.[i] = games0.[i] then Floor elif score0.[i] = 0.0 then Ceiling else Exact)
+    if bounds |> Array.forall ((=) Exact) then pool, bounds
+    else
+        let pairs = pool.Pairs |> Array.map copyPair |> ResizeArray
+        let index = Dictionary<struct (int * int), int>()
+        pairs |> Seq.iteri (fun k p -> index.[struct (p.W, p.B)] <- k)
+        let pairOf w b =
+            match index.TryGetValue(struct (w, b)) with
+            | true, k -> pairs.[k]
+            | _ ->
+                let p = { W = w; B = b; Games = 0.0; Score = 0.0; WhiteWins = 0; Draws = 0; BlackWins = 0 }
+                index.[struct (w, b)] <- pairs.Count
+                pairs.Add p
+                p
+        for i in 0 .. pool.Names.Length - 1 do
+            // only while still perfect: one draw settles both ends of a 10-0 match
+            let stillPerfect () =
+                let score, games = totals (poolOf pool.Names (pairs.ToArray()))
+                score.[i] = games.[i] || score.[i] = 0.0
+            if bounds.[i] <> Exact && stillPerfect () then
+                let k = pool.ByPlayer.[i] |> Array.maxBy (fun k -> pool.Pairs.[k].Games)
+                let p = pool.Pairs.[k]
+                let j = if p.W = i then p.B else p.W
+                for (w, b) in [ (i, j); (j, i) ] do
+                    let q = pairOf w b
+                    q.Games <- q.Games + 0.5
+                    q.Score <- q.Score + 0.25
+        poolOf pool.Names (pairs.ToArray()), bounds
 
 // ------------------------------------------------------------------ the fit
 
-/// The ratings (pool average 0) and the white advantage: Newton's method on the Bradley-Terry
-/// log-likelihood with draws as half and the priors, each step solved by conjugate gradients on
-/// the sparse Hessian (one pass over the pairs per CG iteration), with backtracking so the
-/// likelihood never falls. The ratings are centred at the end (the prior leaves them there
-/// already). Returns ratings, white advantage, converged.
+/// The ratings (average 0) and the white advantage: Newton on the log-likelihood with the priors,
+/// each step by conjugate gradients on the sparse Hessian, with backtracking. Returns ratings,
+/// white advantage, converged.
 let private solve (pool: Pool) (whiteAdvantage: float option) =
     let n = pool.Names.Length
     let fitW = whiteAdvantage.IsNone
@@ -244,14 +244,14 @@ let private solve (pool: Pool) (whiteAdvantage: float option) =
         let mutable ll = 0.0
         for p in pairs do
             let e = expectedScore (x.[p.W] + w - x.[p.B]) |> max 1e-300 |> min (1.0 - 1e-16)
-            ll <- ll + p.Score * log e + (float p.Games - p.Score) * log (1.0 - e)
+            ll <- ll + p.Score * log e + (p.Games - p.Score) * log (1.0 - e)
         for i in 0 .. n - 1 do ll <- ll - x.[i] * x.[i] / (2.0 * ratingPriorSd * ratingPriorSd)
         if fitW then ll - w * w / (2.0 * whiteAdvantagePriorSd * whiteAdvantagePriorSd) else ll
     let gradient (x: float[]) =
         let w = wOf x
         let g = Array.zeroCreate<float> dim
         for p in pairs do
-            let d = beta * (p.Score - float p.Games * expectedScore (x.[p.W] + w - x.[p.B]))
+            let d = beta * (p.Score - p.Games * expectedScore (x.[p.W] + w - x.[p.B]))
             g.[p.W] <- g.[p.W] + d
             g.[p.B] <- g.[p.B] - d
             if fitW then g.[n] <- g.[n] + d
@@ -261,7 +261,7 @@ let private solve (pool: Pool) (whiteAdvantage: float option) =
     // -Hessian as a function, and its diagonal for the preconditioner
     let curvature (x: float[]) =
         let w = wOf x
-        let c = pairs |> Array.map (fun p -> let e = expectedScore (x.[p.W] + w - x.[p.B]) in beta * beta * float p.Games * e * (1.0 - e))
+        let c = pairs |> Array.map (fun p -> let e = expectedScore (x.[p.W] + w - x.[p.B]) in beta * beta * p.Games * e * (1.0 - e))
         let apply (v: float[]) =
             let y = Array.zeroCreate<float> dim
             for k in 0 .. pairs.Length - 1 do
@@ -333,19 +333,35 @@ let private solve (pool: Pool) (whiteAdvantage: float option) =
     let r = Array.init n (fun i -> x.[i] - mean)
     r, wOf x, converged
 
-/// The draw rate for equal opponents, as Ordo's -D finds it: the one at which the model's expected
-/// number of draws over the games equals the number played (bisection: the expectation rises with
-/// the rate). Its error by the delta method, from the variance of the draw count under the model.
-/// 0 or 1 with error 0 when the games have no draw, or nothing else (or the rate lands on 1).
-/// The draws are the games as played (`pool`); the expected scores come from the fitted ratings.
+/// The white advantage the games show given the ratings (Newton in one variable, with the prior),
+/// and its error from the curvature.
+let private fitWhiteAdvantage (pool: Pool) (r: float[]) (z: float) =
+    let prior = 1.0 / (whiteAdvantagePriorSd * whiteAdvantagePriorSd)
+    let mutable w = 0.0
+    let mutable curvature = prior
+    for _ in 1 .. 50 do
+        let mutable g = 0.0
+        let mutable h = prior
+        for p in pool.Pairs do
+            let e = expectedScore (r.[p.W] + w - r.[p.B])
+            g <- g + beta * (p.Score - p.Games * e)
+            h <- h + beta * beta * p.Games * e * (1.0 - e)
+        g <- g - w * prior
+        curvature <- h
+        w <- w + max -200.0 (min 200.0 (g / h))
+    w, z / sqrt curvature
+
+/// The draw rate for equal opponents as Ordo's -D finds it: expected draws = draws played
+/// (bisection), its error by the delta method; 0 or 1 with error 0 at the edges. Draws from the
+/// games as played, expected scores from the fitted ratings.
 let private fitDrawRate (pool: Pool) (r: float[]) (w: float) =
     let es = pool.Pairs |> Array.map (fun p -> expectedScore (r.[p.W] + w - r.[p.B]))
     let draws = pool.Pairs |> Array.sumBy (fun p -> float p.Draws)
-    let games = pool.Pairs |> Array.sumBy (fun p -> float p.Games)
+    let games = pool.Pairs |> Array.sumBy (fun p -> p.Games)
     if draws <= 0.0 then 0.0, 0.0
     elif draws >= games then 1.0, 0.0
     else
-        let expectedDraws d0 = Array.fold2 (fun acc e (p: Pair) -> acc + float p.Games * drawProbability d0 e) 0.0 es pool.Pairs
+        let expectedDraws d0 = Array.fold2 (fun acc e (p: Pair) -> acc + p.Games * drawProbability d0 e) 0.0 es pool.Pairs
         let mutable lo, hi = 1e-9, 1.0
         for _ in 1 .. 60 do
             let mid = (lo + hi) / 2.0
@@ -353,7 +369,7 @@ let private fitDrawRate (pool: Pool) (r: float[]) (w: float) =
         let d0 = (lo + hi) / 2.0
         if d0 >= 1.0 - 1e-6 then 1.0, 0.0
         else
-            let variance = Array.fold2 (fun acc e (p: Pair) -> let d = drawProbability d0 e in acc + float p.Games * d * (1.0 - d)) 0.0 es pool.Pairs
+            let variance = Array.fold2 (fun acc e (p: Pair) -> let d = drawProbability d0 e in acc + p.Games * d * (1.0 - d)) 0.0 es pool.Pairs
             let h = 1e-5
             let slope = (expectedDraws (min 1.0 (d0 + h)) - expectedDraws (max 0.0 (d0 - h))) / (min 1.0 (d0 + h) - max 0.0 (d0 - h))
             d0, (if slope > 0.0 then sqrt variance / slope else 0.0)
@@ -363,12 +379,9 @@ type private Covariance =
     { Var: int -> float
       Cov: int -> int -> float }
 
-/// The covariance of the ratings under the draw model: the sandwich H⁻¹ J H⁻¹ of the
-/// Bradley-Terry estimator (H the curvature of its log-likelihood, priors included; J the
-/// covariance of its score under win/draw/loss outcomes), as the covariance of the contrasts
-/// R_i - R_anchor or, with no anchor, R_i - mean. J is as sparse as the game graph, so entries
-/// are computed on demand from H⁻¹'s columns, O(pairs + n) each, and the centering from
-/// matrix-vector products - no dense product of n x n matrices.
+/// The covariance of the ratings under the draw model: the sandwich H⁻¹ J H⁻¹ (H the curvature
+/// with the priors, J the score's covariance under win/draw/loss), as contrasts against the anchor
+/// or the mean. J is as sparse as the game graph, so entries come on demand in O(pairs + n).
 let private sandwich (pool: Pool) (r: float[]) (w: float) (fitW: bool) (d0: float) (anchor: int option) : Covariance =
     let n = pool.Names.Length
     let dim = n + (if fitW then 1 else 0)
@@ -376,8 +389,8 @@ let private sandwich (pool: Pool) (r: float[]) (w: float) (fitW: bool) (d0: floa
         pool.Pairs |> Array.map (fun p ->
             let e = expectedScore (r.[p.W] + w - r.[p.B])
             let pw, pd, pl = wdl d0 e
-            let hv = beta * beta * float p.Games * e * (1.0 - e)
-            let jv = beta * beta * float p.Games * (pw * (1.0 - e) ** 2.0 + pd * (0.5 - e) ** 2.0 + pl * e * e)
+            let hv = beta * beta * p.Games * e * (1.0 - e)
+            let jv = beta * beta * p.Games * (pw * (1.0 - e) ** 2.0 + pd * (0.5 - e) ** 2.0 + pl * e * e)
             struct (p.W, p.B, hv, jv))
     let h = Array2D.zeroCreate<float> dim dim
     for struct (wi, bi, hv, _) in terms do
@@ -431,7 +444,7 @@ let private simulate (pool: Pool) (r: float[]) (w: float) (whiteAdvantage: float
             pool.Pairs |> Array.mapi (fun k p ->
                 let pw, pd, _ = probs.[k]
                 let q = { copyPair p with Games = p.Games; Score = 0.0; WhiteWins = 0; Draws = 0; BlackWins = 0 }
-                for _ in 1 .. p.Games do
+                for _ in 1 .. int (Math.Round p.Games) do
                     let u = rng.NextDouble()
                     if u < pw then (q.WhiteWins <- q.WhiteWins + 1; q.Score <- q.Score + 1.0)
                     elif u < pw + pd then (q.Draws <- q.Draws + 1; q.Score <- q.Score + 0.5)
@@ -476,13 +489,15 @@ let fit (options: Options) (games: Game seq) : Fit =
         // outcome is 0 and five opening draws would print no errors at all
         let d0Errors = min d0 0.99
         let v =
-            if options.Simulations > 0 then simulate fitted r w options.WhiteAdvantage d0Errors anchorAt options.Simulations (options.Seed + 1000 * poolNr)
+            if options.Simulations > 0 then simulate pool r w options.WhiteAdvantage d0Errors anchorAt options.Simulations (options.Seed + 1000 * poolNr)
             else sandwich fitted r w fitW d0Errors anchorAt
         if poolNr = 0 then
             drawRate <- d0 * 100.0
             drawRateError <- d0Err * 100.0
-            whiteAdv <- w
-            whiteAdvError <- if fitW then z * sqrt (max 0.0 (v.Var n)) else 0.0
+            // held in the ratings: what the games show, given them; fitted with them: the joint estimate
+            let wEst, wErr = if fitW then w, z * sqrt (max 0.0 (v.Var n)) else fitWhiteAdvantage fitted r z
+            whiteAdv <- wEst
+            whiteAdvError <- wErr
         let _, gamesOf = totals pool
         let wins = Array.zeroCreate n
         let draws = Array.zeroCreate n
@@ -499,10 +514,10 @@ let fit (options: Options) (games: Game seq) : Fit =
                 { Name = pool.Names.[i]
                   Rating = ratings.[i]
                   Error = z * sqrt (max 0.0 (v.Var i))
-                  Games = gamesOf.[i]
+                  Games = int (Math.Round gamesOf.[i])
                   Wins = wins.[i]
                   Draws = draws.[i]
-                  Losses = gamesOf.[i] - wins.[i] - draws.[i]
+                  Losses = int (Math.Round gamesOf.[i]) - wins.[i] - draws.[i]
                   Bound = bounds.[i] }
         groups.Add(pool.Names |> Array.sortByDescending (fun name -> ratings.[index.[name]]) |> List.ofArray))
     let poolOfPlayer = Dictionary<string, string>()

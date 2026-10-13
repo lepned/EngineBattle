@@ -96,6 +96,10 @@ module StandingsTable =
           p.PairLosses <- l
       | _ -> ()
 
+  /// The order of every table: rating, then points per game, NaN last; the CFS is against the next
+  /// player in this order.
+  let tableOrder (p: PlayerResult) = (if Double.IsNaN p.Elo then Double.NegativeInfinity else p.Elo), p.ScoreRate
+
   let writeResultHeader (n:int) (speedPadding:int) : string =
     let label = "Speed"
     let leftPad =
@@ -112,7 +116,8 @@ module StandingsTable =
     if Double.IsNaN(elo) then "---"
     elif elo = System.Double.PositiveInfinity then ConsoleUtils.positiveInfinitySymbol
     elif elo = System.Double.NegativeInfinity then ConsoleUtils.negativeInfinitySymbol
-    else sprintf "%7.1f" elo
+    // -0.0 is 0.0
+    else sprintf "%7.1f" (if abs elo < 0.05 then 0.0 else elo)
 
   // an anchor has no error: its rating is the reference
   let private formatError (error: float) =
@@ -176,7 +181,7 @@ module StandingsTable =
           else engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
 
       // strongest first, as the fit orders them (the CFS is against the next row)
-      let sortedPlayers = engines |> Seq.sortByDescending (fun e -> e.Elo, e.Points) |> Seq.toList
+      let sortedPlayers = engines |> Seq.sortByDescending tableOrder |> Seq.toList
 
       let speedStrings =
           sortedPlayers
@@ -294,23 +299,34 @@ module PGNCalculator =
       let anchor = match players with [ a; _ ] -> Some a | _ -> None
       Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = anchor } games)
 
-  /// Each player's Elo, error and CFS from the fit. The CFS is against the next player in rating
-  /// order (-1 for the last: no next). A player the fit has no games of keeps its own numbers.
+  /// Each player's Elo, error and CFS from the fit (CFS against the next in StandingsTable.tableOrder,
+  /// -1 for the last). A player the fit has no games of keeps its own numbers.
   let withRatingFit (fit: RatingFit.Fit option) (players: PlayerResult seq) =
     match fit with
     | None -> players |> Seq.toList
     | Some f ->
       let rated = f.Players |> List.map (fun p -> p.Name, p) |> dict
-      let next = f.Players |> List.map (fun p -> p.Name) |> List.pairwise |> dict
-      [ for p in players ->
-          match rated.TryGetValue p.Player with
-          | true, r ->
+      let withRating =
+        [ for p in players ->
+            match rated.TryGetValue p.Player with
+            | true, r -> { p with Elo = r.Rating; Error = r.Error }
+            | _ -> p ]
+      // the chain of "next" follows the table order, ties included
+      let next =
+        withRating
+        |> List.filter (fun p -> rated.ContainsKey p.Player)
+        |> List.sortByDescending StandingsTable.tableOrder
+        |> List.map (fun p -> p.Player)
+        |> List.pairwise
+        |> dict
+      [ for p in withRating ->
+          if rated.ContainsKey p.Player then
               let cfs =
                 match next.TryGetValue p.Player with
                 | true, n -> let c = f.Cfs p.Player n in if Double.IsNaN c then -1 else int (Math.Round(100.0 * c))
                 | _ -> -1
-              { p with Elo = r.Rating; Error = r.Error; CFS = cfs }
-          | _ -> p ]
+              { p with CFS = cfs }
+          else p ]
 
   /// The lines under a table: the fit's white advantage and draw rate, and a note when the games
   /// do not connect every player.
@@ -318,7 +334,7 @@ module PGNCalculator =
     match fit with
     | None -> ""
     | Some f ->
-        sprintf "White advantage = %.1f +/- %.1f\nDraw rate (equal opponents) = %.2f %% +/- %.2f\n" f.WhiteAdvantage f.WhiteAdvantageError f.DrawRate f.DrawRateError
+        sprintf "White advantage = %.1f +/- %.1f (not in the ratings)\nDraw rate (equal opponents) = %.2f %% +/- %.2f\n" (if abs f.WhiteAdvantage < 0.05 then 0.0 else f.WhiteAdvantage) f.WhiteAdvantageError f.DrawRate f.DrawRateError
         + (if f.Groups.Length > 1 then sprintf "%d groups of players the games do not connect: ratings compare within a group only\n" f.Groups.Length else "")
         // a perfect score has no rating of its own: a floor or a ceiling
         + (f.Players
@@ -562,9 +578,8 @@ module PGNCalculator =
     | [ _; _ ] as ps -> ps |> List.tryFind (fun p -> p.Elo = 0.0 && p.Error = 0.0)
     | _ -> None
 
-  /// Two players rated against an anchor: the other one's error is the paired-openings
-  /// (pentanomial) error, the one the match's Elo line gives. Nothing at the pool average (the
-  /// errors are the fit's own) or with more players.
+  /// Two players with an anchor: the other one's error is the pentanomial one, as the match's Elo
+  /// line gives it. Nothing at the pool average or with more players.
   let populatePentanomialError (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
     let players = Seq.toList players
     match anchorOf players with
@@ -573,8 +588,10 @@ module PGNCalculator =
       match matchups with
       | [ (_, counts) ] ->
           let _, error, _ = Pentanomial.pentanomialEloErrorAndLos counts
-          for p in players do
-            if p.Player <> anchor.Player then p.Error <- error
+          // no finished pair yet (one game): the fit's own error says more than an infinite one
+          if Double.IsFinite error then
+            for p in players do
+              if p.Player <> anchor.Player then p.Error <- error
       | _ -> ()
     | _ -> ()
 

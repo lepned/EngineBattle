@@ -23,7 +23,8 @@ let ``two players: the difference is the Elo of the score, with the anchor at 0`
     let f = fit { noWhite with Anchor = Some "B" } g
     Assert.Equal(0.0, (player f "B").Rating, 6)
     Assert.Equal(0.0, (player f "B").Error, 6)
-    Assert.Equal(181.7, (player f "A").Rating, 1)
+    // the rating prior's pull on 1000 games is about 0.1 Elo
+    Assert.Equal(181.7, (player f "A").Rating, 0)
     Assert.True((player f "A").Error > 10.0 && (player f "A").Error < 40.0)
     Assert.Equal(1000, (player f "A").Games)
     Assert.Equal((640, 200, 160), ((player f "A").Wins, (player f "A").Draws, (player f "A").Losses))
@@ -46,8 +47,9 @@ let ``a perfect score is a floor or a ceiling, rated as if one game were a draw`
     Assert.Equal(Ceiling, (player f "B").Bound)
     Assert.True((player f "A").Rating > (player f "B").Rating)
     Assert.False(Double.IsInfinity (player f "A").Rating)
-    // 9.5 of 10: 400 log10(9.5 / 0.5) = 511.5 apart, less the rating prior's pull on ten games (about 1 %)
-    Assert.InRange((player f "A").Rating - (player f "B").Rating, 500.0, 511.5)
+    // the ten games plus a virtual draw: 10.5 of 11, 400 log10(10.5 / 0.5) = 528.9 apart, less the
+    // rating prior's pull on eleven games (about 1 %)
+    Assert.InRange((player f "A").Rating - (player f "B").Rating, 515.0, 528.9)
     Assert.Equal((10, 0, 0), ((player f "A").Wins, (player f "A").Draws, (player f "A").Losses))
 
 [<Fact>]
@@ -106,22 +108,26 @@ let ``CFS says how sure it is that the first is stronger`` () =
     Assert.True(sure.Cfs "A" "B" > 0.99)
 
 [<Fact>]
-let ``the white advantage is fitted, or fixed at 0`` () =
+let ``the white advantage is reported from the games, and in the ratings only when asked`` () =
     // both score 70 % with White: equal players, White 147 Elo up
     let g = games "A" "B" (60, 20, 20) @ games "B" "A" (60, 20, 20)
-    let f = fit defaultOptions g
-    // the prior pulls a 200-game estimate some way towards 0; ten times the games most of the way back
-    Assert.True(f.WhiteAdvantage > 100.0 && f.WhiteAdvantage < 147.2)
-    let many = fit defaultOptions (games "A" "B" (600, 200, 200) @ games "B" "A" (600, 200, 200))
-    Assert.True(many.WhiteAdvantage > f.WhiteAdvantage && many.WhiteAdvantage > 140.0 && many.WhiteAdvantage < 147.2)
-    Assert.True(f.WhiteAdvantageError > 0.0)
-    Assert.Equal((player f "A").Rating, (player f "B").Rating, 6)
-    // six games where one side was perfect with one colour: finite, moderate numbers
-    let tiny = fit defaultOptions (games "A" "B" (2, 0, 1) @ games "B" "A" (0, 0, 3))
-    Assert.True(abs tiny.WhiteAdvantage < 200.0 && abs (player tiny "A").Rating < 600.0)
-    let f0 = fit noWhite g
-    Assert.Equal(0.0, f0.WhiteAdvantage, 6)
+    // the default holds it at 0 in the ratings and reports what the games show (the prior pulls
+    // a 200-game estimate a little towards 0)
+    let f0 = fit defaultOptions g
     Assert.Equal(0.0, (player f0 "A").Rating, 6)
+    Assert.True(f0.WhiteAdvantage > 130.0 && f0.WhiteAdvantage < 147.2 && f0.WhiteAdvantageError > 0.0)
+    // fitted with the ratings: the joint estimate, the same here since the players are equal
+    let f = fit { defaultOptions with WhiteAdvantage = None } g
+    Assert.True(f.WhiteAdvantage > 130.0 && f.WhiteAdvantage < 147.2)
+    Assert.Equal((player f "A").Rating, (player f "B").Rating, 6)
+    let many = fit { defaultOptions with WhiteAdvantage = None } (games "A" "B" (600, 200, 200) @ games "B" "A" (600, 200, 200))
+    Assert.True(many.WhiteAdvantage > f.WhiteAdvantage && many.WhiteAdvantage < 147.2)
+    // held at 0, a one-sided score is strength: 70 % with White only is 147 Elo of it
+    let oneSided = fit defaultOptions (games "A" "B" (60, 20, 20))
+    Assert.Equal(400.0 * log10 (0.7 / 0.3), (player oneSided "A").Rating - (player oneSided "B").Rating, 0)
+    // six games where one side was perfect with one colour: finite, moderate numbers
+    let tiny = fit { defaultOptions with WhiteAdvantage = None } (games "A" "B" (2, 0, 1) @ games "B" "A" (0, 0, 3))
+    Assert.True(abs tiny.WhiteAdvantage < 300.0 && abs (player tiny "A").Rating < 600.0)
 
 [<Fact>]
 let ``simulated errors agree with the information matrix`` () =
@@ -153,6 +159,21 @@ let ``the player statistics carry the fit: two players anchored at the first, mo
     Assert.Equal(-(find "C").Elo, (find "A").Elo, 6)
     Assert.True((find "A").CFS > 90 && (find "B").CFS > 90 && (find "C").CFS = -1)
     Assert.True((find "B").Error > 0.0)
+
+/// Two players with exactly the same rating: the CFS chain must follow the table's order, not the
+/// fit's (there a tie lands in either order), or the --- lands on the wrong row.
+[<Fact>]
+let ``an exact tie in the rating keeps the CFS on the right rows`` () =
+    let result w b r = ChessLibrary.TypesDef.CoreTypes.createResult w b (ResizeArray()) r ChessLibrary.MiscTypes.ResultReason.Checkmate 1000L
+    let pair a b (w, d, l) = [ for _ in 1 .. w -> result a b "1-0" ] @ [ for _ in 1 .. d -> result a b "1/2-1/2" ] @ [ for _ in 1 .. l -> result a b "0-1" ]
+    // A and B both beat C 4-0 (C's perfect loss gets the virtual draw): A and B tie exactly
+    let games = pair "A" "C" (2, 0, 0) @ pair "C" "A" (0, 0, 2) @ pair "B" "C" (2, 0, 0) @ pair "C" "B" (0, 0, 2) |> ResizeArray
+    let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults games |> Seq.sortByDescending ChessLibrary.GameAnalysis.StandingsTable.tableOrder |> Seq.toList
+    Assert.Equal((stats.[0]).Elo, (stats.[1]).Elo, 6)
+    Assert.Equal("C", stats.[2].Player)
+    Assert.True(stats.[0].CFS >= 0 && stats.[1].CFS >= 0, "the first two rows have a next row")
+    Assert.Equal(-1, stats.[2].CFS)
+    Assert.Equal(50, stats.[0].CFS)
 
 [<Fact>]
 let ``a gauntlet rates the challenger against every opponent at once`` () =

@@ -530,6 +530,8 @@ module TypesDef =
           let bw, bd, _ = this.BlackWDL
           float bw + float bd * 0.5
         member this.PairsString = sprintf "%d-%d" this.PairWins this.PairLosses
+        /// Points per game played: the tie-break of the tables after the rating (Percent is rounded)
+        member this.ScoreRate = if this.Played > 0 then this.Points / float this.Played else 0.0
         override this.ToString() =
           sprintf "%s: %.1f (%d) %d %d %d %d %.1f %.1f %d" this.Player this.Points this.Played this.Win this.Draw this.Loss this.CFS this.Error this.Elo this.Percent
 

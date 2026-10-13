@@ -332,7 +332,7 @@ let summary (p: Parsed) =
 let standingsJson (fit: RatingFit.Fit option) (anchor: string option) (players: TypesDef.CoreTypes.PlayerResult seq) (cross: TypesDef.CoreTypes.CrossTableEntry seq) =
     // NaN or infinity (a 100% score has no finite Elo) is null in JSON
     let num (x: float) = if Double.IsFinite x then Nullable x else Nullable()
-    let ordered = players |> Seq.sortByDescending (fun r -> (if Double.IsNaN r.Elo then Double.NegativeInfinity else r.Elo), r.Points) |> Seq.toList
+    let ordered = players |> Seq.sortByDescending GameAnalysis.StandingsTable.tableOrder |> Seq.toList
     let next = ordered |> List.map (fun r -> r.Player) |> List.pairwise |> dict
     {| Rating =
          (match fit with

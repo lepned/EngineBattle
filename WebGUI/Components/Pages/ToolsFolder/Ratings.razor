@@ -111,7 +111,7 @@
 	private List<CrossTableEntry> crossTable = new();
 	private Int64 testDuration = 0;
 
-	string FormatElo(PlayerResult p) => Double.IsNaN(p.Elo) ? "---" : p.Elo.ToString("F0");
+	string FormatElo(PlayerResult p) => Double.IsNaN(p.Elo) ? "---" : (Math.Abs(p.Elo) < 0.5 ? 0.0 : p.Elo).ToString("F0");
 
 	// an anchor has no error: its rating is the reference
 	string FormatError(PlayerResult p) =>
@@ -166,9 +166,9 @@
 		{
 			var f = fit.Value;
 			var groups = f.Groups.Length > 1 ? $" · {f.Groups.Length} groups of players the games do not connect: ratings compare within a group only" : "";
-			summary = $"{allResults.Length:N0} games · white advantage {f.WhiteAdvantage:+0.0;-0.0;0.0} ± {f.WhiteAdvantageError:0.0} · draw rate for equal opponents {f.DrawRate:0.00} % ± {f.DrawRateError:0.00}{groups}";
+			summary = $"{allResults.Length:N0} games · white advantage {(Math.Abs(f.WhiteAdvantage) < 0.05 ? 0.0 : f.WhiteAdvantage):+0.0;-0.0;0.0} ± {f.WhiteAdvantageError:0.0} (not in the ratings) · draw rate for equal opponents {f.DrawRate:0.00} % ± {f.DrawRateError:0.00}{groups}";
 		}
-		return (list.OrderByDescending(e => e.Elo).ThenByDescending(e => e.Points).ToList(), summary);
+		return (list.OrderByDescending(e => Double.IsNaN(e.Elo) ? double.NegativeInfinity : e.Elo).ThenByDescending(e => e.ScoreRate).ToList(), summary);
 	}
 
 	/// The table with the chosen reference as the console prints it: to the clipboard, and to the console and the log.
