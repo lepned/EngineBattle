@@ -192,5 +192,5 @@ let ``a gauntlet rates the challenger against every opponent at once`` () =
     let f = fit { noWhite with Anchor = Some "B" } g
     Assert.Equal(0.0, (player f "B").Rating, 6)
     Assert.Equal(-(player f "A").Rating, (player f "C").Rating, 6)
-    Assert.Equal([ "C"; "B"; "A" ], f.Players |> List.map (fun p -> p.Name))
+    Assert.Equal<string list>([ "C"; "B"; "A" ], f.Players |> List.map (fun p -> p.Name))
     Assert.Equal(1, f.Groups.Length)
