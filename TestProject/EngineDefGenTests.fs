@@ -85,9 +85,6 @@ let private withDef (fileName: string) (text: string) (test: string -> string ->
         test dir path
     finally Directory.Delete(dir, true)
 
-/// An absolute path on this OS: a Windows drive is not one on Linux, where GetFullPath would put the cwd in front
-let private absolute (p: string) = if OperatingSystem.IsWindows() then p else p.Substring 2
-
 let private copied defPath net name =
     match EngineDefGen.fromDef defPath net name None with
     | Ok d -> d
@@ -101,12 +98,14 @@ let private failed defPath net name =
 [<Fact>]
 let ``a checkpoint's def moves its step on and points at the new net`` () =
     withDef "Ceres_srv_512_16_deg4_t91_100M.json" templateJson (fun dir path ->
-        let net = absolute "C:/Nets/a4000-21bn11_srv_512_16_deg4_t91_1B_700026880.onnx"
+        // a folder that is absolute on every OS, as the def's own
+        let nets = Path.Combine(dir, "Nets").Replace('\\', '/')
+        let net = nets + "/a4000-21bn11_srv_512_16_deg4_t91_1B_700026880.onnx"
         let d = copied path net None
         Assert.Equal((Path.Combine(dir, "Ceres_srv_512_16_deg4_t91_700M.json")).Replace('\\', '/'), d.DefPath)
         Assert.Equal("Ceres srv 512x16 deg4 t91 700M", d.Name)
         Assert.Contains("\"Network\": \"" + net + "\"", d.Text)
-        Assert.Contains("\"NetworkPath\": \"" + absolute "C:/Nets" + "\"", d.Text)
+        Assert.Contains("\"NetworkPath\": \"" + nets + "\"", d.Text)
         Assert.Contains("\"Alias\": \"Ceres srv 512x16 deg4 700M\"", d.Text)
         // everything else as it was
         Assert.Contains("\"Device\": \"GPU:0#TensorRTNative\"", d.Text)
@@ -131,14 +130,17 @@ let ``any other def is named after the net, or --name`` () =
   }
 }"""
     withDef "Lc0_BT4_332.json" lc0 (fun dir path ->
-        let d = copied path (absolute "C:/Nets/BT5 big.pb.gz") None
+        let nets = Path.Combine(dir, "Nets").Replace('\\', '/')
+        let net = nets + "/BT5 big.pb.gz"
+        let d = copied path net None
         Assert.Equal("BT5 big", d.Name)
         Assert.Equal((Path.Combine(dir, "BT5big.json")).Replace('\\', '/'), d.DefPath)
-        Assert.Contains("\"WeightsFile\": \"" + absolute "C:/Nets/BT5 big.pb.gz" + "\"", d.Text)
+        Assert.Contains("\"WeightsFile\": \"" + net + "\"", d.Text)
         Assert.Contains("\"Name\": \"BT5 big\"", d.Text)
         Assert.Contains("\"Threads\": 2", d.Text)
         // a path as written, not \u-escaped
-        Assert.Contains("\"WeightsFile\": \"" + absolute "C:/Nett/Bjørn & co/BT5.pb.gz" + "\"", (copied path (absolute "C:/Nett/Bjørn & co/BT5.pb.gz") None).Text)
+        let odd = nets + "/Bjørn & co/BT5.pb.gz"
+        Assert.Contains("\"WeightsFile\": \"" + odd + "\"", (copied path odd None).Text)
         // no NetworkPath in the def, none added
         Assert.DoesNotContain("NetworkPath", d.Text)
         let named = copied path "C:/Nets/BT5.pb.gz" (Some "LC0 BT5")
