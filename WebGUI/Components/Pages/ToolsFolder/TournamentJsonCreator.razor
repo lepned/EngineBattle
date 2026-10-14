@@ -217,6 +217,11 @@
                 <label>Openings Ply</label>
                 <input type="number" @bind="openingsPly" min="1" max="999" />
             </div>
+            <div class="field-group">
+                <label>Skip Openings</label>
+                <input type="number" @bind="openingsSkip" min="0" />
+                <small>The first N entries of the book are not used (0 = from the start)</small>
+            </div>
             <div class="toggle-row">
                 <label class="toggle"><input type="checkbox" @bind="openingsTwice" /><span class="slider"></span></label>
                 <span class="toggle-label">Play Each Opening Twice (swap colors)</span>
@@ -445,6 +450,7 @@
     // ── Openings ──
     private string openingsPath = "";
     private int openingsPly = 100;
+    private int openingsSkip = 0;
     private bool openingsTwice = true;
     private bool randomOpenings = false;
 
@@ -689,6 +695,7 @@
             // Openings
             root["Opening"]!["OpeningsPath"] = Slashes(openingsPath);
             root["Opening"]!["OpeningsPly"] = openingsPly;
+            if (openingsSkip > 0) root["Opening"]!["OpeningsSkip"] = openingsSkip;
             root["Opening"]!["OpeningsTwice"] = openingsTwice;
             // a round robin's switch; every other mode has its own in its options block
             root["Opening"]!["RandomOpenings"] = tournamentMode == "RR" && randomOpenings;

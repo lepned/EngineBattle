@@ -215,16 +215,14 @@ let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: Che
 // Opening and Game Loading Helpers
 // ============================================================================
 
-/// Load openings from PGN or EPD file without truncating (for Cup/Swiss)
-let loadOpeningsUnlimited (path: string option) (defaultRounds: int) : PgnGame[] * bool =
+/// Load openings from PGN or EPD file without truncating (for Cup/Swiss).
+/// skip: the first entries of the book that are not used (Opening.OpeningsSkip)
+let loadOpeningsUnlimited (path: string option) (skip: int) (defaultRounds: int) : PgnGame[] * bool =
     match path with
     | Some p ->
-        if p.ToLower().Contains ".epd" then
-            let games = EPDExtractor.parseEPDFile p |> Seq.toArray
-            (games, true)
-        else
-            let games = ChessLibrary.FullPGNParser.parsePgnFile p |> Seq.toArray
-            (games, false)
+        let epd = p.ToLower().Contains ".epd"
+        let parsed = if epd then EPDExtractor.parseEPDFile p else ChessLibrary.FullPGNParser.parsePgnFile p
+        (PGNHelper.skipOpenings skip parsed |> Seq.toArray, epd)
     | None ->
         let games = [| for i = 1 to defaultRounds do yield PgnGame.Empty i |]
         (games, false)

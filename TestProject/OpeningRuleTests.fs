@@ -100,7 +100,7 @@ let private tournament mode players seed =
         PgnOutPath = Path.Combine(dir, "out.pgn")
         Opening = { Tournament.Empty.Opening with OpeningsPath = Some (GoldenBook.writeBook dir); OpeningsPly = 4; Seed = seed }
         EngineSetup = { Tournament.Empty.EngineSetup with Engines = engines players } }
-  t, GameHelpers.loadOpeningsUnlimited t.Opening.OpeningsPath t.Rounds |> fst |> List.ofArray
+  t, GameHelpers.loadOpeningsUnlimited t.Opening.OpeningsPath t.Opening.OpeningsSkip t.Rounds |> fst |> List.ofArray
 
 // 16 players: 15 matches and their tiebreaks, more pairs than the book has openings
 let private cup unique random seed =

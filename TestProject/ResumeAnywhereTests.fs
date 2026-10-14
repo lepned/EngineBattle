@@ -100,7 +100,7 @@ let private fileText (state: 'S option) =
       node.ToJsonString()
 
 let private openingsOf (t: Tournament) =
-  GameHelpers.loadOpeningsUnlimited t.Opening.OpeningsPath t.Rounds |> fst |> List.ofArray
+  GameHelpers.loadOpeningsUnlimited t.Opening.OpeningsPath t.Opening.OpeningsSkip t.Rounds |> fst |> List.ofArray
 
 let private engines n = [ for i in 1 .. n -> { EngineConfig.Empty with Name = sprintf "e%d" i; Rating = 3000 - i * 10 } ]
 

@@ -128,7 +128,6 @@ module MatchMapping =
 
     // openings
     let o = t.Opening
-    if o.Start > 1 then note $"-openings start={o.Start} is not applied; the book is used from its first opening"
     let extensionFormat =
       if o.File.ToLowerInvariant().Contains ".epd" then MatchArgs.Epd
       elif o.File <> "" then MatchArgs.Pgn
@@ -193,7 +192,9 @@ module MatchMapping =
               OpeningsTwice = (t.Games = 2)
               OpeningsPly = (if o.Plies < 0 then Int32.MaxValue else o.Plies)
               RandomOpenings = (o.Order = MatchArgs.Random)
-              Seed = int (t.Seed % uint64 Int32.MaxValue) }
+              Seed = int (t.Seed % uint64 Int32.MaxValue)
+              // fastchess start= is 1-based: start=3 skips two entries
+              OpeningsSkip = max 0 (o.Start - 1) }
           PgnOutPath = pgnPath
           EngineSetup = { Engines = engines; EngineDefFolder = ""; EngineDefList = [] }
           TimeControl = { TimeConfigs = timeConfigs; WmovesToGo = 0; BmovesToGo = 0 } }

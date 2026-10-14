@@ -141,11 +141,12 @@ let private runMode (mode: Mode<'S, 'M>) (play: (Pairing -> Async<Result option>
   logger.LogInformation("{Mode} tournament about to start", mode.Name)
   mode.Check logger tourny
 
-  let (games, epdBook) = loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds
+  let (games, epdBook) = loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds
   let openings = games |> Seq.toList
   if openings.IsEmpty then
-    logger.LogError("No openings available for {Mode} tournament", mode.Name)
-    failwith $"No openings available for {mode.Name} tournament."
+    let why = if tourny.Opening.OpeningsSkip > 0 then sprintf " (OpeningsSkip=%d leaves nothing)" tourny.Opening.OpeningsSkip else ""
+    logger.LogError("No openings available for {Mode} tournament{Why}", mode.Name, why)
+    failwith $"No openings available for {mode.Name} tournament{why}."
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referenceGames = loadReferenceGames tourny.ReferencePGNPath
 

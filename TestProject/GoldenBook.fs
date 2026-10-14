@@ -23,7 +23,7 @@ let private labels =
   lazy (
     let dir = Path.Combine(Path.GetTempPath(), "eb-golden-book-" + Guid.NewGuid().ToString "N")
     Directory.CreateDirectory dir |> ignore
-    let games, _ = GameHelpers.loadOpeningsUnlimited (Some (writeBook dir)) 2
+    let games, _ = GameHelpers.loadOpeningsUnlimited (Some (writeBook dir)) 0 2
     games |> Array.mapi (fun i g -> ChessUtilities.Hash.computeOpeningHashFromGame g, sprintf "o%d" (i + 1)) |> Map.ofArray)
 
 /// The book opening a hash belongs to ("o1".."o12"), as the traces name it on every platform.

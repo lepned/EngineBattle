@@ -124,8 +124,11 @@ The command line is taken as written; the match is EngineBattle's:
 Accepted but **not applied yet** (noted in the `-log` file): `timemargin=` with a clock or
 nodes or when not every engine plays `st=`, `st=` together with `nodes=` (nodes limit the search), `restart=on`,
 `depth=` together with another limit, `tc=` together with `nodes=` (nodes limit the search),
-`-maxmoves`, `-openings start=`, `-noswap`, `-reverse`, `-tbignore50`, `-tbadjudicate`, more
+`-maxmoves`, `-noswap`, `-reverse`, `-tbignore50`, `-tbadjudicate`, more
 than one `-tb` folder, `-epdout`, and the affinity/latency/strict options.
+
+`-openings start=N` is applied as `OpeningsSkip: N-1`: the first N-1 entries of the file are not used, before
+any random draw. fastchess wraps round the book when `start` passes its end; EngineBattle stops with a message instead.
 
 **Refused** with an error, since the games would not be the games asked for: `depth=` as the
 only limit.

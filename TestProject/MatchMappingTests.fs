@@ -184,8 +184,11 @@ let ``accepted settings that are not acted on are noted`` () =
         mapped ([ "-engine"; "cmd=a"; "name=A"; "tc=10+0.1"; "timemargin=50"; "restart=on"; "depth=12" ] @ lc0
                 @ [ "-maxmoves"; "200"; "-noswap"; "-openings"; "file=b.pgn"; "start=5"; "-epdout"; "file=x.epd"
                     "-sprt"; "elo0=0"; "elo1=5"; "alpha=0.05"; "beta=0.05" ])
-    for fragment in [ "timemargin=50"; "restart=on"; "depth=12"; "-maxmoves"; "-noswap"; "start=5"; "-epdout" ] do
+    for fragment in [ "timemargin=50"; "restart=on"; "depth=12"; "-maxmoves"; "-noswap"; "-epdout" ] do
         hasNote fragment m
+    // start= is applied: 1-based, so start=5 skips four entries
+    Assert.Equal(4, m.Tournament.Opening.OpeningsSkip)
+    Assert.False(m.Notes |> List.exists (fun n -> n.Contains "-openings start="))
     // the SPRT is applied (it stops the match), so it is not a note
     Assert.False(m.Notes |> List.exists (fun n -> n.Contains "-sprt"))
 

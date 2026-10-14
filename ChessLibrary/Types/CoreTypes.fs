@@ -626,7 +626,8 @@ module TypesDef =
       static member Off = { Enabled = false; MinWinMove = 6_000; WinMoveLength = 1; MinWinScore = 1000.0 }
     type TableBaseAdjudication = { UseTBAdjudication: bool; TablebaseDirectory: string; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
-    type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool; Seed: int }
+    /// OpeningsSkip: the first N entries of the book are not used (raw entries, before any sampling)
+    type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool; Seed: int; OpeningsSkip: int }
     type CupOptions =
       { RoundPairIncrements: int list
         SeedingStrategy: string
@@ -930,6 +931,7 @@ module TypesDef =
             let parts = ResizeArray<string>()
             parts.Add(sprintf "Book: %s" book)
             parts.Add(sprintf "ply=%d" x.Opening.OpeningsPly)
+            if x.Opening.OpeningsSkip > 0 then parts.Add(sprintf "skip=%d" x.Opening.OpeningsSkip)
             parts.Add(sprintf "twice=%b" x.Opening.OpeningsTwice)
             if mode.Equals("Swiss", StringComparison.OrdinalIgnoreCase) && not (obj.ReferenceEquals(x.SwissOptions, null)) then
               parts.Add(sprintf "random=%b" x.SwissOptions.RandomOpenings)
@@ -994,6 +996,7 @@ module TypesDef =
               parts.Add $"Book={Path.GetFileName path}"
               let random = x.RandomOpeningsForMode
               parts.Add (sprintf "OpeningsPly=%d" x.Opening.OpeningsPly)
+              if x.Opening.OpeningsSkip > 0 then parts.Add (sprintf "OpeningsSkip=%d" x.Opening.OpeningsSkip)
               parts.Add (sprintf "OpeningsTwice=%b" x.Opening.OpeningsTwice)
               parts.Add (sprintf "RandomOpenings=%b" random)
           // without a book the opening settings do nothing
@@ -1085,7 +1088,7 @@ module TypesDef =
           TimeControl = Unchecked.defaultof<TimeControl>
           LiveFeed = LiveFeedConfig.Empty
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
-          Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false; Seed = 0 }
+          Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false; Seed = 0; OpeningsSkip = 0 }
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = ""; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "" }
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "" }

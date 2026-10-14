@@ -80,16 +80,18 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
             if tourny.VerboseLogging then
                 logger.LogError($"Opening file {path} does not exist")
             [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
-        elif path.ToLower().Contains ".epd" then
-            epdBook <- true
-            take (EPDExtractor.parseEPDFile path)
         else
-            let all = take (ChessLibrary.FullPGNParser.parsePgnFile path)
+            epdBook <- path.ToLower().Contains ".epd"
+            let parsed = if epdBook then EPDExtractor.parseEPDFile path else ChessLibrary.FullPGNParser.parsePgnFile path
+            let all = take (PGNHelper.skipOpenings tourny.Opening.OpeningsSkip parsed)
             if tourny.VerboseLogging then
                 logger.LogInformation $"Total number of openings in PGN = {all.Length}"
             all
         |_ ->
             [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
+    // only the skip can empty a book that exists when there are rounds to fill
+    if games.Length = 0 && tourny.Opening.OpeningsSkip > 0 && effectiveBookSize > 0 then
+        failwith (sprintf "OpeningsSkip=%d leaves no openings in the book %s" tourny.Opening.OpeningsSkip (tourny.GetOpeningFileName()))
 
     if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 && games.Length < effectiveBookSize then
         ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow

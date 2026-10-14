@@ -165,7 +165,7 @@ let ``a match started in a cancelled run does not move the ladder, even if its l
   let sc = { (scenarios |> List.head) with Name = "cancel-decides" }
   let dir = freshDir ()
   let tourny = tournamentFor sc dir
-  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds |> fst |> List.ofArray
+  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds |> fst |> List.ofArray
   let st = LadderMachine.create (LadderMachine.configOf tourny openings) None 0
   let result (p: Pairing) r = Some (createResult p.White.Name p.Black.Name (ResizeArray()) r MiscTypes.ResultReason.Checkmate 1000L)
   let play effects = effects |> List.pick (function ModeRunner.Play p -> Some p | _ -> None)
@@ -185,7 +185,7 @@ let ``a ladder resumed without one of its engines still saves the match it decid
   let sc = { (scenarios |> List.head) with Name = "engine-removed" }
   let dir = freshDir ()
   let tourny = tournamentFor sc dir
-  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds |> fst |> List.ofArray
+  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds |> fst |> List.ofArray
   let cfg = LadderMachine.configOf tourny openings
   let result (p: Pairing) r = Some (createResult p.White.Name p.Black.Name (ResizeArray()) r MiscTypes.ResultReason.Checkmate 1000L)
   let play effects = effects |> List.pick (function ModeRunner.Play p -> Some p | _ -> None)

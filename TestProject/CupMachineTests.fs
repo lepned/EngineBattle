@@ -177,7 +177,7 @@ let ``the Cup runner plays the tournament the old runner played, game for game``
 let private machineFor (sc: Scenario) (loaded: CupBracket option) =
   let dir = freshDir ()
   let tourny = tournamentFor sc dir
-  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds |> fst |> List.ofArray
+  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds |> fst |> List.ofArray
   CupMachine.create (CupMachine.configOf tourny sc.Strategy sc.Unique openings) loaded 0, openings
 
 let private plays effects = effects |> List.choose (function ModeRunner.Play p -> Some p | _ -> None)

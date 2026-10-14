@@ -89,6 +89,9 @@ let ``the tournament part of a game's comment says what it needs to be played ag
     let withBook = { t with Opening = { t.Opening with OpeningsPath = Some "C:/books/b.pgn"; OpeningsPly = 8 } }.PGNSummary()
     for part in [ "Book=b.pgn"; "OpeningsPly=8"; "OpeningsTwice="; "RandomOpenings=" ] do
         Assert.Contains(part, withBook)
+    // a skip is said only when set
+    Assert.DoesNotContain("OpeningsSkip=", withBook)
+    Assert.Contains("OpeningsSkip=3", { t with Opening = { t.Opening with OpeningsPath = Some "b.pgn"; OpeningsSkip = 3 } }.PGNSummary())
     // the mode by its one name, however the file spells it
     Assert.Contains("Mode=RR;", { t with TournamentMode = "roundrobin" }.PGNSummary())
     Assert.Contains("Mode=RR;", { t with TournamentMode = "rr" }.PGNSummary())

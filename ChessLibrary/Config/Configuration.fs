@@ -432,6 +432,25 @@ module Validation =
           for msg in msgs do
               ConsoleUtils.printInColor ConsoleColor.Red msg
 
+  /// Entries in a book without parsing it: PGN games by their Event tag, EPD lines with text
+  let countBookEntries (path: string) =
+      let epd = path.ToLower().Contains ".epd"
+      File.ReadLines path
+      |> Seq.filter (fun l -> if epd then not (String.IsNullOrWhiteSpace l) else l.StartsWith("[Event ", StringComparison.Ordinal))
+      |> Seq.length
+
+  let validateOpeningSkip (tourny: Tournament) =
+      let skip = tourny.Opening.OpeningsSkip
+      if skip < 0 then Errors [sprintf "OpeningsSkip=%d in tournament.json must be 0 or more" skip]
+      elif skip = 0 then Ok
+      else
+          match tourny.Opening.OpeningsPath with
+          | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path ->
+              let entries = countBookEntries path
+              if skip >= entries then Errors [sprintf "OpeningsSkip=%d leaves no openings: the book %s has %d entries" skip (Path.GetFileName path) entries]
+              else Ok
+          | _ -> Ok
+
   let validateOpeningPath (tourny: Tournament) =
       match tourny.Opening.OpeningsPath with
       | Some path when not (String.IsNullOrEmpty path) ->
@@ -524,6 +543,7 @@ module Validation =
           validateTimeControl tourny
           validateTournamentModeOptions tourny
           validateOpeningPath tourny
+          validateOpeningSkip tourny
           validatePgnOutPath tourny
           validateEngineTimeControls tourny tourny.EngineSetup.Engines
           validateTablebases tourny
@@ -549,15 +569,17 @@ module Validation =
       match tourny.Opening.OpeningsPath with
       | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path ->
           let info = FileInfo(path)
-          let key = info.FullName
+          let skip = max 0 tourny.Opening.OpeningsSkip
+          let key = sprintf "%s|%d" info.FullName skip
           match bookCheckCache.TryGetValue key with
           | true, (len, stamp, warnings) when len = info.Length && stamp = info.LastWriteTimeUtc -> warnings
           | _ ->
               let warnings =
                   try
+                      // the book as played: after the skip, numbered as in the file
                       let openings =
-                          if path.ToLower().Contains ".epd" then EPDExtractor.parseEPDFile path |> Seq.toArray
-                          else FullPGNParser.parsePgnFile path |> Seq.toArray
+                          (if path.ToLower().Contains ".epd" then EPDExtractor.parseEPDFile path else FullPGNParser.parsePgnFile path)
+                          |> PGNHelper.skipOpenings skip |> Seq.toArray
                       let tag (g: PGNTypes.PgnGame) (name: string) =
                           g.GameMetaData.OtherTags
                           |> List.tryFind (fun t -> t.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
@@ -583,7 +605,7 @@ module Validation =
                               if moves.Length > 10 then text + " ..." else text
                       let groups =
                           openings
-                          |> Array.mapi (fun i g -> i, g)
+                          |> Array.mapi (fun i g -> i + skip, g)
                           |> Array.groupBy (fun (_, g) -> ChessUtilities.Hash.computeOpeningHashFromGame g)
                           |> Array.map snd
                           |> Array.filter (fun entries -> entries.Length > 1)

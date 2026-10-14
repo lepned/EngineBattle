@@ -619,7 +619,9 @@ module TunerRunner =
           OpeningsPath = openingPath
           OpeningsPly = cfg.OpeningsPly
           OpeningsTwice = cfg.OpeningsTwice
-          RandomOpenings = false }
+          RandomOpenings = false
+          // the tuner plays its own book from the top; a skip in the base tournament.json is not its own
+          OpeningsSkip = 0 }
 
     let hasDeviation = preventDeviationFor <> null && preventDeviationFor.Length > 0
 

@@ -110,7 +110,7 @@ let private runRunner (sc: Scenario) dir (stopAt: int option) (calls: int) =
 /// The machine, one run, as the driver will run it.
 let private runMachine (sc: Scenario) dir (loaded: SwissState option) (stopAt: int option) (calls: int) =
   let tourny = tournamentFor sc dir
-  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds |> fst |> List.ofArray
+  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds |> fst |> List.ofArray
   let cfg = SwissMachine.configOf tourny openings
   let trace = ResizeArray<string>()
   let player = Player(sc, stopAt, calls)
@@ -231,7 +231,7 @@ let ``a resumed file's undecided bye is scored and saved before play goes on`` (
   let dir = freshDir ()
   let sc = { (scenarios |> List.find (fun s -> s.Name = "odd-players-bye")) with Name = "bye-resume" }
   let tourny = tournamentFor sc dir
-  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds |> fst |> List.ofArray
+  let openings = GameHelpers.loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds |> fst |> List.ofArray
   let cfg = SwissMachine.configOf tourny openings
   let pairing a b bye : SwissPairing =
     { PairId = (if bye then 3 else 1); RoundNumber = 1; PlayerA = a; PlayerB = b; PlayerARating = 0; PlayerBRating = 0

@@ -152,3 +152,9 @@ let evalsByPly (game: PgnGame) : System.Collections.Generic.Dictionary<int, stri
         | Some e -> evals.[i] <- e
         | None -> ()
   evals
+
+/// The book without its first `skip` entries (Opening.OpeningsSkip). Lazy, so the round robin loader
+/// still stops at Rounds; a skip past the end leaves nothing (no exception), the caller reports it
+let skipOpenings (skip: int) (book: seq<PgnGame>) : seq<PgnGame> =
+    if skip <= 0 then book
+    else book |> Seq.indexed |> Seq.choose (fun (i, g) -> if i >= skip then Some g else None)

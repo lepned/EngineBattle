@@ -41,7 +41,7 @@ let private runSwiss players rounds (cycle: string[]) seedGroups =
         Opening = { Tournament.Empty.Opening with OpeningsPath = Some (GoldenBook.writeBook dir); OpeningsPly = 4; Seed = 11 }
         EngineSetup = { Tournament.Empty.EngineSetup with Engines = engines players }
         SwissOptions = { Tournament.Empty.SwissOptions with GamesPerMatch = 2; Rounds = rounds; SeedGroupCount = seedGroups } }
-  let openings = GameHelpers.loadOpeningsUnlimited t.Opening.OpeningsPath t.Rounds |> fst |> List.ofArray
+  let openings = GameHelpers.loadOpeningsUnlimited t.Opening.OpeningsPath t.Opening.OpeningsSkip t.Rounds |> fst |> List.ofArray
   let mutable played = 0
   let mutable saved = None
   let rec loop machine event =
