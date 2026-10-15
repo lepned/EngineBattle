@@ -27,6 +27,13 @@
     min-width: 300px;
 }
 
+/* The column takes its width from the board, not from the move list below it: a list that wraps on
+   screen still counts at its unwrapped length, and the column grew with every move played. */
+.tb-board-col ::deep .mcb-movelist-below {
+    width: 0;
+    min-width: 100%;
+}
+
 .tb-panel {
     flex: 1 1 320px;
     min-width: 280px;
