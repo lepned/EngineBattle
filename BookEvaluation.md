@@ -20,8 +20,10 @@ WebGUI: **Tools → Book Evaluation** (`/tools/book-evaluation`)
 Add one or more engines using the **+ Add Engine** button, which opens a file browser for engine definition JSON files. The page also auto-loads engines from your Global Settings (Default Engine and Secondary Engine) on startup.
 
 For each engine you can configure:
-- **Mode**: `Nodes` or `Time` (milliseconds)
-- **Value**: The search limit (e.g. 10000 nodes or 3000 ms)
+- **Mode**: `Nodes`, `Time` (milliseconds) or `Depth`
+- **Value**: The search limit (e.g. 10000 nodes, 3000 ms or depth 20)
+
+Depth is for alpha-beta engines (Stockfish and the like). A neural engine reads a depth loosely or refuses it and never answers, so give it nodes or time.
 
 ### Parameters
 
@@ -75,8 +77,8 @@ eb-cli book eval book.epd --engine Stockfish19.json --min-eval 0.3 --max-eval 1.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--engine ENGINE[,nodes=N\|,movetime=MS]` | (required) | An engine (a def, an exe or a def name), with its own limit after a comma; repeat for more |
-| `--nodes N` / `--movetime MS` | 10000 nodes | The limit of every engine without its own |
+| `--engine ENGINE[,nodes=N\|,movetime=MS\|,depth=N]` | (required) | An engine (a def, an exe or a def name), with its own limit after a comma; repeat for more |
+| `--nodes N` / `--movetime MS` / `--depth N` | 10000 nodes | The limit of every engine without its own |
 | `--min-eval`, `--max-eval`, `--max-diff` | 0.8, 1.0, 0.4 | The filter above, in pawns |
 | `--count N` | the whole book | Openings to read from the book |
 | `-o, --out FILE` | `BookEvals/BookEval_<book>_<engines>.<ext>` beside the book | Output file; an existing one needs `--force` |

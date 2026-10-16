@@ -197,3 +197,17 @@ let ``mistakes in position, values fit and gui are usage errors`` () =
   try
     Assert.Contains("does not use --engine", usageOf [ "piece-values"; "fit"; epd; "--from"; "outcome"; "--engine"; "sf" ] Commands.Values.fit)
   finally System.IO.File.Delete epd
+
+[<Fact>]
+let ``book eval takes a depth, for the run or for one engine, and only one default limit`` () =
+  match parse real [ "book"; "eval"; "b.pgn"; "--engine"; "sf.json"; "--nodes"; "5"; "--depth"; "3" ] with
+  | UsageError(message, _) -> Assert.Contains("give only one of", message)
+  | other -> Assert.Fail $"{other}"
+  let book = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "eb_book_%s.pgn" (System.Guid.NewGuid().ToString("N")))
+  System.IO.File.WriteAllText(book, "")
+  try
+    let usageOf (tokens: string list) = (Assert.Throws<Usage>(fun () -> Commands.Runs.bookEval (runReal tokens) |> ignore)).Data0
+    // the engine's own limit is checked before the engine is looked up
+    Assert.Contains("bad depth '0'", usageOf [ "book"; "eval"; book; "--engine"; "sf.json,depth=0" ])
+    Assert.Contains("bad depth 'x'", usageOf [ "book"; "eval"; book; "--engine"; "sf.json,depth=x" ])
+  finally System.IO.File.Delete book

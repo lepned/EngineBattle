@@ -1266,18 +1266,19 @@ let bookEvalSpec =
           Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
         Args = [ arg "book" "an opening book (.pgn or .epd)" ]
         Options =
-          [ value "engine" "ENGINE[,nodes=N|,movetime=MS]" "An engine, with its own limit after a comma if it has one; at least one" |> repeatable
+          [ value "engine" "ENGINE[,nodes=N|,movetime=MS|,depth=N]" "An engine, with its own limit after a comma if it has one; at least one" |> repeatable
             value "nodes" "N" "The limit of every engine without its own" |> withDefault "10000"
             value "movetime" "MS" "A time limit for every engine without its own, instead of nodes"
+            value "depth" "N" "A depth for every engine without its own, instead of nodes (alpha-beta engines; a neural engine reads a depth loosely or not at all)"
             value "min-eval" "PAWNS" "The smallest |eval| kept" |> withDefault "0.8"
             value "max-eval" "PAWNS" "The largest |eval| kept" |> withDefault "1.0"
             value "max-diff" "PAWNS" "The largest spread between the engines" |> withDefault "0.4"
             value "count" "N" "Only the first N openings"
             out "The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)"
             force ]
-        OneOf = [ [ "nodes"; "movetime" ] ]
+        OneOf = [ [ "nodes"; "movetime"; "depth" ] ]
         Examples =
-          [ "eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000", "Two engines, lc0 with its own limit"
+          [ "eb-cli book eval book.pgn --engine sf.json,depth=20 --engine lc0.json,nodes=2000", "Two engines, each with its own limit"
             "eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd", "A wider window, to a file of its own" ] }
 
 let bookEval (p: Parsed) =
@@ -1288,7 +1289,8 @@ let bookEval (p: Parsed) =
         match text.Split('=') with
         | [| "nodes"; n |] -> (match Int32.TryParse n with | true, v when v > 0 -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit v | _ -> raise (Usage $"--engine: bad nodes '{n}'"))
         | [| "movetime"; ms |] -> (match Int32.TryParse ms with | true, v when v > 0 -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit v | _ -> raise (Usage $"--engine: bad movetime '{ms}'"))
-        | _ -> raise (Usage $"--engine: '{text}' is not nodes=N or movetime=MS")
+        | [| "depth"; d |] -> (match Int32.TryParse d with | true, v when v > 0 -> TimeControlTypes.TimeControlCommands.SearchLimit.DepthLimit v | _ -> raise (Usage $"--engine: bad depth '{d}'"))
+        | _ -> raise (Usage $"--engine: '{text}' is not nodes=N, movetime=MS or depth=N")
     let engines =
         match valuesOf p "engine" with
         | [] -> raise (Usage "give at least one --engine")
@@ -1297,14 +1299,15 @@ let bookEval (p: Parsed) =
             |> List.map (fun e ->
                 let name, limit =
                     match e.LastIndexOf ',' with
-                    | i when i > 0 && (e.Substring(i + 1).StartsWith "nodes=" || e.Substring(i + 1).StartsWith "movetime=") -> e.Substring(0, i), Some(limitText (e.Substring(i + 1)))
+                    | i when i > 0 && (let tail = e.Substring(i + 1) in tail.StartsWith "nodes=" || tail.StartsWith "movetime=" || tail.StartsWith "depth=") -> e.Substring(0, i), Some(limitText (e.Substring(i + 1)))
                     | _ -> e, None
                 { Config = Cli.Groups.engineFrom p name "uci"; Limit = limit })
     let defaultLimit =
-        match intOf p "movetime", intOf p "nodes" with
-        | Some ms, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms
-        | None, Some n -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit n
-        | None, None -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit 10000
+        match intOf p "movetime", intOf p "depth", intOf p "nodes" with
+        | Some ms, _, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms
+        | None, Some d, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.DepthLimit d
+        | None, None, Some n -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit n
+        | None, None, None -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit 10000
     let label = ChessLibrary.BookEvaluation.engineLabel (engines |> List.map (fun e -> ({ Config = e.Config; Limit = defaultArg e.Limit defaultLimit } : ChessLibrary.BookEvaluation.BookEngine)))
     let out =
         match valueOf p "out" with

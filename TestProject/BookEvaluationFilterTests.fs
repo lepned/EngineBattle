@@ -98,3 +98,16 @@ let ``an opening with an illegal move is unreadable, a transposition is a duplic
         onlyUniqueOpenings [ game "1. e4 e5 2. Nf3 Nc6 *"; game "1. Nf3 Nc6 2. e4 e5 *"; game "1. e4 Ke7 2. Qh8 *" ]
     Assert.Equal(1, unique.Count)
     Assert.Equal(1, unreadable)
+
+[<Fact>]
+let ``every search limit has a label, in the report and in the file name`` () =
+    let limit = ChessLibrary.TimeControlTypes.TimeControlCommands.SearchLimit.DepthLimit 20
+    Assert.Equal("depth 20", limit.Label)
+    Assert.Equal(20, limit.Value)
+    let engine name l = ({ Config = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name }; Limit = l } : BookEngine)
+    let label =
+        engineLabel
+            [ engine "sf" (ChessLibrary.TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit 10000)
+              engine "lc0" (ChessLibrary.TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit 300)
+              engine "berserk" limit ]
+    Assert.Equal("sf (10,000N), lc0 (300ms), berserk (20D)", label)

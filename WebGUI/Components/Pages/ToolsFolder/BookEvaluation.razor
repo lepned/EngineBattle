@@ -31,9 +31,10 @@
                 <div class="oob-grid-cell oob-engine-name" title="@eng.FilePath">@eng.Config.Name</div>
                 <div class="oob-grid-cell oob-engine-file">@Path.GetFileName(eng.FilePath)</div>
                 <div class="oob-grid-cell">
-                    <select class="tool-input oob-mode-select" value="@eng.Mode" @onchange="@(e => { if (Enum.TryParse<SearchMode>(e.Value?.ToString(), out var m)) { eng.Mode = m; eng.SearchValue = m == SearchMode.Time ? 3000 : 10000; } })">
+                    <select class="tool-input oob-mode-select" value="@eng.Mode" @onchange="@(e => { if (Enum.TryParse<SearchMode>(e.Value?.ToString(), out var m)) { eng.Mode = m; eng.SearchValue = m switch { SearchMode.Time => 3000, SearchMode.Depth => 20, _ => 10000 }; } })">
                         <option value="@SearchMode.Nodes">Nodes</option>
                         <option value="@SearchMode.Time">Time ms</option>
+                        <option value="@SearchMode.Depth">Depth</option>
                     </select>
                 </div>
                 <div class="oob-grid-cell"><input type="text" class="tool-input oob-nodes-input" value="@eng.SearchValue.ToString("N0")" @onchange="@(e => { if (int.TryParse(e.Value?.ToString()?.Replace(",", "").Replace(" ", ""), out var n) && n > 0) eng.SearchValue = n; })" /></div>
@@ -150,7 +151,8 @@
     private List<OobEngineEntry> oobEngines = new();
     private string oobSelectedFile = "";
 
-    private enum SearchMode { Nodes, Time }
+    // depth is for alpha-beta engines; a neural engine reads it loosely or not at all
+    private enum SearchMode { Nodes, Time, Depth }
 
     private class OobEngineEntry
     {
@@ -162,6 +164,7 @@
         public TimeControlTypes.TimeControlCommands.SearchLimit ToSearchLimit() => Mode switch
         {
             SearchMode.Time => TimeControlTypes.TimeControlCommands.SearchLimit.NewTimeLimit(SearchValue),
+            SearchMode.Depth => TimeControlTypes.TimeControlCommands.SearchLimit.NewDepthLimit(SearchValue),
             _ => TimeControlTypes.TimeControlCommands.SearchLimit.NewNodeLimit(SearchValue)
         };
     }

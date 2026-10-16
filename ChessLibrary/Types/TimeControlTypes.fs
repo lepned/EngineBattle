@@ -195,6 +195,8 @@ module TimeControlTypes =
     type SearchLimit =
       | NodeLimit of nodes: int
       | TimeLimit of ms: int
+      /// Well defined for alpha-beta engines; a neural engine reads a depth loosely or not at all
+      | DepthLimit of depth: int
       with
         member x.Label =
             match x with
@@ -206,7 +208,9 @@ module TimeControlTypes =
                 if ms >= 60000 then sprintf "%.1fmin" (float ms / 60000.0)
                 elif ms >= 1000 then sprintf "%.1fs" (float ms / 1000.0)
                 else sprintf "%dms" ms
+            | DepthLimit d -> sprintf "depth %d" d
         member x.Value =
             match x with
             | NodeLimit n -> n
             | TimeLimit ms -> ms
+            | DepthLimit d -> d

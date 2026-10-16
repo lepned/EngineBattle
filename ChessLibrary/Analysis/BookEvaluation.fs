@@ -92,6 +92,7 @@ let private goCommand (limit: SearchLimit) =
     match limit with
     | SearchLimit.NodeLimit n -> sprintf "go nodes %d" n
     | SearchLimit.TimeLimit ms -> sprintf "go movetime %d" ms
+    | SearchLimit.DepthLimit d -> sprintf "go depth %d" d
 
 /// Status evals are White's, in pawns; the filter works in centipawns (White's view, as everywhere
 /// else in EB), with a mate as 1000 per move (outside any sensible window).
@@ -223,13 +224,14 @@ let evaluatePgns (engines: BookEngine list) (filter: Filter) (pgns: seq<PgnGame>
     let outcome = run engines filter unique fenOf (fun p mx t d m n s -> PgnEvaluationResult.Create(p, mx, t, d, m, n, s)) progress ct
     { outcome with Removed = pgns.Length - unique.Count - unreadable; Skipped = outcome.Skipped + unreadable }
 
-/// "name (10,000N), name (500ms)" - the engines and limits, for file names and reports.
+/// "name (10,000N), name (500ms), name (20D)" - the engines and limits, for file names and reports.
 let engineLabel (engines: BookEngine list) =
     engines
     |> List.map (fun e ->
         match e.Limit with
         | SearchLimit.NodeLimit n -> sprintf "%s (%sN)" e.Config.Name (n.ToString("N0"))
-        | SearchLimit.TimeLimit ms -> sprintf "%s (%sms)" e.Config.Name (ms.ToString("N0")))
+        | SearchLimit.TimeLimit ms -> sprintf "%s (%sms)" e.Config.Name (ms.ToString("N0"))
+        | SearchLimit.DepthLimit d -> sprintf "%s (%dD)" e.Config.Name d)
     |> String.concat ", "
 
 /// The run's summary as (label, value) rows, the same for the page's table and the verb's closing

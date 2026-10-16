@@ -632,21 +632,22 @@ Arguments:
   <book>  an opening book (.pgn or .epd)
 
 Options:
-      --engine ENGINE[,nodes=N|,movetime=MS]
+      --engine ENGINE[,nodes=N|,movetime=MS|,depth=N]
                                   An engine, with its own limit after a comma if it has one; at least one (repeatable)
       --nodes N                   The limit of every engine without its own (default 10000)
       --movetime MS               A time limit for every engine without its own, instead of nodes
+      --depth N                   A depth for every engine without its own, instead of nodes (alpha-beta engines; a neural engine reads a depth loosely or not at all)
       --min-eval PAWNS            The smallest |eval| kept (default 0.8)
       --max-eval PAWNS            The largest |eval| kept (default 1.0)
       --max-diff PAWNS            The largest spread between the engines (default 0.4)
       --count N                   Only the first N openings
   -o, --out FILE                  The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)
       --force                     Write over a file that exists
-  At most one of --nodes, --movetime.
+  At most one of --nodes, --movetime, --depth.
 
 Examples:
-  eb-cli book eval book.pgn --engine sf.json --engine lc0.json,nodes=2000
-      Two engines, lc0 with its own limit
+  eb-cli book eval book.pgn --engine sf.json,depth=20 --engine lc0.json,nodes=2000
+      Two engines, each with its own limit
   eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd
       A wider window, to a file of its own
 ```
