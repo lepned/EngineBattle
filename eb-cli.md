@@ -626,7 +626,7 @@ Filter an opening book down to balanced openings, checked by engines
 
 Usage: eb-cli book eval <book> [options]
 
-Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
+Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. With --unit wdl the fields are percent of each engine's WDL instead: the favoured side's win chance inside the window, the engines' win minus loss within --max-diff, and the draw chance at most --max-draw; the WDL line is turned on for engines that have the option, and one without a WDL stops the run. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run.
 
 Arguments:
   <book>  an opening book (.pgn or .epd)
@@ -637,9 +637,11 @@ Options:
       --nodes N                   The limit of every engine without its own (default 10000)
       --movetime MS               A time limit for every engine without its own, instead of nodes
       --depth N                   A depth for every engine without its own, instead of nodes (alpha-beta engines; a neural engine reads a depth loosely or not at all)
-      --min-eval PAWNS            The smallest |eval| kept (default 0.8)
-      --max-eval PAWNS            The largest |eval| kept (default 1.0)
-      --max-diff PAWNS            The largest spread between the engines (default 0.4)
+      --unit pawns|wdl            What the filter is in: pawns of eval, or percent of the engines' WDL (default pawns)
+      --min-eval PAWNS|PCT        The smallest |eval| kept (default 0.8 pawns, or a win chance of 55 % with --unit wdl)
+      --max-eval PAWNS|PCT        The largest |eval| kept (default 1.0 pawns, or a win chance of 70 % with --unit wdl)
+      --max-diff PAWNS|PCT        The largest spread between the engines (default 0.4 pawns, or 10 % of win minus loss with --unit wdl)
+      --max-draw PCT              With --unit wdl: the largest draw chance kept (no cap unless given)
       --count N                   Only the first N openings
   -o, --out FILE                  The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)
       --force                     Write over a file that exists
@@ -650,6 +652,8 @@ Examples:
       Two engines, each with its own limit
   eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd
       A wider window, to a file of its own
+  eb-cli book eval book.pgn --engine sf.json --unit wdl --min-eval 55 --max-eval 70 --max-draw 40
+      An edge of 55-70 % for one side and few draws, by WDL
 ```
 ### puzzle run
 

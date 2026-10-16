@@ -15,7 +15,7 @@ module EPDTypes =
   type EpdEvaluationResult =
       { EPD: EPDEntry
         MaxEval: float
-        /// MaxEval as shown: pawns (0.95) or a mate (M1, -M2), White's view
+        /// MaxEval as shown: pawns (0.95) or a mate (M1, -M2), or by WDL "W62 D31 L7"; White's view
         MaxEvalText: string
         EvalDiff: float
         MaxMove: string

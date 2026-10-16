@@ -53,18 +53,51 @@
                 <input type="text" class="tool-input" style="width:120px" @bind="numberOfOpenings" />
             </div>
             <div class="tool-input-group" style="margin-bottom:0">
-                <label>Min eval (pawns)</label>
-                <input type="text" class="tool-input" style="width:100px" @bind="minEvalScore" />
+                <label>Unit</label>
+                <select class="tool-input" style="width:110px" @bind="unitChoice" disabled="@isProcessing">
+                    <option value="pawns">Pawns</option>
+                    <option value="wdl">Win %</option>
+                </select>
             </div>
-            <div class="tool-input-group" style="margin-bottom:0">
-                <label>Max eval (pawns)</label>
-                <input type="text" class="tool-input" style="width:100px" @bind="maxEvalScore" />
-            </div>
-            <div class="tool-input-group" style="margin-bottom:0">
-                <label>Max eval diff (pawns)</label>
-                <input type="text" class="tool-input" style="width:100px" @bind="maxEvalDiff" />
-            </div>
+            @if (WdlUnit)
+            {
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Min win (%)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="minWin" />
+                </div>
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Max win (%)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="maxWin" />
+                </div>
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Max win diff (%)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="maxWinDiff" />
+                </div>
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Max draw (%)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="maxDraw" placeholder="off" />
+                </div>
+            }
+            else
+            {
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Min eval (pawns)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="minEvalScore" />
+                </div>
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Max eval (pawns)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="maxEvalScore" />
+                </div>
+                <div class="tool-input-group" style="margin-bottom:0">
+                    <label>Max eval diff (pawns)</label>
+                    <input type="text" class="tool-input" style="width:100px" @bind="maxEvalDiff" />
+                </div>
+            }
         </div>
+        @if (WdlUnit)
+        {
+            <p style="margin-top:6px; opacity:0.75; font-size:0.85rem;">Win % reads each engine's WDL: the favoured side's win chance must lie in the window, the spread of the engines' win minus loss stay below the diff, and the draw chance be at most the cap. The WDL line is turned on for engines that have the option; one without a WDL stops the run.</p>
+        }
 
         <div class="tool-input-group" style="max-width:500px; margin-top:8px;">
             <label>Output folder</label>
@@ -133,6 +166,14 @@
     private string minEvalScore = "0.8";
     private string maxEvalScore = "1.0";
     private string maxEvalDiff = "0.4";
+    // Win %: the same fields in percent of the engines' WDL, plus a draw cap (blank = off)
+    private string unitChoice = "pawns";
+    private string minWin = "55";
+    private string maxWin = "70";
+    private string maxWinDiff = "10";
+    private string maxDraw = "";
+    private bool WdlUnit => unitChoice == "wdl";
+    private ChessLibrary.BookEvaluation.FilterUnit Unit => WdlUnit ? ChessLibrary.BookEvaluation.FilterUnit.WinPercent : ChessLibrary.BookEvaluation.FilterUnit.Pawns;
     private string numberOfOpenings = "500";
     private string outputFolder = "";
     private bool isProcessing;
@@ -324,8 +365,11 @@
         if (oobEngines.Any(e => e.SearchValue <= 0)) { SetStatus("All search values must be positive integers.", true); return; }
         var engines = ListModule.OfSeq(oobEngines.Select(e =>
             new ChessLibrary.BookEvaluation.BookEngine(e.Config, e.ToSearchLimit())));
+        // the unit and its fields as they were when the run started
+        var unit = Unit;
+        var (minText, maxText, diffText, drawText) = WdlUnit ? (minWin, maxWin, maxWinDiff, maxDraw) : (minEvalScore, maxEvalScore, maxEvalDiff, "");
         ChessLibrary.BookEvaluation.Filter filter;
-        try { filter = ChessLibrary.BookEvaluation.parseFilter(minEvalScore, maxEvalScore, maxEvalDiff, oobEngines.Count); }
+        try { filter = ChessLibrary.BookEvaluation.parseFilter(unit, minText, maxText, diffText, drawText, oobEngines.Count); }
         catch (FormatException e) { SetStatus(char.ToUpperInvariant(e.Message[0]) + e.Message[1..], true); return; }
         var label = ChessLibrary.BookEvaluation.engineLabel(engines);
 
@@ -337,7 +381,7 @@
         totalSw.Stop();
 
         lastRows = ChessLibrary.BookEvaluation.summaryRows(sourceName, total, r.Passed, r.Evaluated, r.Removed, r.Skipped,
-            r.Failure, r.Cancelled, engines, minEvalScore, maxEvalScore, maxEvalDiff, totalSw.Elapsed, filePath);
+            r.Failure, r.Cancelled, engines, unit, minText, maxText, diffText, drawText, totalSw.Elapsed, filePath);
         logger.LogInformation("Evaluated {File}: {Passed}/{Evaluated} passed. Written to {Path}", sourceName, r.Passed, r.Evaluated, filePath);
         if (FSharpOption<string>.get_IsSome(r.Failure))
         {

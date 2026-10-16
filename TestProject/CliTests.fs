@@ -210,4 +210,17 @@ let ``book eval takes a depth, for the run or for one engine, and only one defau
     // the engine's own limit is checked before the engine is looked up
     Assert.Contains("bad depth '0'", usageOf [ "book"; "eval"; book; "--engine"; "sf.json,depth=0" ])
     Assert.Contains("bad depth 'x'", usageOf [ "book"; "eval"; book; "--engine"; "sf.json,depth=x" ])
+    // the run's default limit is checked too: 0 is no limit to an engine
+    Assert.Contains("--depth must be above 0", usageOf [ "book"; "eval"; book; "--engine"; "sf.json"; "--depth"; "0" ])
+    Assert.Contains("--nodes must be above 0", usageOf [ "book"; "eval"; book; "--engine"; "sf.json"; "--nodes"; "-5" ])
+  finally System.IO.File.Delete book
+
+[<Fact>]
+let ``book eval filters in pawns or by WDL, and the draw cap belongs to WDL`` () =
+  let book = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "eb_book_%s.pgn" (System.Guid.NewGuid().ToString("N")))
+  System.IO.File.WriteAllText(book, "")
+  try
+    let usageOf (tokens: string list) = (Assert.Throws<Usage>(fun () -> Commands.Runs.bookEval (runReal tokens) |> ignore)).Data0
+    Assert.Contains("--unit expects pawns or wdl", usageOf [ "book"; "eval"; book; "--engine"; "sf.json"; "--unit"; "cp" ])
+    Assert.Contains("--max-draw needs --unit wdl", usageOf [ "book"; "eval"; book; "--engine"; "sf.json"; "--max-draw"; "40" ])
   finally System.IO.File.Delete book

@@ -1120,9 +1120,11 @@ type BookParams =
     { Input: string
       Engines: BookEngineArg list
       DefaultLimit: TimeControlTypes.TimeControlCommands.SearchLimit
+      Unit: ChessLibrary.BookEvaluation.FilterUnit
       MinEval: string
       MaxEval: string
       MaxDiff: string
+      MaxDraw: string
       Count: int option
       Out: string }
 
@@ -1133,13 +1135,19 @@ let runBookEval (p: BookParams) (ct: CancellationToken) =
     let engines =
         p.Engines |> List.map (fun e -> ({ Config = e.Config; Limit = defaultArg e.Limit p.DefaultLimit } : ChessLibrary.BookEvaluation.BookEngine))
     let filter =
-        try ChessLibrary.BookEvaluation.parseFilter p.MinEval p.MaxEval p.MaxDiff engines.Length
-        with :? FormatException as e -> raise (Cli.Parse.Usage $"--min-eval, --max-eval, --max-diff: {e.Message}")
+        try ChessLibrary.BookEvaluation.parseFilter p.Unit p.MinEval p.MaxEval p.MaxDiff p.MaxDraw engines.Length
+        with :? FormatException as e -> raise (Cli.Parse.Usage $"--min-eval, --max-eval, --max-diff, --max-draw: {e.Message}")
     let label = ChessLibrary.BookEvaluation.engineLabel engines
     let take (xs: seq<'a>) = match p.Count with Some n -> Seq.truncate n xs | None -> xs
     printfn "Book evaluation: %s" p.Input
     printfn "Engines: %s" label
-    printfn "Filter: |eval| %g-%g pawns%s" (filter.MinEval / 100.0) (filter.MaxEval / 100.0) (if engines.Length > 1 then sprintf ", spread below %g pawns" (filter.MaxDiff / 100.0) else "")
+    match filter.Unit with
+    | ChessLibrary.BookEvaluation.Pawns ->
+        printfn "Filter: |eval| %g-%g pawns%s" (filter.MinEval / 100.0) (filter.MaxEval / 100.0) (if engines.Length > 1 then sprintf ", spread below %g pawns" (filter.MaxDiff / 100.0) else "")
+    | ChessLibrary.BookEvaluation.WinPercent ->
+        printfn "Filter: win chance %g-%g %%%s%s" filter.MinEval filter.MaxEval
+            (if engines.Length > 1 then sprintf ", win - loss within %g %%" filter.MaxDiff else "")
+            (match filter.MaxDraw with Some d -> sprintf ", draw at most %g %%" d | None -> "")
     let sw = Diagnostics.Stopwatch.StartNew()
     let mutable lastShown = 0
     let progress = Action<int, int>(fun done' total ->
@@ -1162,7 +1170,7 @@ let runBookEval (p: BookParams) (ct: CancellationToken) =
     // the page's Results table, row for row (BookEvaluation.summaryRows)
     let rows =
         ChessLibrary.BookEvaluation.summaryRows (Path.GetFileName p.Input) total passed evaluated removed skipped
-            failure cancelled engines p.MinEval p.MaxEval p.MaxDiff sw.Elapsed p.Out
+            failure cancelled engines p.Unit p.MinEval p.MaxEval p.MaxDiff p.MaxDraw sw.Elapsed p.Out
     for label, value in rows do
         printfn "  %-31s %s" label value
     match failure with
@@ -1263,34 +1271,51 @@ let puzzleTrend (p: Parsed) =
 let bookEvalSpec =
     { command [ "book"; "eval" ] Group "Filter an opening book down to balanced openings, checked by engines" with
         Description =
-          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
+          Some "Every engine searches the end position of each opening; an opening is kept when every eval is inside --min-eval..--max-eval (pawns, whichever side is better; the output is from White's view) and the engines are within --max-diff of each other. With --unit wdl the fields are percent of each engine's WDL instead: the favoured side's win chance inside the window, the engines' win minus loss within --max-diff, and the draw chance at most --max-draw; the WDL line is turned on for engines that have the option, and one without a WDL stops the run. The kept openings are written as PGN or EPD, like the input. The first Ctrl+C stops and writes what passed. Exit 1 when an engine stopped the run."
         Args = [ arg "book" "an opening book (.pgn or .epd)" ]
         Options =
           [ value "engine" "ENGINE[,nodes=N|,movetime=MS|,depth=N]" "An engine, with its own limit after a comma if it has one; at least one" |> repeatable
             value "nodes" "N" "The limit of every engine without its own" |> withDefault "10000"
             value "movetime" "MS" "A time limit for every engine without its own, instead of nodes"
             value "depth" "N" "A depth for every engine without its own, instead of nodes (alpha-beta engines; a neural engine reads a depth loosely or not at all)"
-            value "min-eval" "PAWNS" "The smallest |eval| kept" |> withDefault "0.8"
-            value "max-eval" "PAWNS" "The largest |eval| kept" |> withDefault "1.0"
-            value "max-diff" "PAWNS" "The largest spread between the engines" |> withDefault "0.4"
+            value "unit" "pawns|wdl" "What the filter is in: pawns of eval, or percent of the engines' WDL" |> withDefault "pawns"
+            value "min-eval" "PAWNS|PCT" "The smallest |eval| kept (default 0.8 pawns, or a win chance of 55 % with --unit wdl)"
+            value "max-eval" "PAWNS|PCT" "The largest |eval| kept (default 1.0 pawns, or a win chance of 70 % with --unit wdl)"
+            value "max-diff" "PAWNS|PCT" "The largest spread between the engines (default 0.4 pawns, or 10 % of win minus loss with --unit wdl)"
+            value "max-draw" "PCT" "With --unit wdl: the largest draw chance kept (no cap unless given)"
             value "count" "N" "Only the first N openings"
             out "The output (default BookEvals/BookEval_<book>_<engines>.<ext> next to the book)"
             force ]
         OneOf = [ [ "nodes"; "movetime"; "depth" ] ]
         Examples =
           [ "eb-cli book eval book.pgn --engine sf.json,depth=20 --engine lc0.json,nodes=2000", "Two engines, each with its own limit"
-            "eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd", "A wider window, to a file of its own" ] }
+            "eb-cli book eval book.epd --engine sf.json --movetime 300 --min-eval 0.3 --max-eval 1.2 -o balanced.epd", "A wider window, to a file of its own"
+            "eb-cli book eval book.pgn --engine sf.json --unit wdl --min-eval 55 --max-eval 70 --max-draw 40", "An edge of 55-70 % for one side and few draws, by WDL" ] }
 
 let bookEval (p: Parsed) =
     let input = Cli.Groups.inputFile "book" (argOf p "book").Value
     let ext = Path.GetExtension(input).ToLowerInvariant()
     if ext <> ".pgn" && ext <> ".epd" then raise (Usage $"a book is .pgn or .epd, not {ext}")
+    let unit =
+        match defaultArg (valueOf p "unit") "pawns" with
+        | "pawns" -> ChessLibrary.BookEvaluation.Pawns
+        | "wdl" -> ChessLibrary.BookEvaluation.WinPercent
+        | other -> raise (Usage $"--unit expects pawns or wdl, got '{other}'")
+    if unit = ChessLibrary.BookEvaluation.Pawns && (valueOf p "max-draw").IsSome then raise (Usage "--max-draw needs --unit wdl")
     let limitText (text: string) =
         match text.Split('=') with
         | [| "nodes"; n |] -> (match Int32.TryParse n with | true, v when v > 0 -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit v | _ -> raise (Usage $"--engine: bad nodes '{n}'"))
         | [| "movetime"; ms |] -> (match Int32.TryParse ms with | true, v when v > 0 -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit v | _ -> raise (Usage $"--engine: bad movetime '{ms}'"))
         | [| "depth"; d |] -> (match Int32.TryParse d with | true, v when v > 0 -> TimeControlTypes.TimeControlCommands.SearchLimit.DepthLimit v | _ -> raise (Usage $"--engine: bad depth '{d}'"))
         | _ -> raise (Usage $"--engine: '{text}' is not nodes=N, movetime=MS or depth=N")
+    // 0 is no limit to an engine, a negative one a search of nothing
+    let positive name = intOf p name |> Option.map (fun n -> if n > 0 then n else raise (Usage $"--{name} must be above 0, got {n}"))
+    let defaultLimit =
+        match positive "movetime", positive "depth", positive "nodes" with
+        | Some ms, _, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms
+        | None, Some d, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.DepthLimit d
+        | None, None, Some n -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit n
+        | None, None, None -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit 10000
     let engines =
         match valuesOf p "engine" with
         | [] -> raise (Usage "give at least one --engine")
@@ -1302,12 +1327,6 @@ let bookEval (p: Parsed) =
                     | i when i > 0 && (let tail = e.Substring(i + 1) in tail.StartsWith "nodes=" || tail.StartsWith "movetime=" || tail.StartsWith "depth=") -> e.Substring(0, i), Some(limitText (e.Substring(i + 1)))
                     | _ -> e, None
                 { Config = Cli.Groups.engineFrom p name "uci"; Limit = limit })
-    let defaultLimit =
-        match intOf p "movetime", intOf p "depth", intOf p "nodes" with
-        | Some ms, _, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms
-        | None, Some d, _ -> TimeControlTypes.TimeControlCommands.SearchLimit.DepthLimit d
-        | None, None, Some n -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit n
-        | None, None, None -> TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit 10000
     let label = ChessLibrary.BookEvaluation.engineLabel (engines |> List.map (fun e -> ({ Config = e.Config; Limit = defaultArg e.Limit defaultLimit } : ChessLibrary.BookEvaluation.BookEngine)))
     let out =
         match valueOf p "out" with
@@ -1317,9 +1336,12 @@ let bookEval (p: Parsed) =
         { Input = input
           Engines = engines
           DefaultLimit = defaultLimit
-          MinEval = defaultArg (valueOf p "min-eval") "0.8"
-          MaxEval = defaultArg (valueOf p "max-eval") "1.0"
-          MaxDiff = defaultArg (valueOf p "max-diff") "0.4"
+          Unit = unit
+          // the defaults are the unit's own
+          MinEval = defaultArg (valueOf p "min-eval") (if unit = ChessLibrary.BookEvaluation.Pawns then "0.8" else "55")
+          MaxEval = defaultArg (valueOf p "max-eval") (if unit = ChessLibrary.BookEvaluation.Pawns then "1.0" else "70")
+          MaxDiff = defaultArg (valueOf p "max-diff") (if unit = ChessLibrary.BookEvaluation.Pawns then "0.4" else "10")
+          MaxDraw = defaultArg (valueOf p "max-draw") ""
           Count = intOf p "count"
           Out = out }
         (Cli.Output.onCtrlC ())
