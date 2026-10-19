@@ -185,6 +185,11 @@
                                     FocusedMoves="@analysisWithEngine?.FocusedLanMoves"
                                     OnRowClick="@(t => analysisWithEngine is null ? Task.CompletedTask : analysisWithEngine.HandleCandidateRowClick(t))" />
                 }
+                @* the opening book's moves for this position, under the engine's (one grid cell: the
+                   wide layouts place this card by area) *@
+                <div class="sa-book">
+                    <BookMoves Fen="@fen" OnPlay="@(async uci => { if (chessBoardRazor != null) await chessBoardRazor.PlayMove(uci); })" />
+                </div>
             </div>
 
             <div class="sa-save-section">

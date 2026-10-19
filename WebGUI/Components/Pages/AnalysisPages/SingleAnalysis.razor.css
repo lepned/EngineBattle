@@ -367,6 +367,14 @@
     border: 1px solid var(--sa-border);
 }
 
+/* The Book card sits under the engine's card in the same cell, at its own height. */
+.single-analysis .sa-book {
+    flex: 0 0 auto;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--sa-border);
+}
+
 .single-analysis .sa-candidates::-webkit-scrollbar { width: 6px; }
 .single-analysis .sa-candidates::-webkit-scrollbar-thumb {
     background: rgba(125, 132, 156, 0.45);

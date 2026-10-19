@@ -33,6 +33,8 @@ let all: Entry list =
       e [ "pgn"; "deviations" ]
       e [ "pgn"; "imbalance" ]
       e [ "book"; "eval" ]
+      e [ "book"; "make" ]
+      e [ "book"; "export" ]
       e [ "puzzle"; "run" ]
       e [ "puzzle"; "eret" ]
       e [ "puzzle"; "trend" ]

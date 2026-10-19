@@ -70,8 +70,11 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
 
     let mutable epdBook = false
     // random openings come from the whole book, not its first openings
+    // a Polyglot book's lines are a seeded draw already, the same first ones for any Rounds:
+    // shuffling them by the number drawn would give other openings for another Rounds
+    let polyglot = tourny.Opening.OpeningsPath |> Option.exists PolyglotFormat.isBookPath
     let take (openings: seq<PGNTypes.PgnGame>) =
-        if randomOpenings then PairingHelper.sampleWithSeed tourny.Opening.Seed effectiveBookSize openings
+        if randomOpenings && not polyglot then PairingHelper.sampleWithSeed tourny.Opening.Seed effectiveBookSize openings
         else openings |> Seq.truncate effectiveBookSize |> Seq.toArray
     let games =
         match tourny.Opening.OpeningsPath with
@@ -81,9 +84,17 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
                 logger.LogError($"Opening file {path} does not exist")
             [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
         else
-            epdBook <- path.ToLower().Contains ".epd"
-            let parsed = if epdBook then EPDExtractor.parseEPDFile path else ChessLibrary.FullPGNParser.parsePgnFile path
+            // a Polyglot book draws the lines it is asked for: the skipped ones and those to play
+            let parsed, epd = GameHelpers.readBook path (max 0 tourny.Opening.OpeningsSkip + effectiveBookSize) tourny.Opening
+            epdBook <- epd
             let all = take (PGNHelper.skipOpenings tourny.Opening.OpeningsSkip parsed)
+            if polyglot && all.Length = 0 && effectiveBookSize > 0 then
+                failwith (sprintf "The Polyglot book %s gives no opening line: it does not hold the start position%s" (IO.Path.GetFileName path)
+                              (if tourny.Opening.OpeningsSkip > 0 then sprintf " or OpeningsSkip=%d skips every line it gives" tourny.Opening.OpeningsSkip else ""))
+            if polyglot && all.Length < effectiveBookSize then
+                ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow
+                    (sprintf "Warning: the Polyglot book %s gives %d different lines of up to %d plies, %d were asked for; openings will be reused"
+                        (IO.Path.GetFileName path) all.Length tourny.Opening.OpeningsPly effectiveBookSize)
             if tourny.VerboseLogging then
                 logger.LogInformation $"Total number of openings in PGN = {all.Length}"
             all

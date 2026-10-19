@@ -1,0 +1,16 @@
+/* The Book card: the opening book's moves for the board's position. Text rides the Mud tokens. */
+.bk-card { padding: 0.4rem 0; }
+.bk-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.bk-title { font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.bk-name { font-size: 0.8rem; color: var(--mud-palette-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+.bk-btn { padding: 1px 8px; border-radius: 4px; border: 1px solid rgba(127, 127, 127, 0.5); background: transparent; color: inherit; cursor: pointer; font-size: 0.75rem; }
+.bk-btn:hover { background: rgba(127, 127, 127, 0.15); }
+.bk-empty { font-size: 0.8rem; color: var(--mud-palette-text-secondary); font-style: italic; padding: 0.2rem 0; }
+.bk-grid { display: flex; flex-direction: column; }
+.bk-row { display: grid; grid-template-columns: 3.6rem minmax(0, 1fr) 3.4rem 3.6rem; gap: 0 0.6rem; align-items: center; padding: 2px 6px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.bk-row:hover { background: rgba(127, 127, 127, 0.15); }
+.bk-san { font-weight: 600; }
+.bk-bar { height: 8px; background: rgba(127, 127, 127, 0.2); border-radius: 4px; overflow: hidden; }
+.bk-fill { display: block; height: 100%; background: #4f8fd6; }
+.bk-pct, .bk-w { text-align: right; font-size: 0.8rem; }
+.bk-w { color: var(--mud-palette-text-secondary); }

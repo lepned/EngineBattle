@@ -20,7 +20,7 @@
         {
             <div class="settings-help-content">
                 <p><b>General</b> — Set your startup page and default engines. Default engines auto-load in analysis and review pages, saving you from re-browsing every session.</p>
-                <p><b>Paths & Tools</b> — PGN save path for analysis games.</p>
+                <p><b>Paths & Tools</b> — PGN save path for analysis games, and the Polyglot book the analysis page shows.</p>
                 <p><b>Analysis</b> — Search limits, chart lines, MultiPV, and policy thresholds. These defaults apply when opening analysis pages.</p>
                 <p><b>Game Review</b> — Search mode, time, nodes, depth for game review. Advanced settings control accuracy curve and classification thresholds.</p>
                 <p><b>Folders</b> — Directory paths populate the file browser bookmarks and set initial browse locations. Configure these once and every file picker starts in the right place.</p>
@@ -123,6 +123,15 @@
                 <small>File where analysis games are saved (.pgn)</small>
             </div>
             <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => analysisGamesPath = v, analysisGamesPath, "*.pgn"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Analysis book</label>
+                <input type="text" @bind="analysisBookPath" placeholder="no book" />
+                <small>Polyglot book (.bin) whose moves the analysis page's Book card shows; the card's Browse sets it too</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => analysisBookPath = v, string.IsNullOrWhiteSpace(analysisBookPath) ? openingsFolder : analysisBookPath, "*.bin"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
         </div>
 
     </div>
@@ -364,6 +373,7 @@
 @code {
     private string engineDefsFolder = "";
     private string openingsFolder = "";
+    private string analysisBookPath = "";
     private string pgnOutputFolder = "";
     private string tournamentConfigFolder = "";
     private string tablebaseFolder = "";
@@ -416,6 +426,7 @@
         var s = SettingsService.Settings;
         engineDefsFolder = s.EngineDefsFolder;
         openingsFolder = s.OpeningsFolder;
+        analysisBookPath = s.AnalysisBookPath ?? "";
         pgnOutputFolder = s.PgnOutputFolder;
         tournamentConfigFolder = s.TournamentConfigFolder;
         tablebaseFolder = s.TablebaseFolder;
@@ -466,6 +477,7 @@
                 JsonSerializer.Serialize(SettingsService.Settings)) ?? new GlobalSettings();
             settings.EngineDefsFolder = engineDefsFolder ?? "";
             settings.OpeningsFolder = openingsFolder ?? "";
+            settings.AnalysisBookPath = (analysisBookPath ?? "").Trim();
             settings.PgnOutputFolder = pgnOutputFolder ?? "";
             settings.TournamentConfigFolder = tournamentConfigFolder ?? "";
             settings.TablebaseFolder = tablebaseFolder ?? "";

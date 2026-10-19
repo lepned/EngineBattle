@@ -1346,6 +1346,95 @@ let bookEval (p: Parsed) =
           Out = out }
         (Cli.Output.onCtrlC ())
 
+let bookMakeSpec =
+    { command [ "book"; "make" ] Group "Make a Polyglot book (.bin) from PGN games" with
+        Description =
+          Some "Makes a Polyglot book from the first --max-ply plies of the games. A move's weight is its score for the side that played it (2 a win, 1 a draw, 0 a loss) and it needs --min-games games. Chess960 and other variants are skipped, and so are games without a result unless --uniform."
+        Args = [ arg "pgn" "the games (.pgn)" ]
+        Options =
+          [ out "The book (default <pgn>.bin next to the games)"
+            value "max-ply" "N" "Plies of each game that go into the book" |> withDefault "30"
+            value "min-games" "N" "Games a move needs to be kept" |> withDefault "3"
+            switch "uniform" "Every move played weighs 1, whatever the results (and games without a result count)"
+            force ]
+        Examples =
+          [ "eb-cli book make ccc_games.pgn -o ccc.bin", "A book from CCC games, 30 plies, moves played 3 times or more"
+            "eb-cli book make own.pgn -o own.bin --max-ply 16 --min-games 1 --uniform", "Every move of the first 16 plies" ] }
+
+let bookMake (p: Parsed) =
+    let input = Cli.Groups.inputFile "pgn" (argOf p "pgn").Value
+    let positive name dflt = match intOf p name with Some n when n > 0 -> n | Some n -> raise (Usage $"--{name} must be above 0, got {n}") | None -> dflt
+    let options : ChessLibrary.PolyglotLines.MakeOptions =
+        { MaxPly = positive "max-ply" 30; MinGames = positive "min-games" 3; Uniform = has p "uniform" }
+    let out = Cli.Groups.outputFile p (defaultArg (valueOf p "out") (Path.ChangeExtension(input, ".bin")))
+    let sw = Diagnostics.Stopwatch.StartNew()
+    let games = ChessLibrary.FullPGNParser.parsePgnFile input
+    let summary = ChessLibrary.PolyglotLines.makeBook games options out (fun n -> eprintf "%d games read (%.0fs)   " n sw.Elapsed.TotalSeconds)
+    eprintfn ""
+    let n (x: int) = x.ToString("N0", Globalization.CultureInfo.InvariantCulture)
+    printfn "  %-22s %s" "Games read" (n summary.Games)
+    printfn "  %-22s %s" "Games used" (n summary.Used)
+    if summary.Skipped > 0 then printfn "  %-22s %s (Chess960, another variant, or no result)" "Games skipped" (n summary.Skipped)
+    if summary.Broken > 0 then printfn "  %-22s %s (used up to the move that could not be played)" "Games cut short" (n summary.Broken)
+    printfn "  %-22s %s" "Positions" (n summary.Positions)
+    printfn "  %-22s %s" "Moves" (n summary.Moves)
+    printfn "  %-22s %s" "Book" out
+    printfn "  %-22s %.1fs" "Time" sw.Elapsed.TotalSeconds
+    if summary.Used = 0 then
+        Cli.Output.error ("no game could be used" + (if options.Uniform then "" else ": an opening file whose lines end in * has no results, give --uniform"))
+        Cli.Output.ExitFailed
+    elif summary.Moves = 0 then
+        Cli.Output.error "the book is empty: no move was played in enough games (lower --min-games)"
+        Cli.Output.ExitFailed
+    else Cli.Output.ExitOk
+
+let bookExportSpec =
+    { command [ "book"; "export" ] Group "Write a Polyglot book's opening lines as PGN" with
+        Description =
+          Some "Writes a book's lines as PGN openings. Tree (the default): every move with at least --min-share percent of its position's weight. --count: lines drawn by the weights with --seed, as a tournament with this book draws them."
+        Args = [ arg "book" "a Polyglot book (.bin)" ]
+        Options =
+          [ out "The PGN (default <book>.pgn next to the book)"
+            value "max-ply" "N" "The longest line in plies" |> withDefault "16"
+            value "min-share" "PCT" "Tree: the smallest share of its position's weight a move needs" |> withDefault "10"
+            value "max-lines" "N" "Tree: stop after this many lines" |> withDefault "10000"
+            value "count" "N" "Draw this many lines by the book's weights instead of the tree"
+            value "seed" "N" "The seed of the draw (a tournament's Opening.Seed)" |> withDefault "0"
+            force ]
+        Examples =
+          [ "eb-cli book export ccc.bin -o openings.pgn --max-ply 12 --min-share 15", "The main lines of the book as openings"
+            "eb-cli book export ccc.bin --count 500 --seed 2025 --max-ply 16", "The 500 openings a tournament with Seed 2025 plays" ] }
+
+let bookExport (p: Parsed) =
+    let input = Cli.Groups.inputFile "book" (argOf p "book").Value
+    let positive name dflt = match intOf p name with Some n when n > 0 -> n | Some n -> raise (Usage $"--{name} must be above 0, got {n}") | None -> dflt
+    let maxPly = positive "max-ply" 16
+    match ChessLibrary.PolyglotFormat.sizeProblem (Path.GetFileName input) (FileInfo(input).Length) with
+    | Some problem -> raise (Usage problem)
+    | None -> ()
+    let out = Cli.Groups.outputFile p (defaultArg (valueOf p "out") (Path.ChangeExtension(input, ".pgn")))
+    let games, note =
+        match intOf p "count" with
+        | Some n when n <= 0 -> raise (Usage $"--count must be above 0, got {n}")
+        | Some n ->
+            let seed = defaultArg (intOf p "seed") 0
+            let lines = ChessLibrary.PolyglotLines.lines input n seed maxPly
+            lines, (if lines.Length < n then Some (sprintf "the book gives %d different lines of up to %d plies, %d were asked for" lines.Length maxPly n) else None)
+        | None ->
+            let share = defaultArg (floatOf p "min-share") 10.0
+            if share < 0.0 || share > 100.0 then raise (Usage $"--min-share is a percentage, 0 to 100, got {share}")
+            let maxLines = positive "max-lines" 10000
+            let lines, capped = ChessLibrary.PolyglotLines.exportTree input maxPly share maxLines
+            lines, (if capped then Some (sprintf "stopped at --max-lines %d: raise it, or --min-share, for the whole tree" maxLines) else None)
+    ChessLibrary.PolyglotLines.writePgn out games
+    printfn "  %-14s %d" "Lines" games.Length
+    printfn "  %-14s %s" "PGN" out
+    note |> Option.iter Cli.Output.warn
+    if games.Length = 0 then
+        Cli.Output.error "no lines: the book does not hold the start position, or no move has the share asked for"
+        Cli.Output.ExitFailed
+    else Cli.Output.ExitOk
+
 /// The tournament of a config, with its engines read: None when the file is not a tournament.
 let private loadTournament (path: string) =
     // the parse error is the usage error's message (readTournamentJson printed it on stdout)
@@ -1507,6 +1596,8 @@ let entries: Entry list =
       { Spec = puzzleEretSpec; Run = puzzleEret }
       { Spec = puzzleTrendSpec; Run = puzzleTrend }
       { Spec = bookEvalSpec; Run = bookEval }
+      { Spec = bookMakeSpec; Run = bookMake }
+      { Spec = bookExportSpec; Run = bookExport }
       { Spec = tournamentRunSpec; Run = tournamentRun }
       { Spec = tournamentValidateSpec; Run = tournamentValidate }
       { Spec = tuneRunSpec; Run = tuneRun }

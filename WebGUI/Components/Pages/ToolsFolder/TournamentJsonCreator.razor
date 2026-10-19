@@ -209,9 +209,9 @@
                 <div class="field-group">
                     <label>Openings File Path</label>
                     <input type="text" @bind="openingsPath" />
-                    <small>Full path to a PGN or EPD file (not a folder)</small>
+                    <small>Full path to a PGN, EPD or Polyglot (.bin) book, not a folder. With a .bin book, Opening plies is how deep the book is followed.</small>
                 </div>
-                <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => openingsPath = v, openingsPath, "*.pgn;*.epd"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+                <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => openingsPath = v, openingsPath, "*.pgn;*.epd;*.bin"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
             </div>
             <div class="field-group">
                 <label>Openings Ply</label>
@@ -630,9 +630,9 @@
         }
 
         string generateWarning = null;
-        if (!string.IsNullOrWhiteSpace(openingsPath) && !openingsPath.EndsWith(".pgn", StringComparison.OrdinalIgnoreCase) && !openingsPath.EndsWith(".epd", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(openingsPath) && !openingsPath.EndsWith(".pgn", StringComparison.OrdinalIgnoreCase) && !openingsPath.EndsWith(".epd", StringComparison.OrdinalIgnoreCase) && !openingsPath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
         {
-            generateWarning = "Openings path should point to a .pgn or .epd file, not a folder. Fix this before activating.";
+            generateWarning = "Openings path should point to a .pgn, .epd or Polyglot .bin file, not a folder. Fix this before activating.";
         }
 
         try
@@ -942,10 +942,11 @@
         if (!string.IsNullOrWhiteSpace(openingsPath))
         {
             if (Directory.Exists(openingsPath))
-                errors.Add($"Opening.OpeningsPath = \"{openingsPath}\" — this is a folder, must be a .pgn or .epd file");
+                errors.Add($"Opening.OpeningsPath = \"{openingsPath}\" — this is a folder, must be a .pgn, .epd or .bin file");
             else if (!openingsPath.EndsWith(".pgn", StringComparison.OrdinalIgnoreCase) &&
-                     !openingsPath.EndsWith(".epd", StringComparison.OrdinalIgnoreCase))
-                errors.Add($"Opening.OpeningsPath = \"{openingsPath}\" — must end in .pgn or .epd");
+                     !openingsPath.EndsWith(".epd", StringComparison.OrdinalIgnoreCase) &&
+                     !openingsPath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+                errors.Add($"Opening.OpeningsPath = \"{openingsPath}\" — must end in .pgn, .epd or .bin (a Polyglot book)");
             else if (!File.Exists(openingsPath))
                 warnings.Add($"Opening.OpeningsPath = \"{openingsPath}\" — file not found (may be on another machine)");
         }

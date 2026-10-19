@@ -215,17 +215,37 @@ let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: Che
 // Opening and Game Loading Helpers
 // ============================================================================
 
-/// Load openings from PGN or EPD file without truncating (for Cup/Swiss).
-/// skip: the first entries of the book that are not used (Opening.OpeningsSkip)
-let loadOpeningsUnlimited (path: string option) (skip: int) (defaultRounds: int) : PgnGame[] * bool =
-    match path with
+/// A book's openings, whatever its kind, and whether it is an EPD book (positions, no moves). A
+/// Polyglot book (.bin) has no entries of its own: `needed` different lines are drawn from it with
+/// the tournament's seed and capped at OpeningsPly (PolyglotLines), the same for the same config.
+let readBook (path: string) (needed: int) (opening: Opening) : seq<PgnGame> * bool =
+    if PolyglotFormat.isBookPath path then
+        (PolyglotLines.lines path needed opening.Seed opening.OpeningsPly :> seq<_>, false)
+    else
+        let epd = path.ToLower().Contains ".epd"
+        ((if epd then EPDExtractor.parseEPDFile path else ChessLibrary.FullPGNParser.parsePgnFile path), epd)
+
+/// Openings drawn from a Polyglot book for a cup or Swiss run: enough for long events.
+let polyglotLinesUnlimited = 1000
+
+/// Load openings without truncating (for Cup/Swiss), from the tournament's Opening block: its
+/// book, skip, seed and (for a Polyglot book) OpeningsPly.
+let loadOpeningsFor (opening: Opening) (defaultRounds: int) : PgnGame[] * bool =
+    let skip = opening.OpeningsSkip
+    match opening.OpeningsPath with
     | Some p ->
-        let epd = p.ToLower().Contains ".epd"
-        let parsed = if epd then EPDExtractor.parseEPDFile p else ChessLibrary.FullPGNParser.parsePgnFile p
-        (PGNHelper.skipOpenings skip parsed |> Seq.toArray, epd)
+        let parsed, epd = readBook p (max 0 skip + max polyglotLinesUnlimited defaultRounds) opening
+        let games = PGNHelper.skipOpenings skip parsed |> Seq.toArray
+        if games.Length = 0 && PolyglotFormat.isBookPath p then
+            failwith (sprintf "The Polyglot book %s gives no opening line: it does not hold the start position, or OpeningsSkip skips every line" (Path.GetFileName p))
+        (games, epd)
     | None ->
         let games = [| for i = 1 to defaultRounds do yield PgnGame.Empty i |]
         (games, false)
+
+/// Load openings from PGN or EPD file without truncating; skip: the first entries not used.
+let loadOpeningsUnlimited (path: string option) (skip: int) (defaultRounds: int) : PgnGame[] * bool =
+    loadOpeningsFor { Tournament.Empty.Opening with OpeningsPath = path; OpeningsSkip = skip } defaultRounds
 
 /// Load games already played from PGN output file
 let loadGamesAlreadyPlayed (pgnOutPath: string) : PgnGame[] =

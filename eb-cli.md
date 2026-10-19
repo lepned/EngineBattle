@@ -148,6 +148,8 @@ PGN files
 
 Puzzles, books, tournaments and tuning
   book eval <book>                Filter an opening book down to balanced openings, checked by engines
+  book make <pgn>                 Make a Polyglot book (.bin) from PGN games
+  book export <book>              Write a Polyglot book's opening lines as PGN
   puzzle run <config>             Run a Lichess puzzle test from a config
   puzzle eret <config>            Run an ERET test suite (EPD best-move positions) from a config
   puzzle trend                    Puzzle scores across a net's training checkpoints, from saved runs
@@ -654,6 +656,58 @@ Examples:
       A wider window, to a file of its own
   eb-cli book eval book.pgn --engine sf.json --unit wdl --min-eval 55 --max-eval 70 --max-draw 40
       An edge of 55-70 % for one side and few draws, by WDL
+```
+### book make
+
+```text
+Make a Polyglot book (.bin) from PGN games
+
+Usage: eb-cli book make <pgn> [options]
+
+Makes a Polyglot book from the first --max-ply plies of the games. A move's weight is its score for the side that played it (2 a win, 1 a draw, 0 a loss) and it needs --min-games games. Chess960 and other variants are skipped, and so are games without a result unless --uniform.
+
+Arguments:
+  <pgn>  the games (.pgn)
+
+Options:
+  -o, --out FILE     The book (default <pgn>.bin next to the games)
+      --max-ply N    Plies of each game that go into the book (default 30)
+      --min-games N  Games a move needs to be kept (default 3)
+      --uniform      Every move played weighs 1, whatever the results (and games without a result count)
+      --force        Write over a file that exists
+
+Examples:
+  eb-cli book make ccc_games.pgn -o ccc.bin
+      A book from CCC games, 30 plies, moves played 3 times or more
+  eb-cli book make own.pgn -o own.bin --max-ply 16 --min-games 1 --uniform
+      Every move of the first 16 plies
+```
+### book export
+
+```text
+Write a Polyglot book's opening lines as PGN
+
+Usage: eb-cli book export <book> [options]
+
+Writes a book's lines as PGN openings. Tree (the default): every move with at least --min-share percent of its position's weight. --count: lines drawn by the weights with --seed, as a tournament with this book draws them.
+
+Arguments:
+  <book>  a Polyglot book (.bin)
+
+Options:
+  -o, --out FILE       The PGN (default <book>.pgn next to the book)
+      --max-ply N      The longest line in plies (default 16)
+      --min-share PCT  Tree: the smallest share of its position's weight a move needs (default 10)
+      --max-lines N    Tree: stop after this many lines (default 10000)
+      --count N        Draw this many lines by the book's weights instead of the tree
+      --seed N         The seed of the draw (a tournament's Opening.Seed) (default 0)
+      --force          Write over a file that exists
+
+Examples:
+  eb-cli book export ccc.bin -o openings.pgn --max-ply 12 --min-share 15
+      The main lines of the book as openings
+  eb-cli book export ccc.bin --count 500 --seed 2025 --max-ply 16
+      The 500 openings a tournament with Seed 2025 plays
 ```
 ### puzzle run
 

@@ -105,6 +105,7 @@
 		<Compile Include="PgnAgentTests.fs" />
 		<Compile Include="GoldenBook.fs" />
 		<Compile Include="OpeningsSkipTests.fs" />
+		<Compile Include="PolyglotTests.fs" />
 		<Compile Include="SwissMachineTests.fs" />
 		<Compile Include="CupMachineTests.fs" />
 		<Compile Include="LadderMachineTests.fs" />

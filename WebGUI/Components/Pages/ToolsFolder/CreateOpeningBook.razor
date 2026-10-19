@@ -7,6 +7,8 @@
 @inject GlobalSettingsService SettingsService
 @inject IDialogService DialogService
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+@using Microsoft.FSharp.Core
+@implements IDisposable
 
 <PageTitle>PGN Tools</PageTitle>
 
@@ -50,6 +52,65 @@
         </div>
       </div>
       <button class="tool-upload-btn" @onclick="BrowseEpdToPgnFile" disabled="@isProcessing">Load EPD file</button>
+    </div>
+  </div>
+
+  @* Polyglot books: made from games, and read back as PGN openings (PolyglotLines, as eb-cli book make/export) *@
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div class="tool-section">
+      <h2>Polyglot Book from PGN Games</h2>
+      <p>Makes a Polyglot book (<code>.bin</code>) from games. Every move up to Max ply is counted, and a move's weight is its score for the side that played it: 2 for a win, 1 for a draw, 0 for a loss, added up over the games. For tournaments (OpeningsPath) and the analysis page's Book card.</p>
+      <div class="tool-input-group">
+        <label>Games (.pgn)</label>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="text" class="tool-input" style="width:100%" @bind="makeGamesPath" />
+          <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                         OnClick="@(() => BrowseFileTo(v => { makeGamesPath = v; makeBookPath = Path.ChangeExtension(v, ".bin"); }, makeGamesPath, "*.pgn", "Select the games"))" />
+        </div>
+      </div>
+      <div class="tool-input-group">
+        <label>Book (.bin)</label>
+        <input type="text" class="tool-input" style="width:100%" @bind="makeBookPath" />
+      </div>
+      <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+        <div class="tool-input-group" style="margin-bottom:0"><label>Max ply</label><input type="number" class="tool-input" style="width:90px" @bind="makeMaxPly" min="1" max="200" /></div>
+        <div class="tool-input-group" style="margin-bottom:0"><label>Min games per move</label><input type="number" class="tool-input" style="width:90px" @bind="makeMinGames" min="1" /></div>
+        <label style="display:flex; gap:6px; align-items:center;" title="Results do not count: also for opening files whose lines have no result"><input type="checkbox" @bind="makeUniform" /> Every move weighs 1</label>
+      </div>
+      <button class="tool-action-btn" style="margin-top:8px;" @onclick="MakePolyglotBook" disabled="@(isProcessing || string.IsNullOrWhiteSpace(makeGamesPath) || string.IsNullOrWhiteSpace(makeBookPath))">Make book</button>
+    </div>
+
+    <div class="tool-section">
+      <h2>PGN Openings from a Polyglot Book</h2>
+      <p>Writes a book's lines as a PGN opening file. <b>Tree</b>: every move with at least the share of its position's weight. <b>Draw</b>: lines drawn by the book's weights, the very openings a tournament plays with this book, OpeningsPly = max ply and the seed (a tournament with OpeningsSkip starts that many lines further on).</p>
+      <div class="tool-input-group">
+        <label>Book (.bin)</label>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="text" class="tool-input" style="width:100%" @bind="exportBookPath" />
+          <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                         OnClick="@(() => BrowseFileTo(v => { exportBookPath = v; exportPgnPath = Path.ChangeExtension(v, ".pgn"); }, exportBookPath, "*.bin", "Select a Polyglot book"))" />
+        </div>
+      </div>
+      <div class="tool-input-group">
+        <label>Openings (.pgn)</label>
+        <input type="text" class="tool-input" style="width:100%" @bind="exportPgnPath" />
+      </div>
+      <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+        <div class="tool-input-group" style="margin-bottom:0"><label>Mode</label>
+          <select class="tool-input" style="width:100px" @bind="exportMode"><option value="tree">Tree</option><option value="draw">Draw</option></select></div>
+        <div class="tool-input-group" style="margin-bottom:0"><label>Max ply</label><input type="number" class="tool-input" style="width:80px" @bind="exportMaxPly" min="1" max="200" /></div>
+        @if (exportMode == "tree")
+        {
+          <div class="tool-input-group" style="margin-bottom:0"><label>Min share %</label><input type="number" class="tool-input" style="width:80px" @bind="exportMinShare" min="0" max="100" step="1" /></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Max lines</label><input type="number" class="tool-input" style="width:100px" @bind="exportMaxLines" min="1" /></div>
+        }
+        else
+        {
+          <div class="tool-input-group" style="margin-bottom:0"><label>Lines</label><input type="number" class="tool-input" style="width:100px" @bind="exportCount" min="1" /></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Seed</label><input type="number" class="tool-input" style="width:100px" @bind="exportSeed" /></div>
+        }
+      </div>
+      <button class="tool-action-btn" style="margin-top:8px;" @onclick="ExportPolyglotBook" disabled="@(isProcessing || string.IsNullOrWhiteSpace(exportBookPath) || string.IsNullOrWhiteSpace(exportPgnPath))">Write openings</button>
     </div>
   </div>
 
@@ -137,6 +198,33 @@
 	private string chess960Path = "";
 	private string shuffleOutputPath = "";
 	private int numberOfPositions = 960;
+
+	// Polyglot book fields (the defaults are eb-cli book make/export's)
+	private string makeGamesPath = "";
+	private string makeBookPath = "";
+	private int makeMaxPly = 30;
+	private int makeMinGames = 3;
+	private bool makeUniform;
+	private string exportBookPath = "";
+	private string exportPgnPath = "";
+	private string exportMode = "tree";
+	private int exportMaxPly = 16;
+	private double exportMinShare = 10;
+	private int exportMaxLines = 10000;
+	private int exportCount = 500;
+	private int exportSeed;
+
+	// a book being made stops when the page goes away (makeBook's progress callback throws)
+	private readonly CancellationTokenSource pageCts = new();
+	public void Dispose() { pageCts.Cancel(); pageCts.Dispose(); }
+
+	/// <summary>Whether an output file may be written: yes when it does not exist, or when the user says to write over it.</summary>
+	private async Task<bool> MayWrite(string path)
+	{
+		if (!File.Exists(path)) return true;
+		var answer = await DialogService.ShowMessageBox("File exists", $"{path} exists. Write over it?", yesText: "Write over it", cancelText: "Cancel");
+		return answer == true;
+	}
 
 	// PGN utility fields
 	private string removeEnginePath = "";
@@ -448,6 +536,133 @@
 			shuffleOutputPath = s.OpeningsFolder;
 		}
 		return base.OnInitializedAsync();
+	}
+
+	// --- Polyglot books ---
+
+	private async Task MakePolyglotBook()
+	{
+		// the run uses the values as they are now: the fields stay editable while it runs
+		var games = makeGamesPath;
+		var bookPath = makeBookPath;
+		var minGames = makeMinGames;
+		if (makeMaxPly < 1 || minGames < 1) { SetStatus("Max ply and min games must be 1 or more.", true); return; }
+		if (!File.Exists(games)) { SetStatus($"Games not found: {games}", true); return; }
+		if (string.Equals(Path.GetFullPath(games), Path.GetFullPath(bookPath), StringComparison.OrdinalIgnoreCase))
+		{ SetStatus("The book would be written over the games: give the book its own path.", true); return; }
+		if (!await MayWrite(bookPath)) return;
+		var name = Path.GetFileName(games);
+		var token = pageCts.Token;
+		SetStatus("");
+		isProcessing = true;
+		processingLabel = $"Making a book from {name}...";
+		StateHasChanged();
+		try
+		{
+			var options = new ChessLibrary.PolyglotLines.MakeOptions(makeMaxPly, minGames, makeUniform);
+			var sw = System.Diagnostics.Stopwatch.StartNew();
+			var summary = await Task.Run(() =>
+				ChessLibrary.PolyglotLines.makeBook(FullPGNParser.parsePgnFile(games), options, bookPath,
+					FuncConvert.FromAction<int>(n =>
+					{
+						token.ThrowIfCancellationRequested();
+						_ = InvokeAsync(() => { processingLabel = $"Making a book from {name}: {n:N0} games read..."; StateHasChanged(); });
+					})), token);
+			var skipped = summary.Skipped > 0 ? $", {summary.Skipped:N0} skipped (Chess960, another variant, or no result)" : "";
+			var cut = summary.Broken > 0 ? $", {summary.Broken:N0} cut short at a move that could not be played" : "";
+			if (summary.Used == 0)
+				SetStatus($"No book written: none of the {summary.Games:N0} games could be used (Chess960, another variant, or no result)."
+				          + (makeUniform ? "" : " An opening file whose lines end in * has no results: tick Every move weighs 1."), true);
+			else if (summary.Moves == 0)
+				SetStatus($"No book written: no move was played in {minGames} games or more ({summary.Used:N0} games used{skipped}). Lower the min games.", true);
+			else
+				SetStatus($"Book written to {bookPath}: {summary.Positions:N0} positions, {summary.Moves:N0} moves from {summary.Used:N0} games{skipped}{cut}, in {sw.Elapsed.TotalSeconds:0.0} s.");
+			logger.LogInformation("Polyglot book from {File}: {Moves} moves, {Positions} positions", name, summary.Moves, summary.Positions);
+		}
+		catch (OperationCanceledException) { }
+		catch (Exception ex)
+		{
+			logger.LogError(ex, "Failed to make a Polyglot book");
+			SetStatus($"Error: {ex.Message}", true);
+		}
+		finally
+		{
+			isProcessing = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task ExportPolyglotBook()
+	{
+		// the run uses the values as they are now: the fields stay editable while it runs
+		var bookPath = exportBookPath;
+		var pgnPath = exportPgnPath;
+		var maxPly = exportMaxPly;
+		var count = exportCount;
+		var seed = exportSeed;
+		var minShare = exportMinShare;
+		var maxLines = exportMaxLines;
+		var draw = exportMode == "draw";
+		if (maxPly < 1) { SetStatus("Max ply must be 1 or more.", true); return; }
+		if (!File.Exists(bookPath)) { SetStatus($"Book not found: {bookPath}", true); return; }
+		var problem = ChessLibrary.PolyglotFormat.sizeProblem(Path.GetFileName(bookPath), new FileInfo(bookPath).Length);
+		if (FSharpOption<string>.get_IsSome(problem)) { SetStatus(problem.Value, true); return; }
+		if (draw && count < 1) { SetStatus("Lines must be 1 or more.", true); return; }
+		if (!draw && (minShare < 0 || minShare > 100 || maxLines < 1)) { SetStatus("Min share is 0 to 100, max lines 1 or more.", true); return; }
+		if (!await MayWrite(pgnPath)) return;
+		SetStatus("");
+		isProcessing = true;
+		processingLabel = $"Writing openings from {Path.GetFileName(bookPath)}...";
+		StateHasChanged();
+		try
+		{
+			var (written, note) = await Task.Run(() =>
+			{
+				// nothing is written when there are no lines: a file already at the path is kept
+				if (draw)
+				{
+					var lines = ChessLibrary.PolyglotLines.lines(bookPath, count, seed, maxPly);
+					if (lines.Length > 0) ChessLibrary.PolyglotLines.writePgn(pgnPath, lines);
+					return (lines.Length, lines.Length < count ? $" The book gives {lines.Length} different lines of up to {maxPly} plies; {count} were asked for." : "");
+				}
+				var (tree, capped) = ChessLibrary.PolyglotLines.exportTree(bookPath, maxPly, minShare, maxLines);
+				if (tree.Length > 0) ChessLibrary.PolyglotLines.writePgn(pgnPath, tree);
+				return (tree.Length, capped ? $" Stopped at {maxLines} lines: raise max lines or min share for the whole tree." : "");
+			});
+			if (written == 0)
+				SetStatus(draw ? "No lines, nothing written: the book does not hold the start position."
+				               : "No lines, nothing written: the book does not hold the start position, or no move has the share asked for.", true);
+			else
+				SetStatus($"{written:N0} openings written to {pgnPath}.{note}");
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex, "Failed to write openings from a Polyglot book");
+			SetStatus($"Error: {ex.Message}", true);
+		}
+		finally
+		{
+			isProcessing = false;
+			StateHasChanged();
+		}
+	}
+
+	/// <summary>A file picked in the file browser, starting where the current value is (or the Openings folder).</summary>
+	private async Task BrowseFileTo(Action<string> setter, string currentValue, string filter, string title)
+	{
+		var initialDir = !string.IsNullOrWhiteSpace(currentValue) && File.Exists(currentValue)
+			? Path.GetDirectoryName(currentValue) ?? ""
+			: (filter == "*.pgn" ? SettingsService.Settings.PgnOutputFolder : SettingsService.Settings.OpeningsFolder) ?? "";
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, filter },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>(title, parameters, options);
+		var result = await dialog.Result;
+		if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
 	}
 
 	private async Task<string> BrowsePgnFile()

@@ -27,6 +27,8 @@ public class GlobalSettings
     public string PgnOutputFolder { get; set; } = "";
     public string TournamentConfigFolder { get; set; } = "";
     public string TablebaseFolder { get; set; } = "";
+    /// <summary>The Polyglot book (.bin) the analysis page's Book card shows; empty for none.</summary>
+    public string AnalysisBookPath { get; set; } = "";
     public string NeuralNetFolder { get; set; } = "";
     public string PuzzleConfigFolder { get; set; } = "";
     // Where puzzle runs write their results. The trend view reads the

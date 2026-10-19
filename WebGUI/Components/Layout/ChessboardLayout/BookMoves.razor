@@ -1,0 +1,111 @@
+@* The opening book's moves for the board's position (a Polyglot .bin): share, weight, click to play.
+   The book path is a Setting (AnalysisBookPath), picked with the browse button. *@
+@using WebGUI.Services
+@using WebGUI.Components.Layout.ExperimentalLayout
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@inject ILogger<BookMoves> logger
+
+<div class="bk-card">
+    <div class="bk-head">
+        <span class="bk-title">Book</span>
+        <span class="bk-name" title="@bookPath">@(string.IsNullOrWhiteSpace(bookPath) ? "no book chosen" : Path.GetFileName(bookPath))</span>
+        <button class="bk-btn" title="Choose a Polyglot book (.bin)" @onclick="Browse">Browse</button>
+        @if (!string.IsNullOrWhiteSpace(bookPath))
+        {
+            <button class="bk-btn" title="Stop using a book" @onclick="Clear">&times;</button>
+        }
+    </div>
+    @if (error != null)
+    {
+        <div class="bk-empty">@error</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(bookPath))
+    {
+        if (moves.Length == 0)
+        {
+            <div class="bk-empty">Out of book</div>
+        }
+        else
+        {
+            <div class="bk-grid">
+                @foreach (var m in moves)
+                {
+                    var move = m;
+                    <div class="bk-row" title="Play @move.San" @onclick="() => OnPlay.InvokeAsync(move.Uci)">
+                        <span class="bk-san">@move.San</span>
+                        <span class="bk-bar"><span class="bk-fill" style="width:@(move.Percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span></span>
+                        <span class="bk-pct">@move.Percent.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%</span>
+                        <span class="bk-w">@move.Weight</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>The board's position.</summary>
+    [Parameter] public string Fen { get; set; } = "";
+    /// <summary>A book move was clicked: its UCI text.</summary>
+    [Parameter] public EventCallback<string> OnPlay { get; set; }
+
+    private string bookPath = "";
+    private string shownFen;
+    private string shownBook;
+    private ChessLibrary.PolyglotLines.BookMove[] moves = [];
+    private string error;
+
+    protected override void OnInitialized() => bookPath = SettingsService.Settings.AnalysisBookPath ?? "";
+
+    protected override void OnParametersSet() => Refresh();
+
+    private void Refresh()
+    {
+        if (Fen == shownFen && bookPath == shownBook) return;
+        shownFen = Fen;
+        shownBook = bookPath;
+        error = null;
+        moves = [];
+        if (string.IsNullOrWhiteSpace(bookPath) || string.IsNullOrWhiteSpace(Fen)) return;
+        try { moves = ChessLibrary.PolyglotLines.movesFor(bookPath, Fen); }
+        catch (Exception ex)
+        {
+            // a missing file or one that is not a book: said in the card, the page goes on
+            error = ex.Message;
+            logger.LogWarning("Book {Book}: {Message}", bookPath, ex.Message);
+        }
+    }
+
+    private void Use(string path)
+    {
+        bookPath = path ?? "";
+        // choosing a book again reads it again (a fixed or replaced file)
+        shownFen = null;
+        var settings = SettingsService.Settings;
+        settings.AnalysisBookPath = bookPath;
+        SettingsService.Save(settings);
+        Refresh();
+        StateHasChanged();
+    }
+
+    private void Clear() => Use("");
+
+    private async Task Browse()
+    {
+        var initial = !string.IsNullOrWhiteSpace(bookPath) && File.Exists(bookPath)
+            ? Path.GetDirectoryName(bookPath) ?? ""
+            : SettingsService.Settings.OpeningsFolder ?? "";
+        var parameters = new DialogParameters<FileBrowserDialog>
+        {
+            { x => x.InitialPath, initial },
+            { x => x.FileFilter, "*.bin" },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<FileBrowserDialog>("Select a Polyglot book", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) Use((string)result.Data!);
+    }
+}

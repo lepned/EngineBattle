@@ -83,8 +83,10 @@ See `LiveFeedContract.md` for the wire protocol and the README section *Watching
 
 ### Opening Options
 
-- **OpeningsPath**: Path to the openings file, either a PGN-file or an EPD-file.
-- **OpeningsPly**: Number of plies for openings.
+- **OpeningsPath**: Path to the openings file: a PGN file, an EPD file, or a Polyglot book (`.bin`).
+- **OpeningsPly**: Number of plies for openings. With a Polyglot book: how deep the book is followed.
+
+**Polyglot books (`.bin`).** Before the first game EngineBattle draws as many different lines from the book as the tournament needs, each move picked by the book's weights. `Seed` makes the draw repeatable, so resume works; `OpeningsTwice`, `RandomOpenings` and `OpeningsSkip` work as with PGN books. A narrow book may give fewer lines than needed; they are then reused. Make a book from your own games with `eb-cli book make` or Tools → PGN Tools.
 - **OpeningsSkip**: Number of entries at the start of the book that are not used. **Default: 0.** The count is of raw entries in the file, before any random draw or duplicate check, so `OpeningsSkip: 100` with `RandomOpenings: true` draws from entry 101 onwards. A skip past the end of the book stops the tournament with a message. Changing it on a resumed tournament changes the plan, as changing `Rounds` does: start over with a new `PgnOutPath` instead.
 - **OpeningsTwice**: Use openings twice. With `true` every pair plays each opening with both colours. With `false` each opening is played once, and the colours swap from one opening (round robin) or round (gauntlet) to the next, so every engine gets White about as often as Black.
 

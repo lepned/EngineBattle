@@ -445,7 +445,7 @@ module Validation =
       elif skip = 0 then Ok
       else
           match tourny.Opening.OpeningsPath with
-          | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path ->
+          | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path && not (PolyglotFormat.isBookPath path) ->
               let entries = countBookEntries path
               if skip >= entries then Errors [sprintf "OpeningsSkip=%d leaves no openings: the book %s has %d entries" skip (Path.GetFileName path) entries]
               else Ok
@@ -457,6 +457,13 @@ module Validation =
           let fileInfo = FileInfo(path)
           if not fileInfo.Exists then
               Errors [sprintf "The file path set in tournament.json for the OpeningsPath: %s does not exist" fileInfo.FullName]
+          // a Polyglot book is 16-byte entries; its lines are drawn up to OpeningsPly plies
+          elif PolyglotFormat.isBookPath path && (PolyglotFormat.sizeProblem fileInfo.Name fileInfo.Length).IsSome then
+              Errors [ "OpeningsPath " + (PolyglotFormat.sizeProblem fileInfo.Name fileInfo.Length).Value ]
+          elif PolyglotFormat.isBookPath path && not (PolyglotFormat.BookFiles.hasStartPosition fileInfo.FullName) then
+              Errors [sprintf "OpeningsPath %s does not hold the start position: not a Polyglot book for standard chess, so it gives no openings" fileInfo.Name]
+          elif PolyglotFormat.isBookPath path && tourny.Opening.OpeningsPly <= 0 then
+              Errors [sprintf "OpeningsPly=%d with the Polyglot book %s: give the number of book plies to play, e.g. 16" tourny.Opening.OpeningsPly fileInfo.Name]
           else
               Ok
       | Some p ->
@@ -567,7 +574,8 @@ module Validation =
   /// where each game went. One warning per book, empty when there is nothing to say.
   let duplicateOpeningWarnings (tourny: Tournament) : string list =
       match tourny.Opening.OpeningsPath with
-      | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path ->
+      // lines drawn from a Polyglot book are different positions by construction
+      | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path && not (PolyglotFormat.isBookPath path) ->
           let info = FileInfo(path)
           let skip = max 0 tourny.Opening.OpeningsSkip
           let key = sprintf "%s|%d" info.FullName skip

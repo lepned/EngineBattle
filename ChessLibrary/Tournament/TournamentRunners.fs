@@ -141,7 +141,7 @@ let private runMode (mode: Mode<'S, 'M>) (play: (Pairing -> Async<Result option>
   logger.LogInformation("{Mode} tournament about to start", mode.Name)
   mode.Check logger tourny
 
-  let (games, epdBook) = loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Opening.OpeningsSkip tourny.Rounds
+  let (games, epdBook) = loadOpeningsFor tourny.Opening tourny.Rounds
   let openings = games |> Seq.toList
   if openings.IsEmpty then
     let why = if tourny.Opening.OpeningsSkip > 0 then sprintf " (OpeningsSkip=%d leaves nothing)" tourny.Opening.OpeningsSkip else ""

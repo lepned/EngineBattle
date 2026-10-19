@@ -53,6 +53,7 @@
 		<Compile Include="Parsing\EPDExtractor.fs" />
 		<Compile Include="Parsing\PGNWriter.fs" />
 		<Compile Include="Parsing\FullPGNParser.fs" />
+		<Compile Include="Parsing\PolyglotFormat.fs" />
 
 		<!-- Chess utilities (depends on types, LowLevelUtilities) -->
 		<Compile Include="Utilities\ChessUtilities.fs" />
@@ -102,6 +103,7 @@
 		<Compile Include="Chess\Board.fs" />
 		<Compile Include="Chess\PgnValidation.fs" />
 		<Compile Include="Chess\BoardUtils.fs" />
+		<Compile Include="Chess\PolyglotLines.fs" />
 		<Compile Include="Chess\SvgPieceDefs.fs" />
 		<Compile Include="Chess\BoardSvg.fs" />
 
