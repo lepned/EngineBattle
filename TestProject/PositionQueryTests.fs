@@ -209,7 +209,7 @@ let ``tryMakeMove handles castling and promotion`` () =
     // UCI castling spelling comes from the generator itself, so the test can't get
     // the e1g1-vs-e1h1 convention wrong.
     let f = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
-    let shortCastle = (legalMovesOf f) |> Array.find (fun m -> m.IsCastling && m.San = "0-0")
+    let shortCastle = (legalMovesOf f) |> Array.find (fun m -> m.IsCastling && m.San = "O-O")
     match tryMakeMove f shortCastle.Uci with
     | Some fen ->
         Assert.Equal('K', pieceAt fen "g1")

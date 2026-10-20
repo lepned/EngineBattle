@@ -242,8 +242,9 @@ let private playWith
     fun tbOutput ->
       match GameAdjudication.adjudicateByEval logger board evals tourny white.Name black.Name s.Engine.Name gameTimer gameMoves movesPlayed tbOutput with
       | Some res when res.Reason = ResultReason.Checkmate ->
-          annotate "#"
-          callback (BestMove ({ bestMove with MoveHistory = bestMove.MoveHistory + "#" }, { status with Eval = EvalType.Mate 0 }))
+          // the SAN carries the mate sign already
+          annotate ""
+          callback (BestMove (bestMove, { status with Eval = EvalType.Mate 0 }))
           Some res
       | Some res ->
           annotate ""

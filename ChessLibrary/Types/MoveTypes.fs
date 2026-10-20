@@ -297,9 +297,9 @@ module MoveTypes =
         let mutable san = ""
         if isCastlingMove move then
           if move.From < move.To then
-            san <- "0-0" //"O-O"
+            san <- "O-O"
           else
-            san <- "0-0-0" //"O-O-O"
+            san <- "O-O-O"
         elif piece = TPieceType.PAWN then
           if isCapture || isEnPassantMove move  then
             san <- sprintf "%cx%s" shortMoveStart[0] shortMoveDest
@@ -379,9 +379,9 @@ module MoveTypes =
       let getShortSanMoveFromTmoveN (moves : TMove array) (count: int) (move: TMove) (pos : Position) =
         if isCastlingMove move then
           if move.To < move.From then
-            "0-0-0"
+            "O-O-O"
           elif move.To > move.From then
-            "0-0"
+            "O-O"
           else
             failwith "Invalid castling move"
         else

@@ -677,22 +677,30 @@ type Board() =
       if key = rootPositionHash then inGame + 1 else inGame
 
     /// (UCI, SAN) of every legal move - lazily: the SAN is made when the sequence is enumerated.
+    /// The SAN carries its check or mate sign, as everywhere.
     member this.GetLegalMoves() =
       let moveList = this.GenerateMoves()
       seq {
         for move in moveList do
           let longSan = TMoveOps.moveToStr &move position.STM
-          if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
-            // Chess960 castles onto the rook's square; standard castling onto c/g.
-            let toSq = move.To
-            let kr, qr =
-              if position.STM = 0uy then position.RookInfo.WhiteKRInitPlacement, position.RookInfo.WhiteQRInitPlacement
-              else position.RookInfo.BlackKRInitPlacement, position.RookInfo.BlackQRInitPlacement
-            if toSq = 2uy then longSan, "0-0-0"
-            elif toSq = 6uy then longSan, "0-0"
-            elif kr = toSq then longSan, "0-0"
-            elif qr = toSq then longSan, "0-0-0"
-          else longSan, ConvertTo.standardSAN (longSan, move, moveList, position.STM)
+          let san =
+            if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
+              // Chess960 castles onto the rook's square; standard castling onto c/g.
+              let toSq = move.To
+              let kr, qr =
+                if position.STM = 0uy then position.RookInfo.WhiteKRInitPlacement, position.RookInfo.WhiteQRInitPlacement
+                else position.RookInfo.BlackKRInitPlacement, position.RookInfo.BlackQRInitPlacement
+              if toSq = 2uy then Some "O-O-O"
+              elif toSq = 6uy then Some "O-O"
+              elif kr = toSq then Some "O-O"
+              elif qr = toSq then Some "O-O-O"
+              else None
+            else Some (ConvertTo.standardSAN (longSan, move, moveList, position.STM))
+          match san with
+          | Some san ->
+              let mutable p = position
+              yield longSan, san + MoveGeneration.checkSign move &p isFRC
+          | None -> ()
       }
 
     member this.AnyLegalMove() = this.GenerateMovesToBuffer(moveList.Value.AsSpan()) > 0
@@ -706,19 +714,23 @@ type Board() =
       // Numeric matching, case-insensitive like the old string comparison.
       match TMoveOps.tryFindMoveByUciNotation moveList moveList.Length position.STM (move.Trim().ToLower()) with
       | Some tmove ->
-          if (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
-            // Standard castling targets g1/c1 (to = 6/2); Chess960 castling the rook's initial
-            // square - the same dual check as GetLegalMoves.
-            let toSq = tmove.To
-            let kr, qr =
-              if position.STM = 0uy then position.RookInfo.WhiteKRInitPlacement, position.RookInfo.WhiteQRInitPlacement
-              else position.RookInfo.BlackKRInitPlacement, position.RookInfo.BlackQRInitPlacement
-            if toSq = 2uy then Some "0-0-0"
-            elif toSq = 6uy then Some "0-0"
-            elif kr = toSq then Some "0-0"
-            elif qr = toSq then Some "0-0-0"
-            else None
-          else Some (ConvertTo.standardSAN(move, tmove, moveList, this.Position.STM))
+          let san =
+            if (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
+              // Standard castling targets g1/c1 (to = 6/2); Chess960 castling the rook's initial
+              // square - the same dual check as GetLegalMoves.
+              let toSq = tmove.To
+              let kr, qr =
+                if position.STM = 0uy then position.RookInfo.WhiteKRInitPlacement, position.RookInfo.WhiteQRInitPlacement
+                else position.RookInfo.BlackKRInitPlacement, position.RookInfo.BlackQRInitPlacement
+              if toSq = 2uy then Some "O-O-O"
+              elif toSq = 6uy then Some "O-O"
+              elif kr = toSq then Some "O-O"
+              elif qr = toSq then Some "O-O-O"
+              else None
+            else Some (ConvertTo.standardSAN(move, tmove, moveList, this.Position.STM))
+          // with its check or mate sign, as everywhere
+          let sign = MoveGeneration.checkSign tmove &position isFRC
+          san |> Option.map (fun s -> s + sign)
       | None -> None
 
     member this.GetUciFromSan (san: string) =
@@ -734,7 +746,7 @@ type Board() =
       let moveList = this.GenerateMoves()
       match TMoveOps.tryFindMoveByUciNotation moveList moveList.Length position.STM move with
       | Some tmove ->
-          let shortSan = TMoveOps.getShortSanMoveFromTmove moveList tmove position
+          let shortSan = MoveGeneration.sanWithSign moveList moveList.Length tmove &position this.IsFRC
           this.SanMovesPlayed.Add(shortSan)
           this.MakeMove(&tmove)
           let color = colorOfPlayerWhoJustMoved position.STM
@@ -781,7 +793,7 @@ type Board() =
           // a book's own spelling survives.
           let shortSan =
             if TMoveOps.isCoordinateNotation (fromSan.Trim())
-            then TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length move position
+            then MoveGeneration.sanWithSign moveList moveList.Length move &position this.IsFRC
             else fromSan
           this.MakeMove(&move)
           openingMoves.Add shortSan
@@ -809,7 +821,7 @@ type Board() =
           // position it leads to, so the spelling does not branch it. Computed before the move is made.
           let shortSan =
             if TMoveOps.isCoordinateNotation (san.Trim())
-            then TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length move position
+            then MoveGeneration.sanWithSign moveList moveList.Length move &position this.IsFRC
             else san
           this.MakeMove(&move)
           let colorAfterMove = colorOfPlayerWhoJustMoved position.STM

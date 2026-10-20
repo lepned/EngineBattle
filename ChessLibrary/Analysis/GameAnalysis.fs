@@ -749,10 +749,13 @@ module MoveHistoryDeviation =
         i <- i + 1
       ok
 
-  // castling one way however it was written: a PGN's O-O (the standard, what EB writes) and the
-  // board's 0-0 are one move, or the live view marks a castle as a deviation
+  // one move however it was written: a PGN's O-O (the standard, what EB writes) and the board's
+  // 0-0, with or without its check sign (EB's SAN has it, older PGNs do not), or the live view
+  // marks it as a deviation
   let private castleAsZeros (sans: string array) =
-    sans |> Array.map (fun s -> if s.StartsWith("O-O", StringComparison.Ordinal) then s.Replace('O', '0') else s)
+    sans |> Array.map (fun s ->
+      let s = s.TrimEnd('+', '#')
+      if s.StartsWith("O-O", StringComparison.Ordinal) then s.Replace('O', '0') else s)
 
   let private drop (n: int) (arr: string array) =
     if n <= 0 then

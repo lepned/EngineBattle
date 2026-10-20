@@ -241,7 +241,8 @@ type internal VariationGraph() =
     let tryFindEdge nodeId =
       nodes.[nodeId].Parents
       |> edgesOf
-      |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
+      // the move however it was written: with or without its check sign
+      |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.TrimEnd('+', '#').Equals(san.TrimEnd('+', '#'), StringComparison.OrdinalIgnoreCase))
     matchingNodes
     |> List.tryPick tryFindEdge
     |> Option.orElseWith (fun () ->

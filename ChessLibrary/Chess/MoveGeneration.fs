@@ -959,4 +959,26 @@ let makeMove (move : TMove inref) (position : Position byref) =
 
     |_ -> failwith $"Not a legal move {move} in this PositionOps {position}"
 
+/// "+" when `move` gives check, "#" when it mates, "" otherwise. The move is made on a copy
+/// (Position is a struct: a stack copy, no allocation); only a checking move pays for a move
+/// generation, to see whether any reply exists.
+let checkSign (move: TMove) (position: Position inref) isFRC =
+  let mutable after = position
+  let mutable m = move
+  makeMove &m &after
+  // no king to check: a position that is not legal chess (a king could be taken); no sign, no crash
+  if (PositionOps.kings &after &&& after.PM) = 0UL then ""
+  elif InCheck &after = 0UL then ""
+  else
+    let replies = Buffers.ArrayPool<TMove>.Shared.Rent 256
+    try
+      let ctx = createLegalityContext &after
+      let mutable n = 0
+      generateLegalCaptures (replies.AsSpan()) &n &after &ctx
+      if n = 0 then generateLegalQuiets (replies.AsSpan()) &n &after isFRC &ctx
+      if n = 0 then "#" else "+"
+    finally Buffers.ArrayPool<TMove>.Shared.Return replies
 
+/// Short SAN with its check or mate sign: the SAN everything uses (the sign as in PGN and on Lichess).
+let sanWithSign (moves: TMove array) (count: int) (move: TMove) (position: Position inref) isFRC =
+  TMoveOps.getShortSanMoveFromTmoveN moves count move position + checkSign move &position isFRC

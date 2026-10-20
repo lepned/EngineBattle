@@ -62,3 +62,13 @@ let ``FirstDeviationIndex takes O-O and 0-0 as one castle`` () =
   let referenceSans = [| "e4"; "e5"; "Nf3"; "Nc6"; "Bc4"; "Bc5"; "O-O"; "Nf6"; "c3" |]
   let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory [||] referenceSans
   Assert.Equal(System.Nullable 8, idx)
+
+[<Fact>]
+let ``FirstDeviationIndex treats a move with and without its check sign as the same`` () =
+  // EB's SAN carries + and #, an older PGN as reference does not
+  let opening = [| "e4"; "d5" |]
+  let referenceSans = Array.append opening [| "Bb5"; "c6"; "Bxc6"; "bxc6" |]
+  let moveHistory = "2. Bb5+ c6 3. Bxc6+ Nxc6"
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
+  Assert.True(idx.HasValue)
+  Assert.Equal(3, idx.Value)

@@ -537,11 +537,11 @@ let ``En passant capture exd6 should remove the d5 pawn`` () =
 let ``GetSanFromUci recognizes castling in standard chess`` () =
     let board = Board()
     board.LoadFen "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
-    Assert.Equal<string option>(Some "0-0", board.GetSanFromUci "e1g1")
-    Assert.Equal<string option>(Some "0-0-0", board.GetSanFromUci "e1c1")
+    Assert.Equal<string option>(Some "O-O", board.GetSanFromUci "e1g1")
+    Assert.Equal<string option>(Some "O-O-O", board.GetSanFromUci "e1c1")
     board.LoadFen "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1"
-    Assert.Equal<string option>(Some "0-0", board.GetSanFromUci "e8g8")
-    Assert.Equal<string option>(Some "0-0-0", board.GetSanFromUci "e8c8")
+    Assert.Equal<string option>(Some "O-O", board.GetSanFromUci "e8g8")
+    Assert.Equal<string option>(Some "O-O-O", board.GetSanFromUci "e8c8")
 
 [<Fact>]
 let ``ClaimThreeFoldRep counts the start position occurrence`` () =
@@ -636,3 +636,25 @@ let ``PGN load records the moves it could not play`` () =
     Assert.Equal("e4 e5 Nf3", String.Join(" ", board.MovesAndFenPlayed |> Seq.map (fun m -> m.ShortSan) |> Seq.filter (String.IsNullOrEmpty >> not)))
     loadPgnText board "1. d4 *"
     Assert.Empty(board.SkippedPgnMoves)
+
+[<Fact>]
+let ``SAN carries the check and mate signs, in the move history and in a PV`` () =
+  let b = Board()
+  b.ResetBoardState()
+  for m in [ "f2f3"; "e7e5"; "g2g4"; "d8h4" ] do b.PlayUciMove m
+  Assert.Equal<string list>([ "f3"; "e5"; "g4"; "Qh4#" ], List.ofSeq b.SanMovesPlayed)
+  let mutable c = Board()
+  c.ResetBoardState()
+  c.PlayUciMove "e2e4"
+  c.PlayUciMove "d7d5"
+  Assert.Equal("2.Bb5+ c6 3.Bxc6+ bxc6", BoardUtils.getShortSanPVFromLongSanPVFast (Array.zeroCreate 256) &c "f1b5 c7c6 b5c6 b7c6")
+  // the board's other SAN makers too: Game Review's best move, the legal-move list
+  Assert.Equal(Some "Bb5+", c.GetSanFromUci "f1b5")
+  Assert.Contains(("f1b5", "Bb5+"), c.GetLegalMoves())
+  Assert.Contains(("g1f3", "Nf3"), c.GetLegalMoves())
+  // a check by castling, and none for a quiet move
+  let mutable d = Board()
+  d.LoadFen "5k2/8/8/8/8/8/8/4K2R w K - 0 1"
+  let sanOf (uci: string) = match BoardUtils.tryGetMoveAndSanFromUci &d uci with Some (_, s) -> Some s | None -> None
+  Assert.Equal(Some "O-O+", sanOf "e1g1")
+  Assert.Equal(Some "Kd2", sanOf "e1d2")

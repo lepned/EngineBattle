@@ -24,7 +24,8 @@ let inline generateAllMovesToBuffer (moveList: TMove[]) (position: Position byre
 
 let getSanNotationFromTMove (board: Board inref) (move: TMove) =
   let moveList = board.GenerateMoves()
-  TMoveOps.getShortSanMoveFromTmove moveList move (board.Position)
+  let mutable pos = board.Position
+  sanWithSign moveList moveList.Length move &pos board.IsFRC
 
 let tryGetTMoveFromUciNotation (board: Board inref) (uciMove: string) =
   let moveList = board.GenerateMoves()
@@ -36,7 +37,9 @@ let tryGetTMoveFromUciNotation (board: Board inref) (uciMove: string) =
 let tryGetMoveAndSanFromUci (board: Board inref) (uciMove: string) =
   let moveList = board.GenerateMoves()
   match TMoveOps.tryFindMoveByUciNotation moveList moveList.Length board.Position.STM uciMove with
-  | Some tmove -> Some (tmove, TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length tmove board.Position)
+  | Some tmove ->
+    let mutable pos = board.Position
+    Some (tmove, sanWithSign moveList moveList.Length tmove &pos board.IsFRC)
   | None -> None
 
 let getShortSanFromLongSan (board: Board inref) uciMove =
@@ -95,7 +98,7 @@ let getShortSanPVFromLongSanPVFast (moveList: TMove[]) (board: Board inref) (pv:
     match TMoveOps.tryFindMoveByUciNotation moveList count position.STM move with
     | Some tmove ->
       let moveNr = plyCount / 2 + 1
-      let san = TMoveOps.getShortSanMoveFromTmoveN moveList count tmove position
+      let san = sanWithSign moveList count tmove &position isFRC
       if san <> "" then
         if plyCount % 2 = 1 then
           // black move
@@ -114,16 +117,17 @@ let makeShortSan (moves: NNValues seq) (board: Board inref) =
   // all NN moves share one position: generate the legal list once, not per move
   let moveList = board.GenerateMoves()
   let stm = board.Position.STM
-  let pos = board.Position
+  let mutable pos = board.Position
+  let isFRC = board.IsFRC
   for nnMove in moves do
     match TMoveOps.tryFindMoveByUciNotation moveList moveList.Length stm nnMove.LANMove with
     | Some tmove ->
-      nnMove.SANMove <- TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length tmove pos
+      nnMove.SANMove <- sanWithSign moveList moveList.Length tmove &pos isFRC
     | None ->
-      if nnMove.LANMove.Trim() = "e1a1" then nnMove.SANMove <- "0-0-0"
-      elif nnMove.LANMove.Trim() = "e8a8" then nnMove.SANMove <- "0-0-0"
-      elif nnMove.LANMove.Trim() = "e1h1" then nnMove.SANMove <- "0-0"
-      elif nnMove.LANMove.Trim() = "e8h8" then nnMove.SANMove <- "0-0"
+      if nnMove.LANMove.Trim() = "e1a1" then nnMove.SANMove <- "O-O-O"
+      elif nnMove.LANMove.Trim() = "e8a8" then nnMove.SANMove <- "O-O-O"
+      elif nnMove.LANMove.Trim() = "e1h1" then nnMove.SANMove <- "O-O"
+      elif nnMove.LANMove.Trim() = "e8h8" then nnMove.SANMove <- "O-O"
 
       let transformedLanMove =
         let trim = nnMove.LANMove.Trim().ToLower()
@@ -942,7 +946,7 @@ let removePieceAt (fen: string) (square: string) : string =
 
 /// A legal move in both notations plus per-move predicates (python-chess parity:
 /// gives_check/is_capture/is_castling/is_en_passant/is_zeroing/is_irreversible).
-/// SAN castling uses EB's "0-0"/"0-0-0" spelling. GivesCheck includes discovered
+/// SAN castling is the standard "O-O"/"O-O-O". GivesCheck includes discovered
 /// checks — the move is made on a scratch copy and the resulting position probed.
 /// IsZeroing = pawn move or capture (resets the halfmove clock). IsIrreversible =
 /// zeroing, or touches a square tied to a current castling right, or a legal en
@@ -1151,8 +1155,8 @@ type EpdOperand =
   | EpdPv of string         // a line, walked position by position: pv e4 e5 Nf3;
   | EpdBare                 // opcode without operand
 
-// Interop spelling on the way OUT only: EB's SAN says "0-0" but EPD consumers
-// (python-chess and friends) expect "O-O"; internal APIs keep the zeros.
+// Interop spelling on the way OUT: "O-O", as EPD consumers (python-chess and friends) expect.
+// EB's SAN writes it already; an older "0-0" is still turned into it.
 let private interopSan (san: string) =
   if san.StartsWith "0-0" then san.Replace('0', 'O') else san
 

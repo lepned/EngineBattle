@@ -49,10 +49,10 @@ module ConvertTo =
       elif (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
         if move.To = 6uy then
           //printfn "From: %d To: %d \n%A" move.From move.To move
-          "0-0"
+          "O-O"
         else
           //printfn "From: %d To: %d \n%A" move.From move.To move
-          "0-0-0"
+          "O-O-O"
       else
         let isCapture = TMoveOps.isCaptureMove move // (move.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY
         let isEnpass = TMoveOps.isEnPassantMove move //(move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
