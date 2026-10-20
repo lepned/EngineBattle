@@ -110,7 +110,7 @@
               <input type="number" class="tool-input" style="width:90px" @bind="o.MatchPauseSeconds" min="0" disabled="@Bot.IsRunning" /></div>
             <label><input type="checkbox" @bind="o.MatchRated" disabled="@Bot.IsRunning" /> Rated</label>
           </div>
-          <small>After the pause without a game, the bot challenges a bot online rated within the range of its own rating at that speed (the start rating until it has rated games there): never the last opponent, nor one that declined in the last hour or did not move in the last 6 hours. A challenge without an answer is withdrawn after a minute, and the challenges it gets still come first.</small>
+          <small>After a game ends and the pause has passed (at once while a game runs and a place is free), the bot challenges a bot online rated within the range of its own rating at that speed (the start rating until it has rated games there): never the last opponent, nor one that declined in the last hour or did not move in the last 6 hours. A challenge without an answer is withdrawn after a minute, and the challenges it gets still come first.</small>
         }
       </div>
 

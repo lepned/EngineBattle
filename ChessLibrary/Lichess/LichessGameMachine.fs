@@ -13,7 +13,7 @@ type Config =
       /// A book is set: its moves are asked for while bookAllowed.
       Book: bool
       BookDepth: int
-      /// An opponent that has not made its first move after this long is aborted (0: never).
+      /// The least wait for the opponent's first move before aborting (s); longer games wait 10% of the clock (0: never).
       AbortSeconds: int }
 
 type State =
@@ -107,6 +107,11 @@ let private view (st: State) (g: GameFull) (s: GameState) (fen: string) (eval: s
 
 let private shownEval (st: State) = if st.LastFromBook then "book" else defaultArg st.Eval ""
 
+/// Seconds to wait for the opponent's first move before aborting: 10% of the starting clock, at least
+/// AbortSeconds (20 s in bullet and blitz, 3 min at 30+0, 9 min at 90+30).
+let firstMoveWait (st: State) (g: GameFull) =
+    max st.Config.AbortSeconds (int (max g.State.WTime g.State.BTime / 10000L))
+
 /// The game ended: the PGN first, then the goodbye (a chat that fails loses nothing). An aborted
 /// game is not a game: neither.
 let private finish (st: State) (g: GameFull) (s: GameState) =
@@ -134,7 +139,7 @@ let private decide (st: State) =
                 let shown = Show (view st g s fen (shownEval st))
                 // the opponent's first move (before both have moved a game can be aborted): a timer
                 if not ourTurn && count < 2 && st.Config.AbortSeconds > 0 && st.AwaitingFirst <> Some count && not st.Aborting then
-                    { st with AwaitingFirst = Some count }, [ shown; FirstMoveTimer (count, st.Config.AbortSeconds * 1000) ]
+                    { st with AwaitingFirst = Some count }, [ shown; FirstMoveTimer (count, firstMoveWait st g * 1000) ]
                 elif not ourTurn || count = st.Moved || st.Busy.IsSome || st.Resigned then st, [ shown ]
                 elif not st.LeftBook && bookAllowed g count st.Config.BookDepth then
                     { st with Busy = Some count }, [ shown; LookUpBook (count, fen) ]
@@ -212,6 +217,6 @@ let step (st: State) (event: Event) : State * Effect list =
         | Some (g, _, _, _, now, false) when now = count && not st.Over && not st.Aborting ->
             let opponent = if g.White.Id = st.Config.BotId then g.Black.Name else g.White.Name
             { st with Aborting = true },
-            [ Log (sprintf "%s: %s did not move in %d s, aborting" st.GameId opponent st.Config.AbortSeconds); Abort opponent ]
+            [ Log (sprintf "%s: %s did not move in %d s, aborting" st.GameId opponent (firstMoveWait st g)); Abort opponent ]
         | _ -> st, []
     | BookAnswered _ | Searched _ -> st, []

@@ -26,7 +26,9 @@ type EarlyAnswer =
 
 type SendResult =
     | SentAs of id: string
-    | SendFailed of why: string * rateLimited: bool
+    | SendFailed of why: string
+    /// Lichess's rate limit (429): its message and the seconds it names, if any.
+    | RateLimitedBy of why: string * seconds: int option
 
 type State<'E> =
     { Config: Config
@@ -47,7 +49,7 @@ type State<'E> =
       /// Who never made its first move: lower-case name -> when.
       NoShows: Map<string, DateTime>
       LastOpponent: string
-      /// When a game last started or ended (or the bot went online).
+      /// When a game last ended (or the bot went online): the pause counts from it.
       LastActivity: DateTime
       /// The earliest time for matchmaking's next challenge.
       NextAuto: DateTime
@@ -61,6 +63,8 @@ type State<'E> =
       LastAnswer: string
       /// Tokens for matchmaking's own challenges (negative: the page's are positive).
       NextToken: int
+      /// Matchmaking's challenges Lichess refused in a row for its rate limit: the next pause doubles.
+      RateLimitedInARow: int
       /// Engines between games: a net loads once, not per game.
       Idle: 'E list
       /// Engines on their way back from games that ended (their search stopping), and the games
@@ -114,7 +118,7 @@ let initial (config: Config) : State<'E> =
     { Config = config; BotId = ""; Online = false; ShuttingDown = false; Games = Map.empty; Accepted = Map.empty
       Sending = Map.empty; Outgoing = Map.empty; Early = Map.empty; DeclinedBy = Map.empty; NoShows = Map.empty; LastOpponent = ""
       LastActivity = DateTime.MinValue; NextAuto = DateTime.MinValue; Bots = [||]; BotsAt = DateTime.MinValue
-      Listing = false; Note = ""; LastAnswer = ""; NextToken = -1; Idle = []; Returning = 0; WaitingForEngine = [] }
+      Listing = false; Note = ""; LastAnswer = ""; NextToken = -1; RateLimitedInARow = 0; Idle = []; Returning = 0; WaitingForEngine = [] }
 
 /// Places taken: games, accepted challenges, challenges sent or on their way.
 let taken (st: State<'E>) = st.Games.Count + st.Accepted.Count + st.Sending.Count + st.Outgoing.Count
@@ -202,7 +206,8 @@ let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
 
     | GameStarted (id, _) when st.Games.ContainsKey id -> st, []
     | GameStarted (id, now) ->
-        let st = { st with Accepted = st.Accepted.Remove id; Games = st.Games.Add(id, None); LastActivity = now }
+        // the pause counts from a game's end: a place free beside a running game is filled at once
+        let st = { st with Accepted = st.Accepted.Remove id; Games = st.Games.Add(id, None) }
         let st, said = if st.Outgoing.ContainsKey id then answer id WasAccepted now st else { st with Early = st.Early.Add(id, (WasAccepted, now)) }, []
         st, said @ [ Log (sprintf "game %s started" id); StartGame id ]
     | Opponent name -> { st with LastOpponent = name }, []
@@ -229,6 +234,7 @@ let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
             let st = { st with Sending = st.Sending.Remove token }
             match result with
             | SentAs id ->
+                let st = { st with RateLimitedInARow = 0 }
                 let sent = sprintf "challenged %s (%g+%d %s), waiting for an answer" c.Opponent (float c.Seconds / 60.0) c.Increment (if c.Rated then "rated" else "casual")
                 match st.Early.TryFind id with
                 | Some (a, _) ->
@@ -242,10 +248,19 @@ let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
                     st, [ Log (sprintf "withdrawing the challenge to %s" c.Opponent); CancelOnLichess id; Answer (token, Error "the bot went offline") ]
                 | None ->
                     { st with Outgoing = st.Outgoing.Add(id, { c with Id = id; At = now }); LastAnswer = sent }, [ Log sent; Answer (token, Ok id) ]
-            | SendFailed (why, rateLimited) when c.Auto ->
-                if rateLimited then { st with NextAuto = now.AddMinutes 10.0 }, [ Log "matchmaking: Lichess asks for a pause, waiting 10 minutes" ]
-                else { st with DeclinedBy = st.DeclinedBy.Add(lower c.Opponent, now) }, [ Log (sprintf "matchmaking: %s: %s" c.Opponent why) ]
-            | SendFailed (why, _) -> st, [ Answer (token, Error why) ]
+            | RateLimitedBy (why, seconds) when c.Auto ->
+                // as long as Lichess says; else a minute, doubling while it keeps refusing, at most an hour
+                let wait =
+                    match seconds with
+                    | Some s when s > 0 -> TimeSpan.FromSeconds(float s)
+                    | _ -> TimeSpan.FromMinutes(float (min 60 (pown 2 st.RateLimitedInARow)))
+                { st with NextAuto = now + wait; RateLimitedInARow = st.RateLimitedInARow + 1 },
+                [ Log (sprintf "matchmaking: Lichess asks for a pause%s - waiting %s" (if why = "" then "" else ": " + why) (waitText wait)) ]
+            | RateLimitedBy (why, _) -> st, [ Answer (token, Error (if why = "" then rateLimitedText else "Lichess asks for a pause: " + why)) ]
+            // an opponent at its own limit (400) or a refusal: that bot is skipped a while
+            | SendFailed why when c.Auto ->
+                { st with DeclinedBy = st.DeclinedBy.Add(lower c.Opponent, now) }, [ Log (sprintf "matchmaking: %s: %s" c.Opponent why) ]
+            | SendFailed why -> st, [ Answer (token, Error why) ]
 
     | Cancel id ->
         match st.Outgoing.TryFind id with

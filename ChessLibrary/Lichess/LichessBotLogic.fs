@@ -203,6 +203,24 @@ let errorText (body: string) : string =
         | _ -> body
     with _ -> body
 
+/// The wait a 429 asks for, in seconds: its JSON's "seconds" (Lichess's ratelimit object) or None.
+let rateLimitSeconds (body: string) : int option =
+    try
+        match JsonNode.Parse body with
+        | :? JsonObject as o ->
+            let read (n: JsonNode) = match n with null -> None | n -> (try Some (n.GetValue<int>()) with _ -> None)
+            match o.["ratelimit"] with
+            | :? JsonObject as r -> read r.["seconds"]
+            | _ -> read o.["seconds"]
+        | _ -> None
+    with _ -> None
+
+/// A wait for the log: "45 s", "12 minutes", "5.3 hours".
+let waitText (t: TimeSpan) =
+    if t.TotalSeconds < 90.0 then sprintf "%.0f s" t.TotalSeconds
+    elif t.TotalMinutes < 90.0 then sprintf "%.0f minutes" t.TotalMinutes
+    else sprintf "%.1f hours" t.TotalHours
+
 /// One line of a game stream; None for the keep-alive empty lines.
 let parseGameMessage (line: string) : GameMessage option =
     if String.IsNullOrWhiteSpace line then None

@@ -347,3 +347,78 @@ let ``the page's view has the players' ratings`` () =
     let v = effects |> List.pick (function G.Show v -> Some v | _ -> None)
     Assert.Equal(Nullable 2000, v.WhiteRating)
     Assert.Equal(Nullable 1850, v.BlackRating)
+
+[<Fact>]
+let ``with two games at once matchmaking fills the free place while a game runs, the pause only after a game ends`` () =
+    let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 60; GapSeconds = 30 }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let st = fst (B.step (B.initial { Filter = { defaultFilter with MaxGames = 2 }; Matchmaking = Some m }) (B.WentOnline ("testbot", t0)))
+    let st, _ = runB st [ B.Listed (Ok [| bot "A" 2000; bot "B" 2050 |], t0.AddSeconds 61.0) ]
+    // a game starts 70 s in: the other place is filled at once, not a pause later
+    let st, _ = runB st [ B.GameStarted ("g1", t0.AddSeconds 70.0) ]
+    let _, effects = runB st [ B.Tick (t0.AddSeconds 72.0, 0) ]
+    Assert.Contains(effects, fun e -> match e with B.PostChallenge _ -> true | _ -> false)
+    // a game that ends starts the pause: nothing until 60 s after it
+    let st, _ = runB st [ B.GameEnded ("g1", t0.AddSeconds 80.0) ]
+    let _, effects = runB st [ B.Tick (t0.AddSeconds 100.0, 0) ]
+    Assert.DoesNotContain(effects, fun e -> match e with B.PostChallenge _ -> true | _ -> false)
+    let _, effects = runB st [ B.Tick (t0.AddSeconds 141.0, 0) ]
+    Assert.Contains(effects, fun e -> match e with B.PostChallenge _ -> true | _ -> false)
+
+[<Fact>]
+let ``the wait for the first move grows with the clock: 10 percent, at least 20 s`` () =
+    let fullWith (ms: int64) =
+        let line = sprintf """{"type":"gameFull","id":"g1","variant":{"key":"standard"},"rated":false,"speed":"classical","white":{"id":"alice","name":"Alice"},"black":{"id":"testbot","name":"TestBot"},"initialFen":"startpos","state":{"type":"gameState","moves":"","wtime":%d,"btime":%d,"winc":0,"binc":0,"status":"started"}}""" ms ms
+        G.Message ((parseGameMessage line).Value, info)
+    let timer ms = run (G.initial (config false 8) "g1") [ fullWith ms ] |> snd |> List.pick (function G.FirstMoveTimer (_, t) -> Some t | _ -> None)
+    Assert.Equal(20000, timer 60000L)        // 1+0
+    Assert.Equal(20000, timer 180000L)       // 3+2
+    Assert.Equal(60000, timer 600000L)       // 10+0
+    Assert.Equal(180000, timer 1800000L)     // 30+0
+    Assert.Equal(540000, timer 5400000L)     // 90+30
+
+[<Fact>]
+let ``a rate limit pauses matchmaking a minute, doubling while it lasts, and a challenge that goes through resets it`` () =
+    let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let st0, _ = runB (online (Some m)) [ B.Listed (Ok [| bot "A" 2000 |], t0) ]
+    /// one challenge at `at`, answered with `result`: the pause it sets, in minutes from `at`
+    let attempt (st: B.State<string>) (at: DateTime) result =
+        // a fresh list: older than 5 minutes it is read again instead of challenging
+        let st, effects = runB st [ B.Listed (Ok [| bot "A" 2000; bot "B" 2000 |], at); B.Tick (at, 0) ]
+        let token = effects |> List.pick (function B.PostChallenge (t, _) -> Some t | _ -> None)
+        let st, _ = runB st [ B.Sent (token, result, at) ]
+        st, (st.NextAuto - at).TotalMinutes
+    let limited = B.RateLimitedBy ("", None)
+    let st, wait1 = attempt st0 (t0.AddMinutes 1.0) limited
+    let st, wait2 = attempt st (t0.AddMinutes 3.0) limited
+    let st, wait3 = attempt st (t0.AddMinutes 6.0) limited
+    Assert.Equal<float list>([ 1.0; 2.0; 4.0 ], [ wait1; wait2; wait3 ])
+    // one that goes through: the next rate limit is a minute again
+    let st, _ = attempt st (t0.AddMinutes 11.0) (B.SentAs "x1")
+    let st, _ = runB st [ B.Declined ("x1", "No.", t0.AddMinutes 11.0) ]
+    let _, wait = attempt st (t0.AddMinutes 12.0) limited
+    Assert.Equal(1.0, wait)
+
+[<Fact>]
+let ``a rate limit that names its wait is waited out, and its reason is logged`` () =
+    let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let st, effects = runB (online (Some m)) [ B.Listed (Ok [| bot "A" 2000 |], t0); B.Tick (t0.AddSeconds 1.0, 0) ]
+    let token = effects |> List.pick (function B.PostChallenge (t, _) -> Some t | _ -> None)
+    let why = "You played 100 games against other bots today, please wait before challenging another bot."
+    let st, effects = runB st [ B.Sent (token, B.RateLimitedBy (why, Some 7200), t0.AddSeconds 1.0) ]
+    Assert.Equal(t0.AddSeconds 7201.0, st.NextAuto)
+    Assert.Contains(B.Log ("matchmaking: Lichess asks for a pause: " + why + " - waiting 2.0 hours"), effects)
+    // the page's own challenge gets Lichess's words
+    let st, _ = runB st [ B.Send (5, request "bob", t0) ]
+    let _, effects = runB st [ B.Sent (5, B.RateLimitedBy (why, Some 7200), t0) ]
+    Assert.Contains(B.Answer (5, Error ("Lichess asks for a pause: " + why)), effects)
+
+[<Fact>]
+let ``a 429's wait is read from Lichess's ratelimit object`` () =
+    Assert.Equal(Some 3600, rateLimitSeconds """{"error":"You played 100 games against other bots today","ratelimit":{"key":"bot.vsBot.day","seconds":3600}}""")
+    Assert.Equal(Some 60, rateLimitSeconds """{"seconds":60}""")
+    Assert.Equal(None, rateLimitSeconds """{"error":"Too many requests"}""")
+    Assert.Equal(None, rateLimitSeconds "Too many requests")
+    Assert.Equal("You played 100 games against other bots today", errorText """{"error":"You played 100 games against other bots today","ratelimit":{"key":"bot.vsBot.day","seconds":3600}}""")

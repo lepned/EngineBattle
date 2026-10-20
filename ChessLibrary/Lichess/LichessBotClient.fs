@@ -11,8 +11,8 @@ open System.Threading.Tasks
 /// What a request to Lichess came to.
 type LichessReply =
     | Done of body: string
-    /// 429: Lichess asks for a minute's pause
-    | RateLimited
+    /// 429: Lichess asks for a pause - its message ("" when none) and the seconds it names, if any
+    | RateLimited of why: string * seconds: int option
     | Refused of status: int * body: string
 
 /// The Lichess bot API over HTTP with a bearer token; `baseUrl` is lichess.org or a test server.
@@ -27,7 +27,10 @@ type LichessBotClient(baseUrl: string, token: string) =
         return
             match response.StatusCode with
             | HttpStatusCode.OK -> Done body
-            | HttpStatusCode.TooManyRequests -> RateLimited
+            | HttpStatusCode.TooManyRequests ->
+                let retryAfter = match response.Headers.RetryAfter with null -> None | r when r.Delta.HasValue -> Some (int r.Delta.Value.TotalSeconds) | _ -> None
+                let why = if String.IsNullOrWhiteSpace body then "" else LichessBotLogic.errorText body
+                RateLimited (why, (match LichessBotLogic.rateLimitSeconds body with Some s -> Some s | None -> retryAfter))
             | code -> Refused (int code, body)
     }
 
@@ -83,7 +86,7 @@ type LichessBotClient(baseUrl: string, token: string) =
             let n = JsonNode.Parse body
             let s (k: string) = match n.[k] with null -> "" | v -> v.GetValue<string>()
             return Ok (s "id", s "username", s "title")
-        | RateLimited -> return Error "Lichess asks for a pause (429): try again in a minute"
+        | RateLimited (why, _) -> return Error ("Lichess asks for a pause (429)" + (if why = "" then ": try again in a minute" else ": " + why))
         | Refused (401, _) -> return Error "the token was rejected: a token with the bot:play scope is needed"
         | Refused (code, body) -> return Error (sprintf "HTTP %d: %s" code body)
     }
@@ -114,7 +117,7 @@ type LichessBotClient(baseUrl: string, token: string) =
         use! response = client.GetAsync(url (sprintf "/api/bot/online?nb=%d" count), cts.Token)
         match! reply response with
         | Done body -> return Ok (body.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        | RateLimited -> return Error "Lichess asks for a pause (429): try again in a minute"
+        | RateLimited (why, _) -> return Error ("Lichess asks for a pause (429)" + (if why = "" then ": try again in a minute" else ": " + why))
         | Refused (code, body) -> return Error (sprintf "HTTP %d: %s" code body)
     }
     /// Withdraws a challenge the bot sent.

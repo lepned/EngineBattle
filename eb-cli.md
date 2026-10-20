@@ -882,11 +882,11 @@ Options:
       --book FILE                 A Polyglot book (.bin) for the opening: a move drawn by the book's weights while it has one
       --book-depth N              Plies the book may play, counted from the start of the game (default 8)
       --engine-per-game           With --nodes, each game its own engine (default: one engine plays every game, one net loaded)
-      --matchmaking               Challenge bots online on its own after --match-pause seconds without a game
+      --matchmaking               Challenge bots online on its own whenever a place is free (after --match-pause once a game ends)
       --match-tc M+S,...          Matchmaking's time controls, one drawn per challenge (default 3+0,3+2,5+3)
       --match-range N             Challenge bots rated within N of the bot's own rating at that speed (default 300)
       --match-rated               Matchmaking's challenges are rated (casual when not given)
-      --match-pause S             Seconds without a game before matchmaking challenges (default 60)
+      --match-pause S             Seconds after a game ends before matchmaking challenges (none while a game runs and a place is free) (default 60)
       --match-start N             The bot's rating at a speed where it has no rated games yet (default 2000)
       --uci NAME=VALUE            Set a UCI option of the engine (repeatable)
       --server URL                The Lichess server (default https://lichess.org)

@@ -46,11 +46,11 @@ let runSpec =
             value "book" "FILE" "A Polyglot book (.bin) for the opening: a move drawn by the book's weights while it has one"
             value "book-depth" "N" "Plies the book may play, counted from the start of the game" |> withDefault "8"
             switch "engine-per-game" "With --nodes, each game its own engine (default: one engine plays every game, one net loaded)"
-            switch "matchmaking" "Challenge bots online on its own after --match-pause seconds without a game"
+            switch "matchmaking" "Challenge bots online on its own whenever a place is free (after --match-pause once a game ends)"
             value "match-tc" "M+S,..." "Matchmaking's time controls, one drawn per challenge" |> withDefault "3+0,3+2,5+3"
             value "match-range" "N" "Challenge bots rated within N of the bot's own rating at that speed" |> withDefault "300"
             switch "match-rated" "Matchmaking's challenges are rated (casual when not given)"
-            value "match-pause" "S" "Seconds without a game before matchmaking challenges" |> withDefault "60"
+            value "match-pause" "S" "Seconds after a game ends before matchmaking challenges (none while a game runs and a place is free)" |> withDefault "60"
             value "match-start" "N" "The bot's rating at a speed where it has no rated games yet" |> withDefault "2000"
             Cli.Groups.uci
             server ]
@@ -139,7 +139,7 @@ let upgrade (p: Parsed) =
     | Result.Ok (_, name, _) ->
         match c.UpgradeToBot(ct).GetAwaiter().GetResult() with
         | LichessReply.Done _ -> printfn "%s is a bot account now" name; ExitOk
-        | LichessReply.RateLimited -> error "Lichess asks for a pause: try again in a minute"; ExitFailed
+        | LichessReply.RateLimited (why, _) -> error ("Lichess asks for a pause: " + (if why = "" then "try again in a minute" else why)); ExitFailed
         | LichessReply.Refused (code, body) -> error $"Lichess refused the upgrade (HTTP {code}): {body}"; ExitFailed
 
 let challengeSpec =
@@ -173,7 +173,7 @@ let challenge (p: Parsed) =
         match challengeIdOf body with
         | Some id -> printfn "Challenged %s: https://lichess.org/%s" user id; ExitOk
         | None -> error "Lichess's answer has no challenge id"; ExitFailed
-    | LichessReply.RateLimited -> error "Lichess asks for a pause: try again in a minute"; ExitFailed
+    | LichessReply.RateLimited (why, _) -> error ("Lichess asks for a pause: " + (if why = "" then "try again in a minute" else why)); ExitFailed
     | LichessReply.Refused (code, body) -> error $"Lichess refused the challenge (HTTP {code}): {errorText body}"; ExitFailed
 
 let onlineSpec =

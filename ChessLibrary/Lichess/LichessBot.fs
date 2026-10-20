@@ -66,8 +66,8 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
             | ex -> return LichessReply.Refused (0, ex.Message) }
         let! r = attempt ()
         match r with
-        | LichessReply.RateLimited ->
-            say (sprintf "%s: Lichess asks for a pause, waiting a minute" what)
+        | LichessReply.RateLimited (why, _) ->
+            say (sprintf "%s: Lichess asks for a pause%s, waiting a minute" what (if why = "" then "" else ": " + why))
             do! pause 60000 ct
             return! attempt ()
         | r -> return r
@@ -327,7 +327,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                     if not cts.IsCancellationRequested then
                         match result with
                         | LichessReply.Refused (code, why) -> post (LichessGameMachine.StreamEnded (code, why))
-                        | LichessReply.RateLimited -> post (LichessGameMachine.StreamEnded (429, "rate limited"))
+                        | LichessReply.RateLimited _ -> post (LichessGameMachine.StreamEnded (429, "rate limited"))
                         | LichessReply.Done _ -> post (LichessGameMachine.StreamEnded (0, "closed"))
             } |> ignore
         let execute (effect: LichessGameMachine.Effect) =
@@ -350,7 +350,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                     match! send (fun () -> client.Move(gameId, uci, ct)) "move" ct with
                     | LichessReply.Done _ -> post (LichessGameMachine.MoveDelivered count)
                     | LichessReply.Refused (code, body) -> post (LichessGameMachine.MoveRefused (count, (if code = 0 then body else sprintf "HTTP %d: %s" code body)))
-                    | LichessReply.RateLimited -> post (LichessGameMachine.MoveRefused (count, "rate limited")) } |> ignore
+                    | LichessReply.RateLimited _ -> post (LichessGameMachine.MoveRefused (count, "rate limited")) } |> ignore
             | LichessGameMachine.RetryAfter (count, ms) ->
                 task {
                     do! pause ms ct
@@ -438,10 +438,10 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                     | LichessReply.Done body ->
                         match challengeIdOf body with
                         | Some id -> LichessBotMachine.SentAs id
-                        | None -> LichessBotMachine.SendFailed ("Lichess's answer has no challenge id", false)
-                    | LichessReply.RateLimited -> LichessBotMachine.SendFailed (LichessBotMachine.rateLimitedText, true)
-                    | LichessReply.Refused (0, text) -> LichessBotMachine.SendFailed (text, false)
-                    | LichessReply.Refused (_, body) -> LichessBotMachine.SendFailed (errorText body, false)
+                        | None -> LichessBotMachine.SendFailed "Lichess's answer has no challenge id"
+                    | LichessReply.RateLimited (why, seconds) -> LichessBotMachine.RateLimitedBy (why, seconds)
+                    | LichessReply.Refused (0, text) -> LichessBotMachine.SendFailed text
+                    | LichessReply.Refused (_, body) -> LichessBotMachine.SendFailed (errorText body)
                 postBot (LichessBotMachine.Sent (token, result, DateTime.UtcNow)) } |> ignore
         | LichessBotMachine.Answer (token, result) ->
             take challengeReplies token |> Option.iter (fun tcs -> tcs.TrySetResult result |> ignore)
@@ -595,11 +595,11 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                         if not ct.IsCancellationRequested then
                             match result with
                             | LichessReply.Refused (401, _) -> failwith "the token was rejected"
-                            | LichessReply.RateLimited ->
-                                say "Lichess asks for a pause, waiting a minute"
+                            | LichessReply.RateLimited (why, _) ->
+                                say ("Lichess asks for a pause" + (if why = "" then "" else ": " + why) + ", waiting a minute")
                                 do! pause 60000 ct
                             | r ->
-                                say (sprintf "the event stream ended (%s), opening it again in %d s" (match r with LichessReply.Refused (c, b) -> sprintf "HTTP %d %s" c b | _ -> "closed") (backoff / 1000))
+                                say (sprintf "the event stream ended (%s), opening it again in %d s" (match r with LichessReply.Refused (0, b) -> "connection lost: " + b | LichessReply.Refused (c, b) -> sprintf "HTTP %d %s" c b | _ -> "closed") (backoff / 1000))
                                 do! pause backoff ct
                                 backoff <- min 60000 (backoff * 2)
                     say "offline"
