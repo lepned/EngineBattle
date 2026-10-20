@@ -64,6 +64,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Remove an engine from a PGN-file:** Remove a specific engine's games from a PGN file to clean up tournament results or resume a tournament without including that engine.
 - **Move Deviation Finder:** Easily identify and visualize deviations by chess engines compared to a reference engine in a PGN file, presented clearly with summary tables and visualized with chessboards.
 - **Out-of-Book Evaluation:** Evaluate opening positions right after book exits using one or more engines to filter out openings that are too drawish or too one-sided for engine matches.
+- **Polyglot Books (.bin):** Draw tournament openings from a book by its weights, see a book's moves on the analysis page, and make a book from PGN games or export one to PGN.
 
 ### 📈 Visualization and Statistics
 
@@ -88,6 +89,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 
 - **Streamer-Friendly Tournaments:** Optimized tournament mode for engaging chess engine streaming, making it easy to share standings and results in real time.
 - **Web Application:** Runs seamlessly in browsers, providing live console logs, pairings, standings, and results, ideal for live updates via Discord and other community platforms.
+- **Lichess Bot:** Play on Lichess as a bot with any engine: it answers challenges, finds bot opponents on its own and writes every game to a PGN (Tools â†’ Lichess bot, or `eb-cli bot run`).
 
 ---
 
@@ -190,6 +192,8 @@ eb-cli position <fen|startpos> [--square SQ] [--pv "<line>"] [--json]
 eb-cli tablebase <fen> [--syzygy DIR]
 eb-cli pgn deviations <file.pgn>
 eb-cli pgn parse <file.pgn>
+eb-cli book make <games.pgn> -o <book.bin>
+eb-cli bot run <engine> [--nodes N] [--matchmaking] [--book <book.bin>]
 eb-cli gui [<page>] [--port N]
 ```
 

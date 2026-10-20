@@ -1,7 +1,4 @@
-/// The Polyglot opening book format (.bin): the position key and the book's entries, without a board.
-/// Format: http://hgm.nubati.net/book_format.html - 16-byte entries sorted by key, big-endian: key
-/// (8 bytes), move (2), weight (2), learn (4). The random numbers are Polyglot's own; the key of a
-/// position must match the one the book was made with, so they are data, not a choice.
+/// The Polyglot book format (.bin): position keys and 16-byte entries (http://hgm.nubati.net/book_format.html).
 module ChessLibrary.PolyglotFormat
 
 open System
@@ -324,10 +321,8 @@ let encodeMove (uci: string) (kingCastles: bool) : uint16 =
     let promo = if uci.Length > 4 then (match uci.[4] with 'n' -> 1 | 'b' -> 2 | 'r' -> 3 | _ -> 4) else 0
     uint16 (file uci.[2] ||| (row uci.[3] <<< 3) ||| (file uci.[0] <<< 6) ||| (row uci.[1] <<< 9) ||| (promo <<< 12))
 
-/// Writes a book: the entries sorted by key, the heaviest move of a position first, 16 bytes each
-/// (the learn field 0). Folders are made as needed. Written beside it and moved over the old book in
-/// one step: the analysis page may have the old one open (BookFile shares delete), and a reader never
-/// sees half a book.
+/// Writes a book (sorted by key, heaviest move first), moved over the old one in one step: no reader sees
+/// half a book, and an open old book is replaced.
 let write (path: string) (entries: seq<Entry>) =
     let sorted = entries |> Seq.sortBy (fun e -> e.Key, -(int e.Weight)) |> Seq.toArray
     let full = Path.GetFullPath path
@@ -346,9 +341,7 @@ let write (path: string) (entries: seq<Entry>) =
                 f.Write(buf, 0, 16)
         if not (File.Exists full) then File.Move(temp, full)
         else
-            // a move onto a file someone has open is refused; renaming that file aside is not (it was
-            // opened with delete sharing), so the old book steps aside, the new one moves in, and the
-            // old one is removed - or put back if the move fails
+            // the open old book (delete sharing) steps aside, the new one moves in, the old one goes - or comes back
             let old = full + ".old"
             if File.Exists old then File.Delete old
             File.Move(full, old)
@@ -364,9 +357,7 @@ let write (path: string) (entries: seq<Entry>) =
 /// Whether a file looks like a Polyglot book by its name.
 let isBookPath (path: string) = not (isNull path) && path.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)
 
-/// A book file opened for lookups one position at a time: a binary search on the file, 16 bytes read
-/// per probe, so a book of any size costs no memory (the tournament's line drawing and the analysis
-/// page both use it). Thread-safe. Opened with delete sharing: the file can be replaced while open.
+/// A book file probed by binary search on disk (no memory for its size); thread-safe, replaceable while open.
 type BookFile(path: string) =
     let stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete, 4096, FileOptions.RandomAccess)
     let count = stream.Length / 16L

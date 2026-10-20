@@ -1,8 +1,5 @@
-/// One engine for all the bot's games, as a pure step function: state + event -> state + effects;
-/// LichessBot runs it in an agent. With a fixed number of nodes a move takes milliseconds, so one
-/// engine (one net loaded) plays every game: the games' searches queue and run one at a time, each
-/// with its full position. An engine that fails is started again and the search tried once more on
-/// it; a search that fails twice is answered None (the game resigns, as with an engine of its own).
+/// One engine for every game with fixed nodes, as a pure step function: searches queue and run one at a
+/// time; a failed engine is restarted and the search retried once, then answered None.
 module ChessLibrary.LichessEngineQueue
 
 type Request =

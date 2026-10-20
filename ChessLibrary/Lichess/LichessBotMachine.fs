@@ -1,8 +1,5 @@
-/// The bot's account as a pure step function: state + event -> state + effects; LichessBot's agent
-/// runs it. One owner for the places (games, accepted challenges, challenges it sent), the answers
-/// to its challenges, matchmaking and the idle engines: a free place is checked and taken in one
-/// step, so nothing can take it in between, and an answer that comes before its challenge's id is
-/// known waits in the state for it. Time and chance come in with the events.
+/// The bot's account as a pure step function: places, challenges, matchmaking and idle engines in one
+/// owner, so a free place is checked and taken in one step.
 module ChessLibrary.LichessBotMachine
 
 open System

@@ -4,10 +4,7 @@ using Microsoft.FSharp.Core;
 
 namespace WebGUI.Services;
 
-/// <summary>
-/// The Lichess bot of the app (ChessLibrary.LichessBot): one at a time, running in the background while the
-/// app is open - leaving the page does not stop it. The page starts and stops it and shows its log and games.
-/// </summary>
+/// <summary>The app's Lichess bot: one at a time, running while the app is open, also when the page is left.</summary>
 public sealed class LichessBotService : IDisposable
 {
     private readonly ILogger<LichessBotService> _logger;

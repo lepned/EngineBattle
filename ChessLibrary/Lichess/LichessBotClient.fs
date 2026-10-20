@@ -15,9 +15,7 @@ type LichessReply =
     | RateLimited
     | Refused of status: int * body: string
 
-/// The Lichess bot API over HTTP, with a bearer token (scope bot:play, and challenge:write for
-/// challenges). `baseUrl` is https://lichess.org, or a test server. Streams are ndjson read line by
-/// line; their empty keep-alive lines are passed on and skipped by the parsers.
+/// The Lichess bot API over HTTP with a bearer token; `baseUrl` is lichess.org or a test server.
 type LichessBotClient(baseUrl: string, token: string) =
     let client = new HttpClient(Timeout = Timeout.InfiniteTimeSpan)
     do client.DefaultRequestHeaders.Authorization <- Headers.AuthenticationHeaderValue("Bearer", token)
@@ -42,9 +40,7 @@ type LichessBotClient(baseUrl: string, token: string) =
         return! reply response
     }
 
-    /// Reads an ndjson stream until it ends, the token cancels it or the connection drops (an exception).
-    /// Lichess sends an empty line every few seconds; a stream silent for `idleSeconds` is a dead
-    /// connection (a dropped Wi-Fi sends no reset) and ends as Refused (0, ...) so the caller opens it again.
+    /// Reads an ndjson stream to its end; one silent for `idleSeconds` (a dead connection) ends as Refused (0, ...).
     let stream (path: string) (onLine: string -> unit) (ct: CancellationToken) = task {
         let idleSeconds = 30.0
         use request = new HttpRequestMessage(HttpMethod.Get, url path)

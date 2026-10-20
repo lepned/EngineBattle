@@ -12,9 +12,7 @@ open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.LichessBotLogic
 
-/// How the bot plays: the engine, which challenges it takes, how it searches, where its games go, and
-/// what it says in the chat (a greeting at the start, one at the end; empty for none), and an opening
-/// book (.bin, "" for none) that gives the moves of the first `BookDepth` plies while it has them.
+/// How the bot plays: engine, challenge filter, search limit, PGN, chat lines, opening book ("" for none).
 type LichessBotSettings =
     { Engine: EngineConfig
       Filter: Filter
@@ -42,14 +40,8 @@ type internal BotMessage =
     | Step of LichessBotMachine.Event<LichessBotEngine>
     | Sync of AsyncReplyChannel<unit>
 
-/// A Lichess bot account played by an engine, until the token is cancelled: it accepts the challenges
-/// the filter takes and declines the rest with Lichess's reason, plays each game with its own engine,
-/// answers the chat, and writes every finished game to the PGN. Two kinds of agent run it: one for
-/// the account (LichessBotMachine: places, challenges, matchmaking, idle engines) and one per game
-/// (LichessGameMachine). They decide; the HTTP requests and the engines run outside them and report
-/// back as events. A dropped stream is opened again (5 s, doubling to a minute); a 429 waits a minute;
-/// an engine that fails is started again and plays on from the position, and a game it still cannot
-/// play is resigned. `log` gets one line per event.
+/// A Lichess bot account played by an engine until the token is cancelled. One agent owns the account
+/// (LichessBotMachine), one each game (LichessGameMachine); HTTP and engines run outside and report back.
 type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: ILogger, log: string -> unit) =
     let say (text: string) =
         logger.LogInformation("Lichess bot: {Text}", text)

@@ -1,8 +1,5 @@
-/// Opening lines drawn from a Polyglot book (.bin), as the tournament's openings: from the start
-/// position, a move from the book at every ply - weighted by the book's weights, with a seeded
-/// random draw so the same seed gives the same lines (a resumed tournament finds its openings
-/// again) - until the book has no move or the line is as long as asked. Each line is a PGN opening
-/// like any other, so pairings, both colours and resume work unchanged.
+/// Tournament openings drawn from a Polyglot book (.bin): a move per ply by the book's weights, seeded so
+/// a resumed tournament draws the same lines.
 module ChessLibrary.PolyglotLines
 
 open System
@@ -75,12 +72,8 @@ let toPgnGame (n: int) (bookName: string) (moves: string list) =
     let text = sprintf "[Event \"%s\"]\n[Round \"%d\"]\n[Result \"*\"]\n\n%s *\n" bookName n body
     { FullPGNParser.parseFullPgnGame text with Raw = text; GameNumber = n }
 
-/// `count` different lines (by the position they end in) from the book, the same for the same seed;
-/// the first n are the same whatever the count (one seeded sequence of draws), so more rounds keep
-/// the openings of fewer. A book with fewer different lines of that length gives fewer: the caller
-/// says so. The book's moves are capped at `maxPly` plies (Opening.OpeningsPly); 0 or less is the
-/// book to its end. A book up to 64 MB is read into memory (fast); a larger one is searched on
-/// disk, so a big book does not cost its size in memory.
+/// `count` different lines, the same for the same seed (the first n whatever the count), capped at `maxPly`
+/// plies (0: to the book's end); fewer when the book has fewer.
 let lines (path: string) (count: int) (seed: int) (maxPly: int) : PgnGame[] =
     let onDisk = if IO.FileInfo(path).Length > 64L * 1024L * 1024L then Some (new PolyglotFormat.BookFile(path)) else None
     use _close = { new IDisposable with member _.Dispose() = onDisk |> Option.iter (fun b -> (b :> IDisposable).Dispose()) }
@@ -139,11 +132,8 @@ type MakeSummary =
       Positions: int
       Moves: int }
 
-/// A book from games, written to `outPath`. Every game played from the standard start or a standard
-/// FEN counts its first `MaxPly` plies: the position's key, the move, and the result for the side
-/// that played it. A move is kept when at least `MinGames` games played it and (with results) its
-/// weight is above 0; weights above 16 bits are scaled down as Polyglot does. A game without a
-/// result is skipped, except with `Uniform`, where results do not count (opening files).
+/// A book from games' first `MaxPly` plies: a move is kept when `MinGames` played it, weighted 2 x wins +
+/// draws (1 each with `Uniform`, for files without results).
 let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (progress: int -> unit) : MakeSummary =
     let stats = Dictionary<struct (uint64 * uint16), struct (int * int)>()
     let mutable total = 0
@@ -218,9 +208,8 @@ let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (pro
 
 // ---------------------------------------------------------------- a book back to opening lines
 
-/// The book's lines as a tree from the start position: every move with at least `minShare` percent of
-/// its position's weight, to `maxPly` plies or the book's end; a line ends where no move qualifies.
-/// Transpositions (the same end position) count once; at most `maxLines` lines (the bool: the cap was hit).
+/// The book's lines as a tree from the start: moves with at least `minShare` percent, to `maxPly` plies,
+/// at most `maxLines` (the bool: the cap was hit); transpositions count once.
 let exportTree (path: string) (maxPly: int) (minShare: float) (maxLines: int) : PgnGame[] * bool =
     use book = new PolyglotFormat.BookFile(path)
     let cache = Cache()

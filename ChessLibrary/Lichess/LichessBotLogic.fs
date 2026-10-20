@@ -1,6 +1,4 @@
-/// A Lichess bot account played by an EngineBattle engine: the messages of the bot API, which challenges
-/// to take, the engine's go command, and the chat. Pure - the HTTP is LichessBotClient, the running
-/// LichessBot. API: https://lichess.org/api#tag/bot (bots play challenges only, no UltraBullet).
+/// The Lichess bot API's messages, the challenge filter, the go command and the chat; pure.
 module ChessLibrary.LichessBotLogic
 
 open System
@@ -137,10 +135,8 @@ let parseOnlineBot (line: string) : OnlineBot option =
 
 // ---------------------------------------------------------------- matchmaking
 
-/// Finding opponents on its own: when the bot has had no game for `PauseSeconds`, it challenges a bot
-/// online, picked at random among those rated within `RatingRange` of its own rating in the time
-/// control's speed, at one of `TimeControls` (seconds, increment). `GapSeconds`: the least time between
-/// two of its challenges. `StartRating`: the bot's rating at a speed where it has no games yet.
+/// Matchmaking: after `PauseSeconds` without a game, challenge a bot rated within `RatingRange` of the bot's
+/// own rating (`StartRating` until it has games), at one of `TimeControls`, at most once per `GapSeconds`.
 type Matchmaking =
     { TimeControls: (int * int) list
       RatingRange: int
@@ -296,9 +292,8 @@ let goCommand (limit: SearchLimit) (s: GameState) =
 
 let private startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-/// The game's position for the engine: its start and moves, castles as the engine expects them in
-/// standard chess (Lichess may send a castle as the king taking its rook, e1h1), and whether it is
-/// the bot's move. None when a move does not play (a game the board cannot follow).
+/// The position command (Lichess's king-takes-rook castles mapped for standard chess) and whether it is
+/// the bot's move; None when a move does not play.
 let position (game: GameFull) (s: GameState) (botIsWhite: bool) : (string * bool) option =
     let start = if game.InitialFen = "startpos" || String.IsNullOrWhiteSpace game.InitialFen then startFen else game.InitialFen
     let board = Board()

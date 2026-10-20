@@ -1,7 +1,5 @@
-/// One Lichess game of the bot as a pure step function: state + event -> state + effects. The game's
-/// agent (LichessBot) runs it: the stream's messages, the book's and the engine's answers and
-/// Lichess's replies come in as events, one at a time; the effects (search, send a move, chat, write
-/// the PGN...) are carried out outside and their outcome comes back as an event. Nothing here waits.
+/// One Lichess game as a pure step function; its agent in LichessBot carries out the effects and posts
+/// their outcome back as events.
 module ChessLibrary.LichessGameMachine
 
 open System
