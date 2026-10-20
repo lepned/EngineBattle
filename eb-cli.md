@@ -158,6 +158,12 @@ Puzzles, books, tournaments and tuning
   tune run <config>               Tune engine parameters (Bayesian optimisation)
   tune dashboard <config>         Write the tuning dashboard again from the saved state
 
+Lichess bot
+  bot run <engine>                Play on Lichess as a bot with an engine, until Ctrl+C
+  bot challenge <user>            Challenge a player or a bot on Lichess from the bot account
+  bot online                      List the bots online on Lichess, with their ratings
+  bot upgrade                     Turn the account into a Lichess bot account, for good
+
 Other
   perft <depth>                   Count the move tree on the 960 Chess960 test positions
   gui                             Start the WebGUI of a source checkout
@@ -847,6 +853,112 @@ Arguments:
 Examples:
   eb-cli tune dashboard tuner-config.json
       The dashboard again
+```
+### bot run
+
+```text
+Play on Lichess as a bot with an engine, until Ctrl+C
+
+Usage: eb-cli bot run <engine> [options]
+
+Goes online with the bot account of EB_LICHESS_BOT_TOKEN and plays the challenges the filter takes, declining the rest with Lichess's reason; each game is appended to --pgn. Bots play challenges only (no pools or tournaments) and no UltraBullet. A dropped connection is opened again, an engine that fails is started again; Ctrl+C ends the games in play and goes offline. --nodes N plays every move with N nodes whatever the clock (1: the net's policy move), and then one engine plays all its games in turn, each search with its game's whole position (--engine-per-game: one each). An opponent that has not made its first move after 20 s is aborted. --matchmaking challenges bots online on its own when it has had no game for --match-pause seconds: a bot rated within --match-range of its own rating, at one of --match-tc (--match-start as its own rating until it has rated games there), never the last opponent, one that declined in the last hour nor one that did not move in the last 6 hours; a challenge without an answer is withdrawn after a minute, and the challenges it gets still come first. --book plays the first --book-depth plies of a standard game from a Polyglot book while the position is in it, each move drawn by the book's weights, so the openings vary; the engine plays from the first position the book does not have. Chat: !commands !name !net !eval !top !howto !queue (!eval and !top to spectators only).
+
+Arguments:
+  <engine>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
+
+Options:
+      --tc M+S,...                Time controls taken, minutes+seconds (1+0,3+2,0.5+0); every one but UltraBullet when not given
+      --variants LIST             Variants taken: standard, chess960, fromPosition (default standard)
+      --opponents humans|bots|anyone
+                                  Who may challenge (default anyone)
+      --rated-only                Decline casual games
+      --casual-only               Decline rated games
+      --games N                   Games at once; a challenge while full is declined with 'later' (default 1)
+      --nodes N                   Nodes per move whatever the clock, instead of the clock (1: no search)
+      --overhead MS               Time kept back from each move for lag, by the clock (default 100)
+      --pgn FILE                  The games, appended (default lichess-bot.pgn)
+      --greeting TEXT             Said at the start of a game (empty: nothing)
+      --goodbye TEXT              Said at the end of a game (default Good game!)
+      --book FILE                 A Polyglot book (.bin) for the opening: a move drawn by the book's weights while it has one
+      --book-depth N              Plies the book may play, counted from the start of the game (default 8)
+      --engine-per-game           With --nodes, each game its own engine (default: one engine plays every game, one net loaded)
+      --matchmaking               Challenge bots online on its own after --match-pause seconds without a game
+      --match-tc M+S,...          Matchmaking's time controls, one drawn per challenge (default 3+0,3+2,5+3)
+      --match-range N             Challenge bots rated within N of the bot's own rating at that speed (default 300)
+      --match-rated               Matchmaking's challenges are rated (casual when not given)
+      --match-pause S             Seconds without a game before matchmaking challenges (default 60)
+      --match-start N             The bot's rating at a speed where it has no rated games yet (default 2000)
+      --uci NAME=VALUE            Set a UCI option of the engine (repeatable)
+      --server URL                The Lichess server (default https://lichess.org)
+  At most one of --rated-only, --casual-only.
+
+Examples:
+  eb-cli bot run Ceres_C1.json --nodes 1 --tc 1+0,3+0,3+2
+      A one-node policy bot for bullet and blitz
+  eb-cli bot run Ceres_C1.json --nodes 1 --book performance.bin
+      The same, with the openings from a book
+  eb-cli bot run Ceres_C1.json --nodes 1 --matchmaking --match-tc 3+0,5+3 --match-rated
+      Plays rated bots on its own, between the challenges it gets
+  eb-cli bot run sf.json --tc 3+2,5+3 --opponents humans --casual-only
+      Casual blitz against people
+```
+### bot challenge
+
+```text
+Challenge a player or a bot on Lichess from the bot account
+
+Usage: eb-cli bot challenge <user> [options]
+
+Sends a standard-chess challenge from the bot account of EB_LICHESS_BOT_TOKEN and prints its id. The bot running with that account (bot run, or the bot page) plays the game when it is accepted; nothing plays it when no bot is online. Lichess limits how many challenges a bot may send.
+
+Arguments:
+  <user>  The Lichess username to challenge
+
+Options:
+      --tc M+S                    The time control, minutes+seconds (default 3+2)
+      --rated                     A rated game (casual when not given)
+      --color random|white|black  The bot's colour (default random)
+      --server URL                The Lichess server (default https://lichess.org)
+
+Examples:
+  eb-cli bot challenge maia1 --tc 3+0
+      A casual 3+0 game against another bot
+  eb-cli bot challenge SomeBot --tc 5+3 --rated --color white
+      Rated, the bot with White
+```
+### bot online
+
+```text
+List the bots online on Lichess, with their ratings
+
+Usage: eb-cli bot online [options]
+
+The bots online on Lichess now, strongest in blitz first: name, bullet, blitz and rapid rating ('-' with no games). Needs EB_LICHESS_BOT_TOKEN.
+
+Options:
+      --count N     At most this many (default 50)
+      --server URL  The Lichess server (default https://lichess.org)
+
+Examples:
+  eb-cli bot online --count 20
+      The 20 first bots Lichess lists, by blitz rating
+```
+### bot upgrade
+
+```text
+Turn the account into a Lichess bot account, for good
+
+Usage: eb-cli bot upgrade [options]
+
+Upgrades the account of EB_LICHESS_BOT_TOKEN to a bot account. This cannot be undone, and Lichess allows it only for an account that has never played a game: use a new account for the bot. Needs --yes.
+
+Options:
+      --yes         Yes, upgrade it for good
+      --server URL  The Lichess server (default https://lichess.org)
+
+Examples:
+  eb-cli bot upgrade --yes
+      The new account becomes a bot account
 ```
 ### perft
 

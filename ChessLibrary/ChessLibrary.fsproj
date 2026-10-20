@@ -197,6 +197,15 @@
 
 		<!-- Tournament runner (depends on everything) -->
 		<Compile Include="Tournament\Tournament.fs" />
+
+		<!-- A Lichess bot account played by an engine -->
+		<Compile Include="Lichess\LichessBotTypes.fs" />
+		<Compile Include="Lichess\LichessBotLogic.fs" />
+		<Compile Include="Lichess\LichessGameMachine.fs" />
+		<Compile Include="Lichess\LichessBotMachine.fs" />
+		<Compile Include="Lichess\LichessEngineQueue.fs" />
+		<Compile Include="Lichess\LichessBotClient.fs" />
+		<Compile Include="Lichess\LichessBot.fs" />
 	</ItemGroup>
 
 	<ItemGroup>

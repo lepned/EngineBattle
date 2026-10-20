@@ -91,6 +91,8 @@ static class FakeUciEngine
             switch (args[i])
             {
                 case "--log": _log = new StreamWriter(args[++i], append: true) { AutoFlush = true }; break;
+                // one log per process in a folder: a test that starts several engines counts them
+                case "--log-dir": _log = new StreamWriter(Path.Combine(args[++i], $"{Environment.ProcessId}.log"), append: true) { AutoFlush = true }; break;
                 case "--exit-on-uci": exitOnUci = true; break;
                 case "--no-uciok": noUciOk = true; break;
                 case "--live-stats": _liveStats = true; break;

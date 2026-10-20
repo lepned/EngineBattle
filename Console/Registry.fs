@@ -11,6 +11,7 @@ let all: Entry list =
         @ Commands.Pgn.entries
         @ Commands.Engine.entries
         @ Commands.Runs.entries
+        @ Commands.Bot.entries
         @ Commands.Other.entries
         @ Commands.Gui.entries
     let e (path: string list) = entries |> List.find (fun x -> x.Spec.Path = path)
@@ -42,5 +43,9 @@ let all: Entry list =
       e [ "tournament"; "validate" ]
       e [ "tune"; "run" ]
       e [ "tune"; "dashboard" ]
+      e [ "bot"; "run" ]
+      e [ "bot"; "challenge" ]
+      e [ "bot"; "online" ]
+      e [ "bot"; "upgrade" ]
       e [ "perft" ]
       e [ "gui" ] ]

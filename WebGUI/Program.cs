@@ -172,6 +172,7 @@ builder.Services.AddSingleton<JsonFeedService>();
 builder.Services.AddSingleton<WebGUI.Services.Ceres.CeresFeedBridge>();
 builder.Services.AddSingleton<LiveFeedReplayer>();
 builder.Services.AddSingleton<GlobalSettingsService>();
+builder.Services.AddSingleton<LichessBotService>();
 builder.Services.AddSingleton<BoardThemeService>();
 builder.Services.AddSingleton<WebGUI.Services.Broadcast.BroadcastState>();
 

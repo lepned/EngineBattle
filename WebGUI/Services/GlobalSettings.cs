@@ -29,6 +29,8 @@ public class GlobalSettings
     public string TablebaseFolder { get; set; } = "";
     /// <summary>The Polyglot book (.bin) the analysis page's Book card shows; empty for none.</summary>
     public string AnalysisBookPath { get; set; } = "";
+    /// <summary>The Lichess bot page: token, engine, filter and how it plays (LichessBotService).</summary>
+    public LichessBotOptions LichessBot { get; set; } = new();
     public string NeuralNetFolder { get; set; } = "";
     public string PuzzleConfigFolder { get; set; } = "";
     // Where puzzle runs write their results. The trend view reads the
@@ -376,4 +378,39 @@ public static class UiScale
         "wide" => "300px",
         _ => null
     };
+}
+
+/// <summary>The Lichess bot page's choices, kept between sessions. The token is the bot account's API token.</summary>
+public class LichessBotOptions
+{
+    public string Token { get; set; } = "";
+    public string EnginePath { get; set; } = "";
+    /// <summary>minutes+seconds, comma separated; empty for every time control bots may play.</summary>
+    public string TimeControls { get; set; } = "";
+    public bool Chess960 { get; set; }
+    /// <summary>anyone, humans or bots.</summary>
+    public string Opponents { get; set; } = "anyone";
+    public bool Rated { get; set; } = true;
+    public bool Casual { get; set; } = true;
+    public int Games { get; set; } = 1;
+    /// <summary>Nodes per move whatever the clock; 0 plays by the clock.</summary>
+    public int Nodes { get; set; }
+    public int OverheadMs { get; set; } = 100;
+    /// <summary>With nodes per move: one engine plays every game in turn.</summary>
+    public bool ShareEngine { get; set; } = true;
+    public string PgnPath { get; set; } = "";
+    public string Greeting { get; set; } = "";
+    public string Goodbye { get; set; } = "Good game!";
+    /// <summary>A Polyglot book (.bin) for the opening; empty for none.</summary>
+    public string Book { get; set; } = "";
+    /// <summary>Plies the book may play, from the start of the game.</summary>
+    public int BookDepth { get; set; } = 8;
+    /// <summary>Challenge bots online on its own after MatchPauseSeconds without a game.</summary>
+    public bool Matchmaking { get; set; }
+    public string MatchTimeControls { get; set; } = "3+0, 3+2, 5+3";
+    public int MatchRatingRange { get; set; } = 300;
+    /// <summary>The bot's rating at a speed where it has no games yet (Lichess shows a placeholder).</summary>
+    public int MatchStartRating { get; set; } = 2000;
+    public bool MatchRated { get; set; }
+    public int MatchPauseSeconds { get; set; } = 60;
 }

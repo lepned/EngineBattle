@@ -1,0 +1,417 @@
+@page "/tools/lichess-bot"
+@using ChessLibrary
+@using Microsoft.FSharp.Core
+@using Microsoft.FSharp.Collections
+@using WebGUI.Components.Layout.ChessboardLayout
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+@implements IDisposable
+@inject GlobalSettingsService SettingsService
+@inject LichessBotService Bot
+@inject IDialogService DialogService
+@inject BoardThemeService ThemeService
+
+<PageTitle>Lichess Bot</PageTitle>
+
+<div class="tool-page">
+  <h1>Lichess Bot</h1>
+  <div class="tool-subtitle">Play on Lichess as a bot with one of your engines. It runs while the app is open, also when you leave this page.</div>
+
+  @if (!string.IsNullOrEmpty(status))
+  {
+    <div style="margin:8px 0; font-weight:500; color:@(statusError ? "#ef5350" : "#8b9cd0")">@status</div>
+  }
+
+  <div style="display:grid; grid-template-columns:minmax(320px, 560px) minmax(320px, 1fr); gap:16px; align-items:start;">
+    <div>
+      <div class="tool-section">
+        <h2>Account</h2>
+        <p>A <b>new</b> Lichess account that has never played a game, and its API token with the scopes <i>Play games with the bot API</i> and <i>Send, accept and reject challenges</i> (lichess.org &rarr; Preferences &rarr; API access tokens). Lichess makes it a bot account for good.</p>
+        <div class="tool-input-group">
+          <label>Token</label>
+          <input type="password" class="tool-input" style="width:100%" @bind="o.Token" autocomplete="off" disabled="@Bot.IsRunning" />
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="tool-action-btn" @onclick="CheckAccount" disabled="@(busy || string.IsNullOrWhiteSpace(o.Token))">Check account</button>
+          @if (account != null && !accountIsBot)
+          {
+            <button class="tool-action-btn" @onclick="Upgrade" disabled="@busy">Make it a bot account</button>
+          }
+          <span>@accountText</span>
+        </div>
+      </div>
+
+      <div class="tool-section">
+        <h2>Engine and play</h2>
+        <div class="tool-input-group">
+          <label>Engine def</label>
+          <div style="display:flex; gap:4px; align-items:center;">
+            <input type="text" class="tool-input" style="width:100%" @bind="o.EnginePath" disabled="@Bot.IsRunning" />
+            <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" Disabled="@Bot.IsRunning"
+                           OnClick="@(() => Browse(v => o.EnginePath = v, o.EnginePath, "*.json", SettingsService.Settings.EngineDefsFolder))" />
+          </div>
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+          <div class="tool-input-group" style="margin-bottom:0"><label>Nodes per move (0: by the clock)</label>
+            <input type="number" class="tool-input" style="width:110px" @bind="o.Nodes" min="0" disabled="@Bot.IsRunning" /></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Overhead ms</label>
+            <input type="number" class="tool-input" style="width:90px" @bind="o.OverheadMs" min="0" disabled="@(Bot.IsRunning || o.Nodes > 0)" /></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Games at once</label>
+            <input type="number" class="tool-input" style="width:80px" @bind="o.Games" min="1" disabled="@Bot.IsRunning" /></div>
+          @if (o.Nodes > 0)
+          {
+            <label title="With nodes per move, one engine (one net loaded) plays every game in turn; each search has its game's whole position"><input type="checkbox" @bind="o.ShareEngine" disabled="@Bot.IsRunning" /> One engine for all games</label>
+          }
+        </div>
+        <div style="display:flex; gap:12px; align-items:end; margin-top:8px;">
+          <div class="tool-input-group" style="margin-bottom:0; flex:1"><label>Opening book (.bin; empty: none)</label>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <input type="text" class="tool-input" style="width:100%" @bind="o.Book" disabled="@Bot.IsRunning" />
+              <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" Disabled="@Bot.IsRunning"
+                             OnClick="@(() => Browse(v => o.Book = v, o.Book, "*.bin", SettingsService.Settings.OpeningsFolder, "Select an opening book"))" />
+            </div></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Book plies</label>
+            <input type="number" class="tool-input" style="width:80px" @bind="o.BookDepth" min="1" disabled="@(Bot.IsRunning || string.IsNullOrWhiteSpace(o.Book))" /></div>
+        </div>
+        <small>The book plays the first plies of a standard game while it has the position, each move drawn by the book's weights, so the openings vary.</small>
+      </div>
+
+      <div class="tool-section">
+        <h2>Challenges taken</h2>
+        <div class="tool-input-group">
+          <label>Time controls (minutes+seconds, e.g. 1+0, 3+2, 0.5+0; empty: all but UltraBullet)</label>
+          <input type="text" class="tool-input" style="width:100%" @bind="o.TimeControls" disabled="@Bot.IsRunning" />
+        </div>
+        <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+          <div class="tool-input-group" style="margin-bottom:0"><label>Opponents</label>
+            <select class="tool-input" style="width:120px" @bind="o.Opponents" disabled="@Bot.IsRunning">
+              <option value="anyone">Anyone</option><option value="humans">Humans</option><option value="bots">Bots</option>
+            </select></div>
+          <label><input type="checkbox" @bind="o.Rated" disabled="@Bot.IsRunning" /> Rated</label>
+          <label><input type="checkbox" @bind="o.Casual" disabled="@Bot.IsRunning" /> Casual</label>
+          <label><input type="checkbox" @bind="o.Chess960" disabled="@Bot.IsRunning" /> Chess960 too</label>
+        </div>
+      </div>
+
+      <div class="tool-section">
+        <h2>Find opponents</h2>
+        <label><input type="checkbox" @bind="o.Matchmaking" disabled="@Bot.IsRunning" /> Challenge bots online on its own</label>
+        @if (o.Matchmaking)
+        {
+          <div class="tool-input-group" style="margin-top:8px;">
+            <label>Time controls, one drawn per challenge</label>
+            <input type="text" class="tool-input" style="width:100%" @bind="o.MatchTimeControls" disabled="@Bot.IsRunning" />
+          </div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+            <div class="tool-input-group" style="margin-bottom:0"><label>Rating range &plusmn;</label>
+              <input type="number" class="tool-input" style="width:90px" @bind="o.MatchRatingRange" min="1" disabled="@Bot.IsRunning" /></div>
+            <div class="tool-input-group" style="margin-bottom:0"><label>Start rating</label>
+              <input type="number" class="tool-input" style="width:90px" @bind="o.MatchStartRating" min="1" disabled="@Bot.IsRunning" /></div>
+            <div class="tool-input-group" style="margin-bottom:0"><label>Pause after a game (s)</label>
+              <input type="number" class="tool-input" style="width:90px" @bind="o.MatchPauseSeconds" min="0" disabled="@Bot.IsRunning" /></div>
+            <label><input type="checkbox" @bind="o.MatchRated" disabled="@Bot.IsRunning" /> Rated</label>
+          </div>
+          <small>After the pause without a game, the bot challenges a bot online rated within the range of its own rating at that speed (the start rating until it has rated games there): never the last opponent, nor one that declined in the last hour or did not move in the last 6 hours. A challenge without an answer is withdrawn after a minute, and the challenges it gets still come first.</small>
+        }
+      </div>
+
+      <div class="tool-section">
+        <h2>Games and chat</h2>
+        <div class="tool-input-group">
+          <label>PGN (each game appended)</label>
+          <input type="text" class="tool-input" style="width:100%" @bind="o.PgnPath" disabled="@Bot.IsRunning" />
+        </div>
+        <div class="tool-input-group"><label>Greeting (empty: none)</label>
+          <input type="text" class="tool-input" style="width:100%" @bind="o.Greeting" disabled="@Bot.IsRunning" /></div>
+        <div class="tool-input-group"><label>Goodbye</label>
+          <input type="text" class="tool-input" style="width:100%" @bind="o.Goodbye" disabled="@Bot.IsRunning" /></div>
+        <small>Chat: !commands !name !net !eval !top !howto !queue - !eval and !top answer spectators only.</small>
+      </div>
+    </div>
+
+    <div>
+      <div class="tool-section">
+        @* the state and its button together, at the top: no scrolling to go online *@
+        <div style="display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+          <h2 style="margin:0;">@(Bot.IsStopping ? "Going offline..." : Bot.IsOnline ? "Online" : Bot.IsRunning ? "Starting the engine..." : "Offline")</h2>
+          @if (Bot.IsStopping)
+          {
+            <button class="tool-action-btn" disabled>Going offline...</button>
+          }
+          else if (Bot.IsRunning)
+          {
+            <button class="tool-action-btn" @onclick="Stop">Go offline</button>
+          }
+          else
+          {
+            <button class="tool-action-btn" @onclick="Start" disabled="@(busy || string.IsNullOrWhiteSpace(o.Token) || string.IsNullOrWhiteSpace(o.EnginePath))">Go online</button>
+          }
+        </div>
+        @if (Bot.IsRunning && !Bot.IsOnline && !Bot.IsStopping)
+        {
+          <p style="opacity:0.7;">A net's first load can take minutes (its TensorRT plan is built once, then cached). Go offline stops it.</p>
+        }
+        @foreach (var g in Bot.Games)
+        {
+          <div style="margin-bottom:12px;">
+            <div style="font-weight:600;">
+              <a href="@($"https://lichess.org/{g.GameId}")" target="_blank" rel="noopener">@Player(g.White, g.WhiteRating) - @Player(g.Black, g.BlackRating)</a>
+            </div>
+            <div style="display:flex; gap:12px; align-items:flex-start;">
+              <div style="width:260px; height:260px;">
+                <EbChessboard Fen="@(string.IsNullOrEmpty(g.Fen) ? EbChessboard.StartFen : g.Fen)" SizePx="260" Flipped="@(!g.BotIsWhite)" ShowCoordinates="false"
+                              GutterLeft="@(BarOnRight ? null : EvalBarFor(g))" GutterRight="@(BarOnRight ? EvalBarFor(g) : null)"
+                              FrameWidthPct="@BoardFramePct" FrameColorCss="@BoardFrameColor" />
+              </div>
+              <div style="font-variant-numeric:tabular-nums;">
+                <div>White @Clock(g.WTime)</div>
+                <div>Black @Clock(g.BTime)</div>
+                <div style="margin-top:6px; opacity:0.8;">@g.Eval</div>
+              </div>
+            </div>
+          </div>
+        }
+        @if (Bot.Games.Length == 0)
+        {
+          <p style="opacity:0.7;">@(Bot.IsOnline ? "Waiting for a challenge." : "Not playing.")</p>
+        }
+      </div>
+      <div class="tool-section">
+        <h2>Challenge a player</h2>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+          <div class="tool-input-group" style="margin-bottom:0; flex:1; min-width:160px"><label>Lichess username (a person or a bot)</label>
+            <input type="text" class="tool-input" style="width:100%" @bind="challengeUser" disabled="@(!Bot.IsOnline)" /></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Time control</label>
+            <input type="text" class="tool-input" style="width:80px" @bind="challengeTc" disabled="@(!Bot.IsOnline)" /></div>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Bot plays</label>
+            <select class="tool-input" style="width:100px" @bind="challengeColor" disabled="@(!Bot.IsOnline)">
+              <option value="random">Random</option><option value="white">White</option><option value="black">Black</option>
+            </select></div>
+          <label><input type="checkbox" @bind="challengeRated" disabled="@(!Bot.IsOnline)" /> Rated</label>
+          <button class="tool-action-btn" @onclick="SendChallenge" disabled="@(!Bot.IsOnline || challenging || string.IsNullOrWhiteSpace(challengeUser))">Challenge</button>
+        </div>
+        @foreach (var c in Bot.Outgoing)
+        {
+          <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+            <span>Waiting for @c.Opponent (@($"{c.Seconds / 60.0:0.##}+{c.Increment}"), @(c.Rated ? "rated" : "casual"))</span>
+            <button class="tool-action-btn" @onclick="() => Bot.CancelChallenge(c.Id)">Cancel</button>
+          </div>
+        }
+        @if (challengeError != "")
+        {
+          <div style="margin-top:6px; color:#ef5350;">@challengeError</div>
+        }
+        else if (Bot.LastChallengeAnswer != "")
+        {
+          <div style="margin-top:6px; opacity:0.8;">@Bot.LastChallengeAnswer</div>
+        }
+        <small>The game that follows is played like any other: the book, the chat and the PGN. A challenge counts toward the games at once while it waits, and is withdrawn after 3 minutes without an answer or when the bot goes offline.</small>
+        <div style="margin-top:10px;">
+          <button class="tool-action-btn" @onclick="LoadBots" disabled="@(!Bot.IsOnline || loadingBots)">@(loadingBots ? "Loading..." : onlineBots == null ? "Show online bots" : "Refresh online bots")</button>
+        </div>
+        @if (onlineBots != null)
+        {
+          <input type="text" class="tool-input" style="width:100%; margin-top:6px;" placeholder="Filter by name" @bind="botFilter" @bind:event="oninput" />
+          <div style="max-height:320px; overflow:auto; margin-top:6px;">
+            <table style="width:100%; font-variant-numeric:tabular-nums; border-collapse:collapse;">
+              <thead><tr style="text-align:left; opacity:0.7;"><th>Bot (@onlineBots.Length online)</th><th>Bullet</th><th>Blitz</th><th>Rapid</th><th></th></tr></thead>
+              <tbody>
+                @foreach (var b in onlineBots.Where(b => string.IsNullOrWhiteSpace(botFilter) || b.Name.Contains(botFilter.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                  <tr>
+                    <td><a href="@($"https://lichess.org/@/{b.Name}")" target="_blank" rel="noopener">@b.Name</a></td>
+                    <td>@Rating(b.Bullet)</td><td>@Rating(b.Blitz)</td><td>@Rating(b.Rapid)</td>
+                    <td><button class="tool-action-btn" style="padding:0 8px;" @onclick="() => challengeUser = b.Name">Pick</button></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+      <div class="tool-section">
+        <h2>Log</h2>
+        <pre style="max-height:360px; overflow:auto; font-size:0.8rem; margin:0;">@string.Join("\n", Bot.Log.Reverse())</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+@code {
+#nullable enable
+    private LichessBotOptions o = new();
+    private string challengeUser = "";
+    private string challengeTc = "3+2";
+    private string challengeColor = "random";
+    private bool challengeRated;
+    private bool challenging;
+    private string challengeError = "";
+    private LichessBotLogic.OnlineBot[]? onlineBots;
+    private bool loadingBots;
+    private string botFilter = "";
+    private string status = "";
+    private bool statusError;
+    private bool busy;
+    private string? account;
+    private bool accountIsBot;
+    private string accountText = "";
+    private System.Threading.Timer? timer;
+
+    protected override void OnInitialized()
+    {
+        // a copy: the settings change on Go online and when the page closes
+        o = System.Text.Json.JsonSerializer.Deserialize<LichessBotOptions>(
+                System.Text.Json.JsonSerializer.Serialize(SettingsService.Settings.LichessBot ?? new LichessBotOptions())) ?? new();
+        if (string.IsNullOrWhiteSpace(o.PgnPath))
+            o.PgnPath = Path.Combine(string.IsNullOrWhiteSpace(SettingsService.Settings.PgnOutputFolder) ? AppPaths.BaseDir : SettingsService.Settings.PgnOutputFolder, "lichess-bot.pgn");
+        Bot.Changed += OnChanged;
+        // the clocks and boards come from the bot's games: a look every second
+        timer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private static string Player(string name, int? rating) => rating.HasValue ? $"{name} ({rating.Value})" : name;
+
+    // the eval bar in the board's frame, on the side picked in Appearance, as on the tournament boards
+    private bool BarOnRight => ThemeService.Current.EvalBarPlacement == "right";
+    private RenderFragment EvalBarFor(LichessBotGame g) =>
+        @<EvalBar Cp="@(g.EvalPawns.HasValue ? g.EvalPawns.Value : (double?)null)" Mate="@(g.EvalMate.HasValue ? g.EvalMate.Value : (int?)null)" Flipped="@(!g.BotIsWhite)" />;
+#nullable enable
+    private double? BoardFramePct => Math.Max(ThemeService.Current.FramePct, BoardThemeService.MinGutterPctForEvalBar);
+    private string? BoardFrameColor => ThemeService.Current.FramePct <= 0 ? "transparent" : null;
+
+    private static string Clock(long ms)
+    {
+        var t = TimeSpan.FromMilliseconds(Math.Max(0, ms));
+        return t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"m\:ss");
+    }
+
+    private void SetStatus(string text, bool error = false) { status = text; statusError = error; }
+
+    private void Save()
+    {
+        // a copy: what the page holds afterwards is not the saved settings
+        var settings = SettingsService.Settings;
+        var json = System.Text.Json.JsonSerializer.Serialize(o);
+        if (json == System.Text.Json.JsonSerializer.Serialize(settings.LichessBot ?? new LichessBotOptions())) return;
+        settings.LichessBot = System.Text.Json.JsonSerializer.Deserialize<LichessBotOptions>(json) ?? new();
+        SettingsService.Save(settings);
+    }
+
+    private async Task CheckAccount()
+    {
+        busy = true;
+        try
+        {
+            var (name, isBot, error) = await Bot.Account(o.Token.Trim());
+            if (error != null) { account = null; accountText = ""; SetStatus(error, true); return; }
+            account = name; accountIsBot = isBot;
+            accountText = isBot ? $"{name} is a bot account." : $"{name} is not a bot account yet.";
+            SetStatus("");
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Upgrade()
+    {
+        var answer = await DialogService.ShowMessageBox("Make it a bot account",
+            $"{account} becomes a bot account for good: it cannot play as a person again, and Lichess refuses this for an account that has played games. Go on?",
+            yesText: "Make it a bot account", cancelText: "Cancel");
+        if (answer != true) return;
+        busy = true;
+        try
+        {
+            var error = await Bot.Upgrade(o.Token.Trim());
+            if (error != null) SetStatus(error, true);
+            else { accountIsBot = true; accountText = $"{account} is a bot account."; SetStatus("The account is a bot account now."); }
+        }
+        finally { busy = false; }
+    }
+
+    private void Start()
+    {
+        var tcs = LichessBotLogic.parseTimeControls(o.TimeControls ?? "");
+        if (tcs.IsError) { SetStatus("Time controls: " + tcs.ErrorValue, true); return; }
+        if (!File.Exists(o.EnginePath)) { SetStatus($"Engine def not found: {o.EnginePath}", true); return; }
+        if (!o.Rated && !o.Casual) { SetStatus("Take rated games, casual games, or both.", true); return; }
+        if (o.Games < 1 || o.Nodes < 0 || o.OverheadMs < 0) { SetStatus("Games must be 1 or more, nodes and overhead 0 or more.", true); return; }
+        var book = (o.Book ?? "").Trim();
+        if (book != "" && !File.Exists(book)) { SetStatus($"Opening book not found: {book}", true); return; }
+        if (book != "" && o.BookDepth < 1) { SetStatus("Book plies must be 1 or more.", true); return; }
+        var matchmaking = FSharpOption<LichessBotLogic.Matchmaking>.None;
+        if (o.Matchmaking)
+        {
+            var mtc = LichessBotLogic.parseTimeControls(o.MatchTimeControls ?? "");
+            if (mtc.IsError || mtc.ResultValue.IsEmpty) { SetStatus("Find opponents: time controls like 3+0, 3+2.", true); return; }
+            if (o.MatchRatingRange < 1 || o.MatchPauseSeconds < 0 || o.MatchStartRating < 1) { SetStatus("Find opponents: the range and start rating must be 1 or more, the pause 0 or more.", true); return; }
+            matchmaking = FSharpOption<LichessBotLogic.Matchmaking>.Some(
+                new LichessBotLogic.Matchmaking(mtc.ResultValue, o.MatchRatingRange, o.MatchStartRating, o.MatchRated, o.MatchPauseSeconds, 30));
+        }
+        TypesDef.CoreTypes.EngineConfig engine;
+        try { engine = Configuration.JSON.readSingleEngineConfig(o.EnginePath); }
+        catch (Exception ex) { SetStatus($"The engine def does not read: {ex.Message}", true); return; }
+        var opponents = o.Opponents switch
+        {
+            "humans" => LichessBotLogic.Opponents.Humans,
+            "bots" => LichessBotLogic.Opponents.Bots,
+            _ => LichessBotLogic.Opponents.Anyone,
+        };
+        var variants = o.Chess960 ? new[] { "standard", "chess960" } : new[] { "standard" };
+        var filter = new LichessBotLogic.Filter(tcs.ResultValue, ListModule.OfArray(variants), o.Rated, o.Casual, opponents, o.Games);
+        var limit = o.Nodes > 0 ? LichessBotLogic.SearchLimit.NewFixedNodes(o.Nodes) : LichessBotLogic.SearchLimit.NewByClock(o.OverheadMs);
+        var settings = new LichessBotSettings(engine, filter, limit, o.PgnPath, o.Greeting ?? "", o.Goodbye ?? "", book, o.BookDepth, matchmaking, o.ShareEngine);
+        Save();
+        if (Bot.Start(o.Token.Trim(), settings)) SetStatus("");
+        else SetStatus("The bot is running already.", true);
+    }
+
+    private async Task Stop() => await Bot.Stop();
+
+    private static string Rating(Microsoft.FSharp.Core.FSharpOption<int>? r) => r == null ? "-" : r.Value.ToString();
+
+    private async Task LoadBots()
+    {
+        loadingBots = true;
+        try
+        {
+            var (bots, error) = await Bot.OnlineBots();
+            challengeError = error ?? "";
+            if (error == null) onlineBots = bots;
+        }
+        finally { loadingBots = false; }
+    }
+
+    private async Task SendChallenge()
+    {
+        challengeError = "";
+        var tc = LichessBotLogic.parseTimeControls(challengeTc ?? "");
+        if (tc.IsError || tc.ResultValue.Length != 1) { challengeError = "Time control: one, like 3+2 (minutes+seconds)."; return; }
+        var (seconds, increment) = tc.ResultValue.Head;
+        challenging = true;
+        try { challengeError = await Bot.Challenge(challengeUser, seconds, increment, challengeRated, challengeColor) ?? ""; }
+        finally { challenging = false; }
+    }
+
+    private async Task Browse(Action<string> setter, string current, string filter, string fallbackFolder, string title = "Select an engine def")
+    {
+        var initial = !string.IsNullOrWhiteSpace(current) && File.Exists(current) ? Path.GetDirectoryName(current) ?? "" : fallbackFolder ?? "";
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initial },
+            { x => x.FileFilter, filter },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>(title, parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+    }
+
+    public void Dispose()
+    {
+        Bot.Changed -= OnChanged;
+        timer?.Dispose();
+        // what was typed is kept when leaving the page, also without going online
+        try { Save(); } catch { }
+    }
+}
