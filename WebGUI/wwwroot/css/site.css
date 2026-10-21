@@ -695,19 +695,29 @@ li.eb-g-description {
   text-overflow: ellipsis;
 }
 
-/* A long engine name is a WIDTH problem, and shrinking a whole table because one net is called
-   a4000-21bn11_prod_1024_10_f2_h1_900M is the wrong trade: every other column pays for one
-   name. The name column gives up its tail instead, and the title attribute keeps the whole
-   name one hover away. The cap is in ch, so it is a number of characters at whatever size the
-   clamp settled on rather than a pixel count that means something different at each size. */
+/* Names take the room the other columns leave: those shrink to fit their content, and a name is
+   cut ("…", whole name on hover) only when that room runs out - a wide box shows it whole, a
+   narrow one keeps its numbers. A fixed cap cut names in wide boxes for no reason. */
 .data-cell.name {
-  /* 14ch, not 24: this column is the table's only elastic one, and it is the cheapest thing in
-     it to give up. A standings column is often barely 330px wide, where 24ch of name is half
-     the table and the numbers get squeezed off the right edge instead. Fourteen characters is
-     enough to tell two nets apart at a glance, and the whole name is one hover away. */
-  max-width: var(--eb-name-max, 14ch);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (min-width: 769px) {
+  .custom-table .data-cell:not(.name):not(.opening):not([colspan]) {
+    width: 1%;
+  }
+
+  .custom-table .data-cell.name {
+    max-width: 0;
+    min-width: 8ch;
+  }
+
+  /* the pairings' opening gives way first: a quarter of the table, the names share the rest */
+  .custom-table .data-cell.opening {
+    max-width: 0;
+    width: 25%;
+  }
 }
 
 /* The opening column in the pairings table is the one cell that is not a name, and the table
