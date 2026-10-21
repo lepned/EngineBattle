@@ -140,6 +140,7 @@ PGN files
   pgn parse <pgn>                 Parse every game: counts, empty games, parse speed
   pgn validate <pgn>              Replay every game: illegal or ambiguous moves, non-standard SAN
   pgn strip <pgn>                 Write the games without comments, variations or NAGs
+  pgn dedupe <pgn>                Write an opening file without its duplicate openings
   pgn endings <pgn>               How the games ended: missed wins, repetition, 50-move rule, stalemate...
   pgn elo <pgn>                   Ratings and results
   pgn speed <pgn>                 Speed statistics per engine
@@ -526,6 +527,27 @@ Examples:
       games_stripped.pgn next to it
   eb-cli pgn strip games.pgn -o clean.pgn --skip-empty --skip-invalid --force
       Only playable games, over clean.pgn
+```
+### pgn dedupe
+
+```text
+Write an opening file without its duplicate openings
+
+Usage: eb-cli pgn dedupe <pgn> [options]
+
+An opening with the same start and moves as an earlier one - what a tournament warns about and counts as one - is left out; the first of each is kept, every kept opening written as it was. The input is never written over.
+
+Arguments:
+  <pgn>  a PGN file
+
+Options:
+  -o, --out FILE  The output PGN (default <name>_unique.pgn next to the input)
+      --force     Write over a file that exists
+      --json      Print the result as JSON on stdout (everything else goes to stderr)
+
+Examples:
+  eb-cli pgn dedupe "TCEC SUFI 20-29.pgn"
+      TCEC SUFI 20-29_unique.pgn next to it
 ```
 ### pgn endings
 

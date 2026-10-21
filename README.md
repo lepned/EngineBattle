@@ -61,6 +61,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Opening Books from PGN:** Create custom opening books from existing PGN archives (such as TCEC games).
 - **Opening Books from EPD:** Generate opening books directly from EPD files.
 - **Chess960 Position Generation:** Quickly generate random Chess960 positions (EPD format) for diverse testing scenarios.
+- **Remove Duplicate Openings:** Write an opening file without the openings a tournament would count twice (PGN Tools, or `eb-cli pgn dedupe`).
 - **Remove an engine from a PGN-file:** Remove a specific engine's games from a PGN file to clean up tournament results or resume a tournament without including that engine.
 - **Move Deviation Finder:** Easily identify and visualize deviations by chess engines compared to a reference engine in a PGN file, presented clearly with summary tables and visualized with chessboards.
 - **Out-of-Book Evaluation:** Evaluate opening positions right after book exits using one or more engines to filter out openings that are too drawish or too one-sided for engine matches.

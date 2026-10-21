@@ -152,6 +152,22 @@
   </div>
 
   <div class="tool-section">
+    <h2>Remove Duplicate Openings</h2>
+    <p class="tool-section-desc">Leaves out openings with the same start and moves as an earlier one, the ones a tournament warns about and counts as one. The first of each is kept, every kept opening written as it was. Output saved as <code>&lt;filename&gt;_unique.pgn</code> next to the input.</p>
+    <div class="tool-controls">
+      <div class="tool-input-group" style="margin-bottom:0; flex:1;">
+        <label>Openings (.pgn)</label>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="text" class="tool-input" style="width:100%" @bind="dedupePath" />
+          <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                         OnClick="@(() => BrowseFileTo(v => dedupePath = v, dedupePath, "*.pgn", "Select an opening file"))" />
+        </div>
+      </div>
+      <button class="tool-action-btn" style="align-self:flex-end;" @onclick="RemoveDuplicateOpenings" disabled="@(isProcessing || string.IsNullOrWhiteSpace(dedupePath))">Remove duplicates</button>
+    </div>
+  </div>
+
+  <div class="tool-section">
     <h2>Remove Engine from PGN</h2>
     <p class="tool-section-desc">Remove all games associated with a specific engine. Output saved as <code>&lt;filename&gt;_&lt;engine&gt;_Removed.pgn</code>.</p>
     <div class="tool-controls">
@@ -217,6 +233,29 @@
 	// a book being made stops when the page goes away (makeBook's progress callback throws)
 	private readonly CancellationTokenSource pageCts = new();
 	public void Dispose() { pageCts.Cancel(); pageCts.Dispose(); }
+
+	private string dedupePath = "";
+
+	private async Task RemoveDuplicateOpenings()
+	{
+		var input = dedupePath.Trim();
+		if (!File.Exists(input)) { SetStatus($"Opening file not found: {input}", true); return; }
+		var output = Path.Combine(Path.GetDirectoryName(input) ?? "", Path.GetFileNameWithoutExtension(input) + "_unique.pgn");
+		if (!await MayWrite(output)) return;
+		SetStatus("");
+		isProcessing = true;
+		processingLabel = $"Removing duplicate openings from {Path.GetFileName(input)}...";
+		StateHasChanged();
+		try
+		{
+			var s = await Task.Run(() => ChessLibrary.OpeningDedupe.removeDuplicates(input, output));
+			SetStatus(s.Removed == 0
+				? $"{s.Openings:N0} openings, no duplicates: {Path.GetFileName(output)} is the same openings."
+				: $"{s.Removed:N0} of {s.Openings:N0} openings removed ({s.Groups:N0} lines found more than once); {s.Kept:N0} written to {output}.");
+		}
+		catch (Exception ex) { SetStatus($"Could not remove duplicates: {ex.Message}", true); }
+		finally { isProcessing = false; StateHasChanged(); }
+	}
 
 	/// <summary>Whether an output file may be written: yes when it does not exist, or when the user says to write over it.</summary>
 	private async Task<bool> MayWrite(string path)

@@ -108,6 +108,7 @@
 		<Compile Include="PolyglotTests.fs" />
 		<Compile Include="LichessBotTests.fs" />
 		<Compile Include="LichessMachineTests.fs" />
+		<Compile Include="OpeningDedupeTests.fs" />
 		<Compile Include="SwissMachineTests.fs" />
 		<Compile Include="CupMachineTests.fs" />
 		<Compile Include="LadderMachineTests.fs" />

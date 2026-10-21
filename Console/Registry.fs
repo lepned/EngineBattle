@@ -28,6 +28,7 @@ let all: Entry list =
       e [ "pgn"; "parse" ]
       e [ "pgn"; "validate" ]
       e [ "pgn"; "strip" ]
+      e [ "pgn"; "dedupe" ]
       e [ "pgn"; "endings" ]
       e [ "pgn"; "elo" ]
       e [ "pgn"; "speed" ]

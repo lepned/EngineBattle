@@ -104,6 +104,7 @@
 		<Compile Include="Chess\PgnValidation.fs" />
 		<Compile Include="Chess\BoardUtils.fs" />
 		<Compile Include="Chess\PolyglotLines.fs" />
+		<Compile Include="Chess\OpeningDedupe.fs" />
 		<Compile Include="Chess\SvgPieceDefs.fs" />
 		<Compile Include="Chess\BoardSvg.fs" />
 

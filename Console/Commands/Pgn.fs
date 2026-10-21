@@ -309,6 +309,32 @@ let strip (p: Parsed) =
         printfn "Time       : %.1f s (%.1f MB/s)" secs (mb path / secs)
     ExitOk
 
+let dedupeSpec =
+    { command [ "pgn"; "dedupe" ] Group "Write an opening file without its duplicate openings" with
+        Description =
+          Some "An opening with the same start and moves as an earlier one - what a tournament warns about and counts as one - is left out; the first of each is kept, every kept opening written as it was. The input is never written over."
+        Args = [ pgnSubject ]
+        Options = [ out "The output PGN (default <name>_unique.pgn next to the input)"; force; json ]
+        Examples = [ "eb-cli pgn dedupe \"TCEC SUFI 20-29.pgn\"", "TCEC SUFI 20-29_unique.pgn next to it" ] }
+
+let dedupe (p: Parsed) =
+    let path = pgnArg p
+    let outPath =
+        match valueOf p "out" with
+        | Some o -> outputFile p o
+        | None -> outputFile p (Path.Combine(Path.GetDirectoryName path, Path.GetFileNameWithoutExtension path + "_unique.pgn"))
+    if String.Equals(Path.GetFullPath path, Path.GetFullPath outPath, StringComparison.OrdinalIgnoreCase) then
+        raise (Usage "the output would write over the input: give another --out")
+    let s = OpeningDedupe.removeDuplicates path outPath
+    if has p "json" then
+        printJson (envelope (name p.Command) true (box {| File = path; Written = outPath; Openings = s.Openings; Kept = s.Kept; Removed = s.Removed; Groups = s.Groups |}) [])
+    else
+        printfn "File     : %s" path
+        printfn "Written  : %s" outPath
+        printfn "Openings : %d, kept %d" s.Openings s.Kept
+        printfn "Removed  : %d duplicates (%d line%s found more than once)" s.Removed s.Groups (if s.Groups = 1 then "" else "s")
+    ExitOk
+
 // ---------------------------------------------------------------- summary, elo, speed, deviations
 
 let summarySpec =
@@ -437,6 +463,7 @@ let entries: Entry list =
     [ { Spec = parseSpec; Run = parseFile }
       { Spec = validateSpec; Run = validate }
       { Spec = stripSpec; Run = strip }
+      { Spec = dedupeSpec; Run = dedupe }
       { Spec = summarySpec; Run = summary }
       { Spec = eloSpec; Run = elo }
       { Spec = speedSpec; Run = speed }
