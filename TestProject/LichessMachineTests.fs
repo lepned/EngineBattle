@@ -195,10 +195,8 @@ let ``matchmaking reads the bots, challenges one in range, then another after a 
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 1500; Rated = false; PauseSeconds = 60; GapSeconds = 30 }
     let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
     let st = online (Some m)
-    // not before the pause
-    let st, effects = runB st [ B.Tick (t0.AddSeconds 30.0, 0) ]
-    Assert.Empty(effects)
-    let st, effects = runB st [ B.Tick (t0.AddSeconds 61.0, 0) ]
+    // no pause after going online: the bot list is read at the first tick
+    let st, effects = runB st [ B.Tick (t0.AddSeconds 2.0, 0) ]
     Assert.Equal<B.Effect<string> list>([ B.ListBots ], effects)
     let bots = [| bot "testbot" 2000; bot "Near" 2100; bot "Far" 2600 |]
     let st, effects = runB st [ B.Listed (Ok bots, t0.AddSeconds 62.0); B.Tick (t0.AddSeconds 63.0, 0) ]
@@ -409,7 +407,7 @@ let ``a rate limit that names its wait is waited out, and its reason is logged``
     let why = "You played 100 games against other bots today, please wait before challenging another bot."
     let st, effects = runB st [ B.Sent (token, B.RateLimitedBy (why, Some 7200), t0.AddSeconds 1.0) ]
     Assert.Equal(t0.AddSeconds 7201.0, st.NextAuto)
-    Assert.Contains(B.Log ("matchmaking: Lichess asks for a pause: " + why + " - waiting 2.0 hours"), effects)
+    Assert.Contains(B.Log ("matchmaking: Lichess asks for a pause: " + why + " - waiting 2.0 hours, then challenges 0 s apart for a while"), effects)
     // the page's own challenge gets Lichess's words
     let st, _ = runB st [ B.Send (5, request "bob", t0) ]
     let _, effects = runB st [ B.Sent (5, B.RateLimitedBy (why, Some 7200), t0) ]
@@ -422,3 +420,33 @@ let ``a 429's wait is read from Lichess's ratelimit object`` () =
     Assert.Equal(None, rateLimitSeconds """{"error":"Too many requests"}""")
     Assert.Equal(None, rateLimitSeconds "Too many requests")
     Assert.Equal("You played 100 games against other bots today", errorText """{"error":"You played 100 games against other bots today","ratelimit":{"key":"bot.vsBot.day","seconds":3600}}""")
+
+
+[<Fact>]
+let ``after a rate limit challenges are spaced further apart, and the gap eases back every 30 minutes`` () =
+    let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 30 }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let bots = [| bot "A" 2000; bot "B" 2000; bot "C" 2000; bot "D" 2000 |]
+    /// a challenge at `at` answered with `result`, then declined (its place free again): the gap that follows
+    let challenge (st: B.State<string>) (at: DateTime) result =
+        let st, effects = runB st [ B.Listed (Ok bots, at); B.Tick (at, 0) ]
+        let token = effects |> List.pick (function B.PostChallenge (t, _) -> Some t | _ -> None)
+        let gap = (st.NextAuto - at).TotalSeconds
+        let st, _ = runB st [ B.Sent (token, result, at) ]
+        let st = match result with B.SentAs id -> fst (runB st [ B.Declined (id, "No.", at) ]) | _ -> st
+        st, gap
+    let st = online (Some m)
+    let st, gap0 = challenge st (t0.AddMinutes 1.0) (B.SentAs "a")
+    let st, _ = challenge st (t0.AddMinutes 2.0) (B.RateLimitedBy ("", Some 60))
+    let st, gap1 = challenge st (t0.AddMinutes 4.0) (B.SentAs "b")
+    // 30 minutes after the rate limit the gap halves back
+    let st, gap2 = challenge st (t0.AddMinutes 40.0) (B.SentAs "c")
+    Assert.Equal<float list>([ 30.0; 60.0; 30.0 ], [ gap0; gap1; gap2 ])
+
+[<Fact>]
+let ``a declined challenge's log line says what was asked and, for a time control, what the bot takes`` () =
+    // the test challenge is 3+2 blitz casual; the bot takes 1+0 and 5+3 only
+    let st = fst (B.step (B.initial { Filter = { defaultFilter with TimeControls = [ 60, 0; 300, 3 ] }; Matchmaking = None }) (B.WentOnline ("testbot", t0)))
+    let _, effects = runB st [ B.ChallengeIn (challenge "c5" "CruelKen", t0) ]
+    Assert.Contains(B.Log "declining c5 from CruelKen (3+2 blitz casual): timecontrol - takes 1+0, 5+3", effects)
+    Assert.Contains(B.Decline ("c5", "timecontrol"), effects)

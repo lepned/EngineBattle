@@ -65,6 +65,10 @@ type State<'E> =
       NextToken: int
       /// Matchmaking's challenges Lichess refused in a row for its rate limit: the next pause doubles.
       RateLimitedInARow: int
+      /// The gap between matchmaking's challenges is GapSeconds x this: doubled by a rate limit (at most
+      /// 8x), halved again for each 30 minutes without one.
+      GapFactor: int
+      LastRateLimit: DateTime
       /// Engines between games: a net loads once, not per game.
       Idle: 'E list
       /// Engines on their way back from games that ended (their search stopping), and the games
@@ -118,7 +122,7 @@ let initial (config: Config) : State<'E> =
     { Config = config; BotId = ""; Online = false; ShuttingDown = false; Games = Map.empty; Accepted = Map.empty
       Sending = Map.empty; Outgoing = Map.empty; Early = Map.empty; DeclinedBy = Map.empty; NoShows = Map.empty; LastOpponent = ""
       LastActivity = DateTime.MinValue; NextAuto = DateTime.MinValue; Bots = [||]; BotsAt = DateTime.MinValue
-      Listing = false; Note = ""; LastAnswer = ""; NextToken = -1; RateLimitedInARow = 0; Idle = []; Returning = 0; WaitingForEngine = [] }
+      Listing = false; Note = ""; LastAnswer = ""; NextToken = -1; RateLimitedInARow = 0; GapFactor = 1; LastRateLimit = DateTime.MinValue; Idle = []; Returning = 0; WaitingForEngine = [] }
 
 /// Places taken: games, accepted challenges, challenges sent or on their way.
 let taken (st: State<'E>) = st.Games.Count + st.Accepted.Count + st.Sending.Count + st.Outgoing.Count
@@ -151,7 +155,12 @@ let private matchmake (m: Matchmaking) (now: DateTime) (roll: int) (st: State<'E
     elif now - st.BotsAt > TimeSpan.FromMinutes 5.0 then
         if st.Listing then st, [] else { st with Listing = true }, [ ListBots ]
     else
-        let st = { st with NextAuto = now.AddSeconds(float m.GapSeconds) }
+        // the gap eases back to normal: halved for each 30 minutes without a rate limit
+        let st =
+            if st.GapFactor > 1 && now - st.LastRateLimit > TimeSpan.FromMinutes 30.0
+            then { st with GapFactor = st.GapFactor / 2; LastRateLimit = now }
+            else st
+        let st = { st with NextAuto = now.AddSeconds(float (m.GapSeconds * st.GapFactor)) }
         let seconds, increment = m.TimeControls.[(roll &&& 0xFFFF) % m.TimeControls.Length]
         let speed = speedOf seconds increment
         // no games at this speed yet: the start rating, not Lichess's placeholder
@@ -172,7 +181,8 @@ let private matchmake (m: Matchmaking) (now: DateTime) (roll: int) (st: State<'E
 
 let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
     match event with
-    | WentOnline (botId, now) -> { st with BotId = botId; Online = true; LastActivity = now }, []
+    // no pause after going online: the pause is for the time after a game ends
+    | WentOnline (botId, _) -> { st with BotId = botId; Online = true }, []
 
     | Tick (now, roll) ->
         // an accepted challenge whose game never came does not hold a place forever
@@ -199,7 +209,15 @@ let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
             | None ->
                 { st with Accepted = st.Accepted.Add(c.Id, now) },
                 [ Log (sprintf "accepting %s from %s (%s %s)" c.Id c.Challenger.Name c.Speed (if c.Rated then "rated" else "casual")); Accept c.Id ]
-            | Some reason -> st, [ Log (sprintf "declining %s from %s: %s" c.Id c.Challenger.Name reason); Decline (c.Id, reason) ]
+            | Some reason ->
+                // what was asked, and for a time control what the bot takes
+                let tc (s, i) = sprintf "%g+%d" (float s / 60.0) i
+                let asked = sprintf "%s %s %s" (match c.Clock with Some clock -> tc clock | None -> "no clock") c.Speed (if c.Rated then "rated" else "casual")
+                let takes =
+                    if reason <> "timecontrol" then ""
+                    elif st.Config.Filter.TimeControls.IsEmpty then " - takes every clock but UltraBullet"
+                    else " - takes " + (st.Config.Filter.TimeControls |> List.map tc |> String.concat ", ")
+                st, [ Log (sprintf "declining %s from %s (%s): %s%s" c.Id c.Challenger.Name asked reason takes); Decline (c.Id, reason) ]
 
     | Gone (id, now) -> answer id WasCancelled now { st with Accepted = st.Accepted.Remove id }
     | Declined (id, reason, now) -> answer id (WasDeclined reason) now { st with Accepted = st.Accepted.Remove id }
@@ -254,8 +272,10 @@ let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
                     match seconds with
                     | Some s when s > 0 -> TimeSpan.FromSeconds(float s)
                     | _ -> TimeSpan.FromMinutes(float (min 60 (pown 2 st.RateLimitedInARow)))
-                { st with NextAuto = now + wait; RateLimitedInARow = st.RateLimitedInARow + 1 },
-                [ Log (sprintf "matchmaking: Lichess asks for a pause%s - waiting %s" (if why = "" then "" else ": " + why) (waitText wait)) ]
+                let gapFactor = min 8 (st.GapFactor * 2)
+                { st with NextAuto = now + wait; RateLimitedInARow = st.RateLimitedInARow + 1; GapFactor = gapFactor; LastRateLimit = now },
+                [ Log (sprintf "matchmaking: Lichess asks for a pause%s - waiting %s, then challenges %d s apart for a while"
+                         (if why = "" then "" else ": " + why) (waitText wait) ((match st.Config.Matchmaking with Some m -> m.GapSeconds | None -> 30) * gapFactor)) ]
             | RateLimitedBy (why, _) -> st, [ Answer (token, Error (if why = "" then rateLimitedText else "Lichess asks for a pause: " + why)) ]
             // an opponent at its own limit (400) or a refusal: that bot is skipped a while
             | SendFailed why when c.Auto ->
