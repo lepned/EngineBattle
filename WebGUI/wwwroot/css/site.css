@@ -695,36 +695,33 @@ li.eb-g-description {
   text-overflow: ellipsis;
 }
 
-/* Names take the room the other columns leave: those shrink to fit their content, and a name is
-   cut ("…", whole name on hover) only when that room runs out - a wide box shows it whole, a
-   narrow one keeps its numbers. A fixed cap cut names in wide boxes for no reason. */
+/* Names: a wide box spaces every column as the browser spreads it, and a name may use a share of
+   the box (not a fixed number of characters); a narrow box (450px or less) shrinks the numbers to
+   fit and gives the names what is left. Either way a name is cut ("…", whole on hover) only when
+   its room runs out, and the pairings' opening gives way before the names. */
 .data-cell.name {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 @media (min-width: 769px) {
-  .custom-table .data-cell:not(.name):not(.opening):not([colspan]) {
-    width: 1%;
-  }
-
-  .custom-table .data-cell.name {
-    max-width: 0;
-    min-width: 8ch;
-  }
-
-  /* the pairings' opening gives way first: a quarter of the table, the names share the rest */
-  .custom-table .data-cell.opening {
-    max-width: 0;
-    width: 25%;
-  }
+  .standings-container, .pairings-container { container-type: inline-size; }
+  .custom-table .data-cell.name { max-width: 45cqw; }
+  .eb-g-latest .data-cell.name { max-width: 32cqw; }
+  .eb-g-pairings .data-cell.name { max-width: 40cqw; }
+  .eb-g-pairings .data-cell.opening { width: 100%; max-width: 0; }
 }
 
-/* The opening column in the pairings table is the one cell that is not a name, and the table
-   has to fit two engine names beside it in about 330px. An opening reads fine truncated - the
-   family is the first word or two, and the whole of it is a hover away - whereas half an engine
-   name tells you nothing about which net is playing. So this one gives up its width first, but
-   only some of it. Sixteen characters, tuned by eye against real opening names. */
+@container (max-width: 450px) {
+  .custom-table .data-cell:not(.name):not(.opening):not([colspan]) { width: 1%; }
+  .custom-table .data-cell.name { max-width: 0; min-width: 6ch; }
+  .eb-g-latest .data-cell.name, .eb-g-pairings .data-cell.name { max-width: 0; }
+  .eb-g-pairings .data-cell.opening { width: 25%; }
+}
+
+/* An opening reads fine cut (the family is its first words, the whole of it a hover away), so
+   it gives way before the names. On a phone this 16-character cap applies; on a wider screen
+   the pairings take the opening from the rules above. */
 .data-cell.opening,
 .header-cell.opening {
   max-width: var(--eb-opening-max, 16ch);
