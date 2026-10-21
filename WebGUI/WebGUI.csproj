@@ -33,7 +33,8 @@
 		<Content Include="..\*.md"
 		         Exclude="..\CLAUDE.md;..\agent.md;..\NuGetPackagePlan.md;..\RunningCeresTournaments.md;..\SPRT.md"
 		         Link="wwwroot\%(Filename)%(Extension)" />
-		<Content Include="..\License.txt" Link="wwwroot\License.txt" />
+		<!-- a copy without the licence file still builds (it is just missing from /docs) -->
+		<Content Include="..\License.txt" Link="wwwroot\License.txt" Condition="Exists('..\License.txt')" />
 	</ItemGroup>
 
 </Project>
