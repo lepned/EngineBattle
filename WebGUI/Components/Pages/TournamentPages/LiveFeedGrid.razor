@@ -106,7 +106,7 @@
                     <td>@p.Points.ToString("0.0")</td>
                     <td>@p.Played</td>
                     <td>@p.Win-@p.Draw-@p.Loss</td>
-                    <td>@p.Elo.ToString("+0;-0;0") ±@p.Error.ToString("0")</td>
+                    <td>@(double.IsNaN(p.Elo) ? "---" : $"{p.Elo:+0;-0;0} ±{p.Error:0}")</td>
                     <td>@s.nodes</td>
                     <td>@s.nps</td>
                     <td>@s.eps</td>

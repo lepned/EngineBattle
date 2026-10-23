@@ -171,6 +171,23 @@ let ``the player statistics carry the fit: two players anchored at the first, on
     Assert.Equal(0.0, (find "B").Error, 6)
     Assert.Equal(-(find "C").Elo, (find "A").Elo, 6)
     Assert.True((find "A").CFS > 90 && (find "B").CFS > 90 && (find "C").CFS = -1)
+    // a gauntlet's challenger is the reference from its first game, before a third player has played
+    let early = ChessLibrary.GameAnalysis.PGNCalculator.getFullStat true [ "S" ] [ "S"; "M"; "C" ] (pair "S" "C" (1, 1, 0) |> ResizeArray)
+    let s = early |> Seq.find (fun p -> p.Player = "S")
+    Assert.True(s.Elo = 0.0 && s.Error = 0.0)
+    Assert.True((early |> Seq.find (fun p -> p.Player = "C")).Elo < 0.0)
+    // two challengers: the pool average, also while only one of them has played (a star so far)
+    let pa = ChessLibrary.GameAnalysis.PGNCalculator.getFullStat
+    let two = pa true [ "S"; "T" ] [ "S"; "T"; "C"; "D" ] (pair "S" "C" (1, 1, 0) @ pair "S" "D" (0, 1, 1) |> ResizeArray)
+    Assert.True(two |> Seq.filter (fun p -> p.Played > 0) |> Seq.forall (fun p -> p.Error > 0.0))
+    // the same games outside a gauntlet: the pool average
+    let rr = ChessLibrary.GameAnalysis.PGNCalculator.getFullStat false [] [ "S"; "M"; "C" ] (pair "S" "C" (1, 1, 0) |> ResizeArray)
+    Assert.True((rr |> Seq.find (fun p -> p.Player = "S")).Error > 0.0)
+    // a player listed but not yet played has no rating ("---"), never the reference's 0 with no error
+    let listed = ChessLibrary.GameAnalysis.PGNCalculator.calculateStatistics [ "A"; "B"; "M" ] (pair "A" "B" (3, 2, 1))
+    let m = listed |> List.find (fun p -> p.Player = "M")
+    Assert.True(Double.IsNaN m.Elo && Double.IsNaN m.Error && m.CFS = -1)
+    Assert.Equal(None, ChessLibrary.GameAnalysis.PGNCalculator.anchorOf listed |> Option.filter (fun p -> p.Player = "M"))
     // a round robin of the three (A and C play too): the pool average, nobody without an error
     let rr = Seq.append three (pair "A" "C" (30, 40, 30) @ pair "C" "A" (30, 40, 30)) |> ResizeArray
     let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults rr |> Seq.toList

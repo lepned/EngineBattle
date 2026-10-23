@@ -333,7 +333,9 @@ module Manager =
               if not x.SuppressDashboard then
                   let pgnGames = x.GetPGNGames()
                   if pgnGames.Count > 0 then
-                      let consoleResString, _, _, _ = PGNCalculator.getEngineDataResults pgnGames
+                      let challengers = tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name
+                      let isGauntlet = String.Equals(tournament.TournamentMode, "Gauntlet", StringComparison.OrdinalIgnoreCase)
+                      let consoleResString, _, _, _ = PGNCalculator.getEngineDataResultsWith (PGNCalculator.gauntletReference isGauntlet challengers) pgnGames
                       callback.Invoke (Update.GameSummary consoleResString)
                   else
                     let pRes = x.GetPlayerResults results

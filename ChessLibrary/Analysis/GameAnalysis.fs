@@ -315,24 +315,53 @@ module PGNCalculator =
   let defaultAnchorOf (players: string seq) (results: Result seq) =
     defaultAnchor (List.ofSeq players) (ratingGames results)
 
-  /// One rating fit of every player at once (RatingFit, what Ordo did), at `defaultAnchor`.
-  let ratingFit (players: string list) (results: Result seq) =
+  /// Who a table is relative to: read from the games (`defaultAnchor`), a player the tournament
+  /// names, or the pool average whatever the games show.
+  type Reference =
+    | FromGames
+    | Player of string
+    | PoolAverage
+
+  /// A tournament's own reference: a gauntlet's single challenger (known from its first game on,
+  /// before the games show it plays every one); with several challengers the pool average, so the
+  /// table does not take the one that happened to play first as the reference.
+  let gauntletReference (isGauntlet: bool) (challengers: string list) =
+    match challengers with
+    | _ when not isGauntlet -> FromGames
+    | [] -> FromGames
+    | [ c ] -> Player c
+    | _ -> PoolAverage
+
+  /// One rating fit of every player at once (RatingFit, what Ordo did), relative to `reference`
+  /// (a named player once it has played; before, the games decide).
+  let ratingFitWith (reference: Reference) (players: string list) (results: Result seq) =
     let games = ratingGames results |> Seq.toArray
     if games.Length = 0 then None
-    else Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = defaultAnchor players games } games)
+    else
+      let anchor =
+        match reference with
+        | Player r when games |> Array.exists (fun g -> g.White = r || g.Black = r) -> Some r
+        | PoolAverage -> None
+        | _ -> defaultAnchor players games
+      Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = anchor } games)
+
+  let ratingFit (players: string list) (results: Result seq) = ratingFitWith FromGames players results
 
   /// Each player's Elo, error and CFS from the fit (CFS against the next in StandingsTable.tableOrder,
-  /// -1 for the last). A player the fit has no games of keeps its own numbers.
+  /// -1 for the last). A player the fit has no games of has no rating (NaN: "---").
   let withRatingFit (fit: RatingFit.Fit option) (players: PlayerResult seq) =
+    // a player the fit did not rate (no finished game yet) has no rating: "---", not a 0.0 that
+    // reads as the reference
+    let unrated (p: PlayerResult) = { p with Elo = nan; Error = nan; CFS = -1 }
     match fit with
-    | None -> players |> Seq.toList
+    | None -> players |> Seq.map unrated |> Seq.toList
     | Some f ->
       let rated = f.Players |> List.map (fun p -> p.Name, p) |> dict
       let withRating =
         [ for p in players ->
             match rated.TryGetValue p.Player with
             | true, r -> { p with Elo = r.Rating; Error = r.Error }
-            | _ -> p ]
+            | _ -> unrated p ]
       // the chain of "next" follows the table order, ties included
       let next =
         withRating
@@ -382,15 +411,16 @@ module PGNCalculator =
     let standings = StandingsTable.getResultsAndPairsInConsoleFormat players cross + ratingFitLines fit
     if players.Length = 2 then standings + Pentanomial.formatSingleMatchupCompact pgnGames else standings
 
-  /// Every player's statistics, with the rating fit (also returned, for the lines under the table).
-  let getFullStatAndFit results =
+  /// Every player's statistics, with the rating fit (also returned, for the lines under the table),
+  /// `reference` at 0 once it has played (ratingFitWith).
+  let getFullStatAndFitWith (reference: Reference) results =
     let results = Seq.toArray results
     let players =
       [ for r in results do
           yield r.Player1
           yield r.Player2
       ] |> Seq.distinct |> List.ofSeq
-    let fit = ratingFit players results
+    let fit = ratingFitWith reference players results
     // Bucket the results by player in one pass. calculateStatisticsForPlayer only ever
     // looks at that player's own games, so handing it the pre-filtered list is
     // equivalent — but it turns an O(players x games) scan (which also re-materialized
@@ -417,6 +447,8 @@ module PGNCalculator =
             let res = calculateStatisticsForPlayer player games
             yield res }
     |> withRatingFit fit, fit
+
+  let getFullStatAndFit results = getFullStatAndFitWith FromGames results
 
   let getFullStatFromResults results = fst (getFullStatAndFit results) :> PlayerResult seq
 
@@ -647,7 +679,8 @@ module PGNCalculator =
   /// the full list regardless.
   let maxConsoleStandingsPlayers = 500
 
-  let getEngineDataResults results =
+  /// The standings of PGN games as text and data, `reference` at 0 once it has played.
+  let getEngineDataResultsWith (reference: Reference) results =
     let allResults = getResultsFromPGNGames results
     let distinctPlayerCount =
       let seen = HashSet<string>()
@@ -661,7 +694,7 @@ module PGNCalculator =
       else
         printfn "Crosstable skipped: %d players exceeds the limit of %d" distinctPlayerCount maxCrosstablePlayers
         ResizeArray()
-    let playerRes, fit = getFullStatAndFit allResults
+    let playerRes, fit = getFullStatAndFitWith reference allResults
     populateSpeedMetrics playerRes results
     populatePentanomialError playerRes results
     StandingsTable.populatePairData playerRes cross
@@ -676,10 +709,14 @@ module PGNCalculator =
 
     consoleContent, playerRes, cross, allResults
 
-  let calculateStatistics (engines:string list) results =
+  let getEngineDataResults results = getEngineDataResultsWith FromGames results
+
+  let calculateStatisticsWith (reference: Reference) (engines:string list) results =
       engines
       |> List.map (fun player -> calculateStatisticsForPlayer player results)
-      |> withRatingFit (ratingFit engines results)
+      |> withRatingFit (ratingFitWith reference engines results)
+
+  let calculateStatistics (engines:string list) results = calculateStatisticsWith FromGames engines results
 
   let processStat (challengers: string list) (playerResults : _ list) =
     let challengerSet = Set(challengers)
@@ -723,10 +760,11 @@ module PGNCalculator =
       sorted |> ResizeArray<_>
 
   let getFullStat isGauntlet (challengers:string list) (players:string list) tournamentResults =
+      let reference = gauntletReference isGauntlet challengers
       match challengers with
       |h::t ->
         if isGauntlet then
-          calculateStatistics players tournamentResults |> processStat challengers
+          calculateStatisticsWith reference players tournamentResults |> processStat challengers
         else
           calculateStatistics players tournamentResults |> processStat []
       |[] ->
