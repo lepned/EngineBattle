@@ -62,6 +62,8 @@ type PlayerRating =
 type Fit =
     { /// Strongest first
       Players: PlayerRating list
+      /// The player at 0 (the anchor asked for, when it played); None = the pool average is 0
+      Anchor: string option
       /// For equal opponents, in percent, with its error (0 when it was given or lies at 0 or 100)
       DrawRate: float
       DrawRateError: float
@@ -84,7 +86,8 @@ let whiteAdvantagePriorSd = 300.0
 
 /// Gaussian prior on every rating: too wide to move a rated player (0.2 Elo on 300 from 50 games),
 /// it keeps a field split into two camps (a 4-player RR after round one) finite and the problem
-/// strictly concave, so no rating is held during the solve.
+/// strictly concave, so no rating is held during the solve. Centred on the pool average, or on the
+/// anchor when there is one: a player who scored even against the anchor is then exactly at 0.
 let ratingPriorSd = 2000.0
 
 /// The expected score of a player `diff` Elo stronger than the opponent.
@@ -230,22 +233,28 @@ let private boundPerfectScores (pool: Pool) =
 // ------------------------------------------------------------------ the fit
 
 /// The ratings (average 0) and the white advantage: Newton on the log-likelihood with the priors,
-/// each step by conjugate gradients on the sparse Hessian, with backtracking. Returns ratings,
-/// white advantage, converged.
-let private solve (pool: Pool) (whiteAdvantage: float option) =
+/// each step by conjugate gradients on the sparse Hessian, with backtracking. The rating prior is
+/// centred on player `centre` (the anchor; it itself on 0) or on 0. Returns ratings, white
+/// advantage, converged.
+let private solve (pool: Pool) (whiteAdvantage: float option) (centre: int option) =
     let n = pool.Names.Length
     let fitW = whiteAdvantage.IsNone
     let dim = n + (if fitW then 1 else 0)
     let w0 = defaultArg whiteAdvantage 0.0
     let wOf (x: float[]) = if fitW then x.[n] else w0
     let pairs = pool.Pairs
+    let k = 1.0 / (ratingPriorSd * ratingPriorSd)
+    // what the prior pulls each rating towards: the centre's rating (the centre itself to 0), or 0
+    let pullOf (x: float[]) i = match centre with Some c when i <> c -> x.[c] | _ -> 0.0
     let logLikelihood (x: float[]) =
         let w = wOf x
         let mutable ll = 0.0
         for p in pairs do
             let e = expectedScore (x.[p.W] + w - x.[p.B]) |> max 1e-300 |> min (1.0 - 1e-16)
             ll <- ll + p.Score * log e + (p.Games - p.Score) * log (1.0 - e)
-        for i in 0 .. n - 1 do ll <- ll - x.[i] * x.[i] / (2.0 * ratingPriorSd * ratingPriorSd)
+        for i in 0 .. n - 1 do
+            let u = x.[i] - pullOf x i
+            ll <- ll - k * u * u / 2.0
         if fitW then ll - w * w / (2.0 * whiteAdvantagePriorSd * whiteAdvantagePriorSd) else ll
     let gradient (x: float[]) =
         let w = wOf x
@@ -255,7 +264,12 @@ let private solve (pool: Pool) (whiteAdvantage: float option) =
             g.[p.W] <- g.[p.W] + d
             g.[p.B] <- g.[p.B] - d
             if fitW then g.[n] <- g.[n] + d
-        for i in 0 .. n - 1 do g.[i] <- g.[i] - x.[i] / (ratingPriorSd * ratingPriorSd)
+        for i in 0 .. n - 1 do
+            let u = k * (x.[i] - pullOf x i)
+            g.[i] <- g.[i] - u
+            match centre with
+            | Some c when i <> c -> g.[c] <- g.[c] + u
+            | _ -> ()
         if fitW then g.[n] <- g.[n] - w / (whiteAdvantagePriorSd * whiteAdvantagePriorSd)
         g
     // -Hessian as a function, and its diagonal for the preconditioner
@@ -270,7 +284,12 @@ let private solve (pool: Pool) (whiteAdvantage: float option) =
                 y.[p.W] <- y.[p.W] + sv
                 y.[p.B] <- y.[p.B] - sv
                 if fitW then y.[n] <- y.[n] + sv
-            for i in 0 .. n - 1 do y.[i] <- y.[i] + v.[i] / (ratingPriorSd * ratingPriorSd)
+            for i in 0 .. n - 1 do
+                let u = k * (v.[i] - pullOf v i)
+                y.[i] <- y.[i] + u
+                match centre with
+                | Some c when i <> c -> y.[c] <- y.[c] - u
+                | _ -> ()
             if fitW then y.[n] <- y.[n] + v.[n] / (whiteAdvantagePriorSd * whiteAdvantagePriorSd)
             y
         let diag = Array.zeroCreate<float> dim
@@ -279,7 +298,10 @@ let private solve (pool: Pool) (whiteAdvantage: float option) =
             diag.[p.W] <- diag.[p.W] + c.[k]
             diag.[p.B] <- diag.[p.B] + c.[k]
             if fitW then diag.[n] <- diag.[n] + c.[k]
-        for i in 0 .. n - 1 do diag.[i] <- diag.[i] + 1.0 / (ratingPriorSd * ratingPriorSd)
+        for i in 0 .. n - 1 do
+            match centre with
+            | Some c when i = c -> diag.[i] <- diag.[i] + float n * k
+            | _ -> diag.[i] <- diag.[i] + k
         if fitW then diag.[n] <- diag.[n] + 1.0 / (whiteAdvantagePriorSd * whiteAdvantagePriorSd)
         apply, diag
     let dot (a: float[]) (b: float[]) = let mutable s = 0.0 in (for k in 0 .. a.Length - 1 do s <- s + a.[k] * b.[k]); s
@@ -397,8 +419,16 @@ let private sandwich (pool: Pool) (r: float[]) (w: float) (fitW: bool) (d0: floa
         let add a b v = h.[a, b] <- h.[a, b] + v
         add wi wi hv; add bi bi hv; add wi bi -hv; add bi wi -hv
         if fitW then (add wi n hv; add n wi hv; add bi n -hv; add n bi -hv; add n n hv)
-    // the priors' curvature (they are no random quantities: nothing in J)
-    for i in 0 .. n - 1 do h.[i, i] <- h.[i, i] + 1.0 / (ratingPriorSd * ratingPriorSd)
+    // the priors' curvature, centred as in solve (they are no random quantities: nothing in J)
+    let k = 1.0 / (ratingPriorSd * ratingPriorSd)
+    for i in 0 .. n - 1 do
+        match anchor with
+        | Some a when i <> a ->
+            h.[i, i] <- h.[i, i] + k
+            h.[a, a] <- h.[a, a] + k
+            h.[i, a] <- h.[i, a] - k
+            h.[a, i] <- h.[a, i] - k
+        | _ -> h.[i, i] <- h.[i, i] + k
     if fitW then h.[n, n] <- h.[n, n] + 1.0 / (whiteAdvantagePriorSd * whiteAdvantagePriorSd)
     let hInv = (DenseMatrix.ofArray2 h).Cholesky().Solve(DenseMatrix.identity dim)
     let hCol i = Array.init dim (fun k -> hInv.[k, i])
@@ -452,7 +482,7 @@ let private simulate (pool: Pool) (r: float[]) (w: float) (whiteAdvantage: float
                 q)
         // a replay can hand a player a perfect score: bounded as the real games are
         let replay, _ = boundPerfectScores { pool with Pairs = pairs }
-        let rs, ws, _ = solve replay whiteAdvantage
+        let rs, ws, _ = solve replay whiteAdvantage fixedAt
         let shift = match fixedAt with Some i -> rs.[i] | None -> 0.0
         for i in 0 .. n - 1 do samples.[s, i] <- rs.[i] - shift
         if fitW then samples.[s, n] <- ws) |> ignore
@@ -475,16 +505,18 @@ let fit (options: Options) (games: Game seq) : Fit =
     let poolList = pools games |> List.sortByDescending (fun p -> p.Pairs |> Array.sumBy (fun q -> q.Games))
     poolList |> List.iteri (fun poolNr pool ->
         let fitted, bounds = boundPerfectScores pool
-        let r, w, _ = solve fitted options.WhiteAdvantage
+        let anchorAt = options.Anchor |> Option.bind (fun a -> pool.Names |> Array.tryFindIndex ((=) a))
+        let r, w, _ = solve fitted options.WhiteAdvantage anchorAt
         let fitW = options.WhiteAdvantage.IsNone
         let d0, d0Err =
             match options.DrawRate with
             | Some pct -> pct / 100.0, 0.0
             | None -> fitDrawRate pool r w
         let n = pool.Names.Length
-        let anchorAt = options.Anchor |> Option.bind (fun a -> pool.Names |> Array.tryFindIndex ((=) a))
         let shift = match anchorAt with Some i -> r.[i] | None -> 0.0
-        let ratings = r |> Array.map (fun x -> x - shift)
+        // the solver stops within 1e-7: what is left of 0 is 0 (an even score against the anchor
+        // shows 0.0, not -0.0)
+        let ratings = r |> Array.map (fun x -> let d = x - shift in if abs d < 1e-6 then 0.0 else d)
         // the error bars' draw rate carries a Beta(2,2) prior (the weight of four games at 1/2): a
         // first draw is no certainty that every game draws, which at a rate of 1 would make the
         // rating certain too (an error of 34 after one game); from fifty games on it moves the rate under 0.02
@@ -540,6 +572,7 @@ let fit (options: Options) (games: Game seq) : Fit =
             elif diff > 0.0 then 1.0 elif diff < 0.0 then 0.0 else 0.5
         | _ -> nan
     { Players = players |> Seq.sortByDescending (fun p -> p.Rating) |> List.ofSeq
+      Anchor = options.Anchor |> Option.filter poolOfPlayer.ContainsKey
       DrawRate = drawRate
       DrawRateError = drawRateError
       WhiteAdvantage = whiteAdv

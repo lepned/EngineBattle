@@ -39,7 +39,9 @@ let ``the fit gives Ordo's ratings, errors and draw rate`` (name: string) =
     let problems = ResizeArray<string>()
     let check what (expected: float) (actual: float) (tolerance: float) =
         if abs (expected - actual) > tolerance then problems.Add(sprintf "%s: Ordo %.2f, fit %.2f" what expected actual)
-    let ratingTolerance = if whiteAdvantage.IsSome then 1.5 else 0.5
+    // an anchored set: the rating prior is centred on the anchor (RatingFit.ratingPriorSd), Ordo has
+    // none - at the far end of a ladder anchored at its top that is half an Elo (Integral: 0.54)
+    let ratingTolerance = if whiteAdvantage.IsSome then 1.5 elif anchor.IsSome then 0.75 else 0.5
     whiteAdvantage |> Option.iter (fun w -> check "white advantage" w f.WhiteAdvantage (max 2.0 (0.03 * abs w)))
     // the draw rate for equal opponents is Ordo's at Ordo's white advantage: with a large advantage
     // it is a steep extrapolation that a 1 % change in the advantage moves by points, so a fitted-

@@ -23,15 +23,16 @@ let ``two players: the difference is the Elo of the score, with the anchor at 0`
     let f = fit { noWhite with Anchor = Some "B" } g
     Assert.Equal(0.0, (player f "B").Rating, 6)
     Assert.Equal(0.0, (player f "B").Error, 6)
-    // the rating prior's pull on 1000 games is about 0.1 Elo
-    Assert.Equal(181.7, (player f "A").Rating, 0)
+    // the rating prior's pull on 1000 games is a few thousandths of an Elo
+    Assert.Equal(181.7, (player f "A").Rating, 1)
     Assert.True((player f "A").Error > 10.0 && (player f "A").Error < 40.0)
     Assert.Equal(1000, (player f "A").Games)
     Assert.Equal((640, 200, 160), ((player f "A").Wins, (player f "A").Draws, (player f "A").Losses))
     // without an anchor the pool average is 0
     let f2 = fit noWhite g
     Assert.Equal(-(player f2 "B").Rating, (player f2 "A").Rating, 6)
-    Assert.Equal((player f "A").Rating, (player f2 "A").Rating - (player f2 "B").Rating, 6)
+    // the same difference: the prior's centre (the anchor or the average) moves it by less than 0.01
+    Assert.Equal((player f "A").Rating, (player f2 "A").Rating - (player f2 "B").Rating, 2)
 
 [<Fact>]
 let ``a symmetric field is all zeros`` () =
@@ -151,7 +152,7 @@ let ``simulated errors agree with the information matrix`` () =
 
 /// The stats pipeline (console tables, GUI standings, pgn elo) takes Elo, error and CFS from the fit.
 [<Fact>]
-let ``the player statistics carry the fit: two players anchored at the first, more at the average`` () =
+let ``the player statistics carry the fit: two players anchored at the first, one in every game anchored, a round robin at the average`` () =
     let result w b r = ChessLibrary.TypesDef.CoreTypes.createResult w b (ResizeArray()) r ChessLibrary.MiscTypes.ResultReason.Checkmate 1000L
     let pair a b (w, d, l) = [ for _ in 1 .. w -> result a b "1-0" ] @ [ for _ in 1 .. d -> result a b "1/2-1/2" ] @ [ for _ in 1 .. l -> result a b "0-1" ]
     let two = pair "A" "B" (30, 40, 30) @ pair "B" "A" (20, 40, 40) |> ResizeArray
@@ -161,14 +162,20 @@ let ``the player statistics carry the fit: two players anchored at the first, mo
     Assert.Equal(0.0, a.Error, 6)
     Assert.True(b.Elo < 0.0 && b.Error > 0.0)
     Assert.True(a.CFS > 50 && b.CFS = -1)
-    // three players: the fit at the average, the CFS against the next in rating order
+    // three in a chain: B plays every game, so B is the reference (0, no error); the CFS against
+    // the next in rating order
     let three = pair "A" "B" (60, 20, 20) @ pair "B" "A" (20, 20, 60) @ pair "B" "C" (60, 20, 20) @ pair "C" "B" (20, 20, 60) |> ResizeArray
     let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults three |> Seq.toList
     let find n = stats |> List.find (fun p -> p.Player = n)
     Assert.Equal(0.0, (find "B").Elo, 6)
+    Assert.Equal(0.0, (find "B").Error, 6)
     Assert.Equal(-(find "C").Elo, (find "A").Elo, 6)
     Assert.True((find "A").CFS > 90 && (find "B").CFS > 90 && (find "C").CFS = -1)
-    Assert.True((find "B").Error > 0.0)
+    // a round robin of the three (A and C play too): the pool average, nobody without an error
+    let rr = Seq.append three (pair "A" "C" (30, 40, 30) @ pair "C" "A" (30, 40, 30)) |> ResizeArray
+    let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults rr |> Seq.toList
+    Assert.Equal(0.0, stats |> List.sumBy (fun p -> p.Elo), 6)
+    Assert.True(stats |> List.forall (fun p -> p.Error > 0.0))
 
 /// Two players with exactly the same rating: the CFS chain must follow the table's order, not the
 /// fit's (there a tie lands in either order), or the --- lands on the wrong row.
@@ -194,3 +201,52 @@ let ``a gauntlet rates the challenger against every opponent at once`` () =
     Assert.Equal(-(player f "A").Rating, (player f "C").Rating, 6)
     Assert.Equal<string list>([ "C"; "B"; "A" ], f.Players |> List.map (fun p -> p.Name))
     Assert.Equal(1, f.Groups.Length)
+
+/// A user's gauntlet: Stockfish against five, four games each, White winning nearly every game.
+let private userGauntlet =
+    let sf = "Stockfish"
+    // the opponent's results with White, then with Black, against Stockfish
+    let opponent name asWhite asBlack =
+        [ for o in asWhite -> { White = name; Black = sf; Outcome = o } ] @ [ for o in asBlack -> { White = sf; Black = name; Outcome = o } ]
+    opponent "A" [ WhiteWin; WhiteWin ] [ WhiteWin; WhiteWin ]
+    @ opponent "B" [ WhiteWin; WhiteWin ] [ WhiteWin; WhiteWin ]
+    @ opponent "C" [ WhiteWin; WhiteWin ] [ WhiteWin; WhiteWin ]
+    @ opponent "Ceres" [ WhiteWin; Draw ] [ WhiteWin; WhiteWin ]
+    @ opponent "Lc0" [ Draw; Draw ] [ WhiteWin; WhiteWin ]
+
+[<Fact>]
+let ``with an anchor the rating prior pulls towards it: an even score against it is exactly 0`` () =
+    let f = fit { defaultOptions with Anchor = Some "Stockfish" } userGauntlet
+    Assert.Equal(Some "Stockfish", f.Anchor)
+    Assert.Equal(0.0, (player f "Stockfish").Rating, 9)
+    // exactly 0, not a residual of the solver (which -0.0 would show)
+    for even in [ "A"; "B"; "C" ] do Assert.True((player f even).Rating = 0.0 && not (Double.IsNegative (player f even).Rating))
+    // 1.5 of 4 and 1 of 4 against it: the score's Elo (-88.7 and -190.8) less the prior's pull on four games
+    Assert.InRange((player f "Ceres").Rating, -88.8, -88.0)
+    Assert.InRange((player f "Lc0").Rating, -191.0, -188.5)
+    // at the pool average nobody is the reference
+    Assert.Equal(None, (fit defaultOptions userGauntlet).Anchor)
+
+[<Fact>]
+let ``the table's own reference: the first of two, the one in every game, else the pool average`` () =
+    let pa = ChessLibrary.GameAnalysis.PGNCalculator.defaultAnchor
+    Assert.Equal(Some "Stockfish", pa [ "Stockfish"; "A"; "B"; "C"; "Ceres"; "Lc0" ] userGauntlet)
+    // the order of the players does not matter for a gauntlet
+    Assert.Equal(Some "Stockfish", pa [ "Lc0"; "A"; "Stockfish" ] userGauntlet)
+    Assert.Equal(Some "B", pa [ "B"; "A" ] (bothColours "A" "B" (3, 2, 1)))
+    // a round robin, and a gauntlet with only its first opponent so far
+    Assert.Equal(None, pa [ "A"; "B"; "C" ] (games "A" "B" (1, 0, 1) @ games "B" "C" (1, 0, 1) @ games "C" "A" (1, 0, 1)))
+    Assert.Equal(None, pa [ "S"; "A"; "B" ] (bothColours "S" "A" (2, 0, 2)))
+    // an opponent's game against itself (no game of the pool) does not hide the gauntlet
+    Assert.Equal(Some "Stockfish", pa [ "Stockfish"; "A"; "B" ] ({ White = "A"; Black = "A"; Outcome = Draw } :: userGauntlet))
+
+[<Fact>]
+let ``the pages list a gauntlet in the table order: the reference above those even with it`` () =
+    let result w b r = ChessLibrary.TypesDef.CoreTypes.createResult w b (ResizeArray()) r ChessLibrary.MiscTypes.ResultReason.Checkmate 1000L
+    let asResult (g: Game) = result g.White g.Black (match g.Outcome with WhiteWin -> "1-0" | Draw -> "1/2-1/2" | BlackWin -> "0-1")
+    let stats = ChessLibrary.GameAnalysis.PGNCalculator.getFullStatFromResults (userGauntlet |> List.map asResult |> ResizeArray)
+    let order = ChessLibrary.GameAnalysis.StandingsTable.byTableOrder stats |> List.map (fun p -> p.Player)
+    // Stockfish (57 %) and the three at 50 % all show 0.0: the score decides, the CFS "---" is last
+    Assert.Equal("Stockfish", List.head order)
+    Assert.Equal<string list>([ "Ceres"; "Lc0" ], order |> List.skip 4)
+    Assert.Equal(-1.0, (stats |> Seq.find (fun p -> p.Player = "Lc0")).CFS)

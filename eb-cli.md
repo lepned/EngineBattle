@@ -575,7 +575,7 @@ Ratings and results
 
 Usage: eb-cli pgn elo <pgn> [options]
 
-Every player's Elo from one fit of all the games (the model Ordo uses): the error at 95 %, the confidence of being stronger than the next player (CFS), score, results, speed, and under the table the white advantage and the draw rate for equal opponents the fit found. Two players: the first is the reference at 0; more: the pool average is 0. --anchor puts a player of your choice at 0.
+Every player's Elo from one fit of all the games (the model Ordo uses): the error at 95 %, the confidence of being stronger than the next player (CFS), score, results, speed, and under the table the white advantage and the draw rate for equal opponents the fit found. Two players: the first is the reference at 0; one player in every game (a gauntlet): that player is at 0; otherwise the pool average is 0. The line under the table names the reference. --anchor puts a player of your choice at 0.
 
 Arguments:
   <pgn>  a PGN file

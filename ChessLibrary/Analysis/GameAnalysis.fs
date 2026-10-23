@@ -98,7 +98,12 @@ module StandingsTable =
 
   /// The order of every table: rating, then points per game, NaN last; the CFS is against the next
   /// player in this order.
-  let tableOrder (p: PlayerResult) = (if Double.IsNaN p.Elo then Double.NegativeInfinity else p.Elo), p.ScoreRate
+  /// Elo as the table shows it (one decimal: the solver's last 1e-9 never decides), then the score.
+  let tableOrder (p: PlayerResult) = (if Double.IsNaN p.Elo then Double.NegativeInfinity else Math.Round(p.Elo, 1)), p.ScoreRate
+
+  /// The players in table order (`tableOrder`, strongest first): the order the CFS chain follows,
+  /// for every page that lists them.
+  let byTableOrder (players: PlayerResult seq) = players |> Seq.sortByDescending tableOrder |> List.ofSeq
 
   let writeResultHeader (n:int) (speedPadding:int) : string =
     let label = "Speed"
@@ -290,14 +295,31 @@ module PGNCalculator =
           | _ -> None
         outcome |> Option.map (fun o -> { RatingFit.White = r.Player1; RatingFit.Black = r.Player2; RatingFit.Outcome = o }))
 
-  /// One rating fit of every player at once (RatingFit, what Ordo did): with two players the
-  /// first is the anchor at 0, as the tables show it; otherwise the pool average is 0.
+  /// The player at 0 when nobody is chosen: of two players the first; of more, the one in every
+  /// game (a gauntlet's challenger, the others measured against it); otherwise None, the pool average.
+  let defaultAnchor (players: string list) (games: RatingFit.Game seq) =
+    match players with
+    | [ a; _ ] -> Some a
+    | _ ->
+      // a game against itself is no game of the pool (the fit ignores it)
+      let games = games |> Seq.filter (fun g -> g.White <> g.Black) |> Seq.toArray
+      let names = games |> Seq.collect (fun g -> [ g.White; g.Black ]) |> Seq.distinct |> Seq.toList
+      // two who played only each other are no gauntlet yet: neither is the one in every game
+      if names.Length < 3 then None
+      else
+        match names |> List.filter (fun n -> games |> Array.forall (fun g -> g.White = n || g.Black = n)) with
+        | [ hub ] -> Some hub
+        | _ -> None
+
+  /// `defaultAnchor` of a set of results (the players in the order given).
+  let defaultAnchorOf (players: string seq) (results: Result seq) =
+    defaultAnchor (List.ofSeq players) (ratingGames results)
+
+  /// One rating fit of every player at once (RatingFit, what Ordo did), at `defaultAnchor`.
   let ratingFit (players: string list) (results: Result seq) =
     let games = ratingGames results |> Seq.toArray
     if games.Length = 0 then None
-    else
-      let anchor = match players with [ a; _ ] -> Some a | _ -> None
-      Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = anchor } games)
+    else Some (RatingFit.fit { RatingFit.defaultOptions with Anchor = defaultAnchor players games } games)
 
   /// Each player's Elo, error and CFS from the fit (CFS against the next in StandingsTable.tableOrder,
   /// -1 for the last). A player the fit has no games of keeps its own numbers.
@@ -334,7 +356,10 @@ module PGNCalculator =
     match fit with
     | None -> ""
     | Some f ->
-        sprintf "White advantage = %.1f +/- %.1f (not in the ratings)\nDraw rate (equal opponents) = %.2f %% +/- %.2f\n" (if abs f.WhiteAdvantage < 0.05 then 0.0 else f.WhiteAdvantage) f.WhiteAdvantageError f.DrawRate f.DrawRateError
+        (match f.Anchor with
+         | Some a -> sprintf "Elo relative to %s\n" a
+         | None -> "Elo relative to the pool average\n")
+        + sprintf "White advantage = %.1f +/- %.1f (not in the ratings)\nDraw rate (equal opponents) = %.2f %% +/- %.2f\n" (if abs f.WhiteAdvantage < 0.05 then 0.0 else f.WhiteAdvantage) f.WhiteAdvantageError f.DrawRate f.DrawRateError
         + (if f.Groups.Length > 1 then sprintf "%d groups of players the games do not connect: ratings compare within a group only\n" f.Groups.Length else "")
         // a perfect score has no rating of its own: a floor or a ceiling
         + (f.Players
@@ -571,18 +596,16 @@ module PGNCalculator =
     printfn "\n%s\n" idealized
 
 
-  /// The anchor of a two-player table: the player rated 0 with no error (the first listed when
-  /// both are, as after nothing but draws); None at the pool average or with more players.
+  /// The anchor of a table: the player rated 0 with no error (the first listed when two are, as
+  /// after nothing but draws); None at the pool average.
   let anchorOf (players: PlayerResult seq) =
-    match Seq.toList players with
-    | [ _; _ ] as ps -> ps |> List.tryFind (fun p -> p.Elo = 0.0 && p.Error = 0.0)
-    | _ -> None
+    players |> Seq.tryFind (fun p -> p.Elo = 0.0 && p.Error = 0.0)
 
   /// Two players with an anchor: the other one's error is the pentanomial one, as the match's Elo
   /// line gives it. Nothing at the pool average or with more players.
   let populatePentanomialError (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
     let players = Seq.toList players
-    match anchorOf players with
+    match (if players.Length = 2 then anchorOf players else None) with
     | Some anchor ->
       let matchups = Pentanomial.calculateAllMatchups pgnGames
       match matchups with

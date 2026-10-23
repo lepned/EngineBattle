@@ -65,7 +65,8 @@
     {
         tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList();
         // the tables' order: rating, then points per game (the CFS is against the next row in it)
-        table = standings.OrderByDescending(x => Double.IsNaN(x.Elo) ? double.NegativeInfinity : x.Elo).ThenByDescending(x => x.ScoreRate).ToList();
+        // the library's order: the CFS chain follows it
+        table = GameAnalysis.StandingsTable.byTableOrder(standings).ToList();
         cross = BuildCrosstable(results);
         pento = pentoLine;
         pentoCovered = pentoGames.Count;   // games we paired live (by opening hash)

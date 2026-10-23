@@ -17,8 +17,8 @@
 		{
 			<label style="margin-left:16px">Reference engine</label>
 			<select class="tool-input" style="width:320px" @bind="anchorChoice" @bind:after="RerateAsync">
-				<option value="">@(baseStats.Count == 2 ? $"{baseStats[0].Player} at 0 (the match's first player)" : "pool average at 0")</option>
-				@if (playerNames.Count == 2)
+				<option value="">@(autoAnchor == null ? "pool average at 0" : baseStats.Count == 2 ? $"{autoAnchor} at 0 (the match's first player)" : $"{autoAnchor} at 0 (plays every game)")</option>
+				@if (autoAnchor != null)
 				{
 					<option value="@PoolAverage">pool average at 0</option>
 				}
@@ -106,6 +106,8 @@
 	private string fileOpenName = "";
 	private string fitSummary = "";
 	private string anchorChoice = "";
+	// the reference the tables choose themselves (PGNCalculator.defaultAnchor); null = the pool average
+	private string autoAnchor = null;
 	private string copyLabel = "Copy table as text";
 	private Microsoft.FSharp.Core.FSharpOption<RatingFit.Fit> currentFit = null;
 	private List<CrossTableEntry> crossTable = new();
@@ -138,7 +140,7 @@
 	}
 
 	/// The table with the chosen reference: the pipeline's own choice (two players: the first at 0,
-	/// otherwise the pool average), the pool average, or a player at 0. The fit runs off the
+	/// one in every game: that one, otherwise the pool average), the pool average, or a player at 0. The fit runs off the
 	/// dispatcher: an archive of a thousand names takes a moment.
 	private async Task RerateAsync()
 	{
@@ -153,7 +155,7 @@
 	private (List<PlayerResult>, string) RateWith(string choice)
 	{
 		Microsoft.FSharp.Core.FSharpOption<string> anchor =
-			choice == "" ? (baseStats.Count == 2 ? Microsoft.FSharp.Core.FSharpOption<string>.Some(baseStats[0].Player) : null)
+			choice == "" ? (autoAnchor != null ? Microsoft.FSharp.Core.FSharpOption<string>.Some(autoAnchor) : null)
 			: choice == PoolAverage ? null
 			: Microsoft.FSharp.Core.FSharpOption<string>.Some(choice);
 		var (rated, fit) = GameAnalysis.PGNCalculator.rerate(anchor, allResults, baseStats);
@@ -168,7 +170,8 @@
 			var groups = f.Groups.Length > 1 ? $" · {f.Groups.Length} groups of players the games do not connect: ratings compare within a group only" : "";
 			summary = $"{allResults.Length:N0} games · white advantage {(Math.Abs(f.WhiteAdvantage) < 0.05 ? 0.0 : f.WhiteAdvantage):+0.0;-0.0;0.0} ± {f.WhiteAdvantageError:0.0} (not in the ratings) · draw rate for equal opponents {f.DrawRate:0.00} % ± {f.DrawRateError:0.00}{groups}";
 		}
-		return (list.OrderByDescending(e => Double.IsNaN(e.Elo) ? double.NegativeInfinity : e.Elo).ThenByDescending(e => e.ScoreRate).ToList(), summary);
+		// the library's order: the CFS chain follows it
+		return (GameAnalysis.StandingsTable.byTableOrder(list).ToList(), summary);
 	}
 
 	/// The table with the chosen reference as the console prints it: to the clipboard, and to the console and the log.
@@ -217,6 +220,7 @@
 		allResults = Array.Empty<Result>();
 		fitSummary = "";
 		anchorChoice = "";
+		autoAnchor = null;
 		var pgnName = Path.GetFileName(fullPath);
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
@@ -276,6 +280,8 @@
 			crossTable = cross.ToList();
 			baseStats = engineStats.ToList();
 			playerNames = baseStats.Select(p => p.Player).OrderBy(n => n).ToList();
+			var auto = GameAnalysis.PGNCalculator.defaultAnchorOf(baseStats.Select(p => p.Player), allResults);
+			autoAnchor = auto == null ? null : auto.Value;
 			await RerateAsync();
 			logger.LogInformation("PGN file parsed {File}", pgnName);
 			StateHasChanged();
