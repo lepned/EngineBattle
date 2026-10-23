@@ -112,6 +112,9 @@ let private shownEval (st: State) = if st.LastFromBook then "book" else defaultA
 let firstMoveWait (st: State) (g: GameFull) =
     max st.Config.AbortSeconds (int (max g.State.WTime g.State.BTime / 10000L))
 
+/// A line for both chat rooms: the opponent sees the player room, a watcher only the spectator room.
+let private toBothRooms (text: string) = [ Chat ("player", text); Chat ("spectator", text) ]
+
 /// The game ended: the PGN first, then the goodbye (a chat that fails loses nothing). An aborted
 /// game is not a game: neither.
 let private finish (st: State) (g: GameFull) (s: GameState) =
@@ -121,7 +124,7 @@ let private finish (st: State) (g: GameFull) (s: GameState) =
     else
         [ Log (sprintf "%s finished: %s (%s)" st.GameId result s.Status)
           WritePgn (g, s, st.BookPlies)
-          if st.Config.Goodbye <> "" then Chat ("player", st.Config.Goodbye)
+          if st.Config.Goodbye <> "" then yield! toBothRooms st.Config.Goodbye
           Finished ]
 
 /// The bot's turn, when nothing is under way: the book's move while it may have one, else a search.
@@ -161,13 +164,13 @@ let step (st: State) (event: Event) : State * Effect list =
     | Message (GameMessage.Full g, _) ->
         let greet = not st.Greeted && st.Config.Greeting <> ""
         let st, effects = decide { st with Full = Some g; Latest = Some g.State; Greeted = st.Greeted || greet; Backoff = 5000 }
-        st, (if greet then [ Chat ("player", st.Config.Greeting) ] else []) @ effects
+        st, (if greet then toBothRooms st.Config.Greeting else []) @ effects
     | Message (GameMessage.State s, _) ->
         match st.Full with
         | Some _ ->
             let greet = not st.Greeted && st.Config.Greeting <> ""
             let st, effects = decide { st with Latest = Some s; Greeted = st.Greeted || greet; Backoff = 5000 }
-            st, (if greet then [ Chat ("player", st.Config.Greeting) ] else []) @ effects
+            st, (if greet then toBothRooms st.Config.Greeting else []) @ effects
         | None -> st, []
     | Message (GameMessage.Chat (room, user, text), info) ->
         if user = "lichess" || String.Equals(user, st.Config.BotId, StringComparison.OrdinalIgnoreCase) then st, []

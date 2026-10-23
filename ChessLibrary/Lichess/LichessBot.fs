@@ -355,8 +355,13 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                 task {
                     do! pause ms ct
                     post (LichessGameMachine.Retry count) } |> ignore
-            // chat never holds the game: sent on the side
-            | LichessGameMachine.Chat (room, text) -> send (fun () -> client.Chat(gameId, room, text, ct)) "chat" ct |> ignore
+            // chat never holds the game: sent on the side, a refusal said in the log
+            | LichessGameMachine.Chat (room, text) ->
+                task {
+                    match! send (fun () -> client.Chat(gameId, room, text, ct)) "chat" ct with
+                    | LichessReply.Refused (code, body) when not ct.IsCancellationRequested ->
+                        say (sprintf "%s: chat (%s room) not sent: %s" gameId room (if code = 0 then body else sprintf "HTTP %d %s" code body))
+                    | _ -> () } |> ignore
             | LichessGameMachine.Resign _ -> send (fun () -> client.Resign(gameId, ct)) "resign" ct |> ignore
             | LichessGameMachine.Abort opponent ->
                 task {

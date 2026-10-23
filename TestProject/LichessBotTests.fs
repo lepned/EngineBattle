@@ -274,7 +274,9 @@ let ``the bot accepts what the filter takes, declines the rest, plays its moves,
         // the spectator's !net, and the goodbye to the opponent
         let chats = server.Posts |> Array.filter (fun (p, _) -> p = "/api/bot/game/g1/chat") |> Array.map (fun (_, b) -> Uri.UnescapeDataString(b.Replace('+', ' ')))
         Assert.Contains(chats, fun c -> c.Contains "room=spectator" && c.Contains "No net: Fake")
+        // to the opponent and to whoever watches
         Assert.Contains(chats, fun c -> c.Contains "room=player" && c.Contains "text=gg")
+        Assert.Contains(chats, fun c -> c.Contains "room=spectator" && c.Contains "text=gg")
         let text = File.ReadAllText pgn
         Assert.Contains("[White \"TestBot\"]", text)
         Assert.Contains("[Site \"https://lichess.org/g1\"]", text)
