@@ -371,27 +371,32 @@ let ensureBlankLinesBetweenGames (filePath: string) (games: PgnGame seq) =
       writer.WriteLine(g.Raw.TrimStart().TrimEnd())
       writer.WriteLine() // single blank line
 
+/// A game's place by its Round tag ("4" or "4.2"). External PGNs use non-numeric rounds ("?", "",
+/// "4.1.2"): those sort first instead of throwing FormatException out of the PGN tools.
+let private roundOrder (round: string) =
+    let parseInt (s: string) =
+        match Int32.TryParse s with
+        | true, v -> v
+        | _ -> 0
+    match round.Split '.' with
+    | [|rNr|] -> parseInt rNr * 1000
+    | [|rNr; rest|] -> parseInt rNr * 1000 + parseInt rest
+    | _ -> -1
+
+/// The games stand in round order already (a sequential run writes them so; parallel games finish
+/// out of order).
+let inRoundOrder (games: PgnGame seq) =
+    games |> Seq.map (fun g -> roundOrder g.GameMetaData.Round) |> Seq.pairwise |> Seq.forall (fun (a, b) -> a <= b)
+
 let writeRawPgnGamesAdjustedToFile (filePath: string) (games: PgnGame seq) =
   PGNHelper.ensureDirectoryExists filePath
   File.Delete filePath
   let mutable idx = 0
   let mutable round = 0
 
-  let sortByRound (round:string) =
-         // External PGNs use non-numeric rounds ("?", "", "4.1.2") — sort those first
-         // instead of throwing FormatException out of the PGN tools.
-         let parseInt (s: string) =
-             match Int32.TryParse s with
-             | true, v -> v
-             | _ -> 0
-         match round.Split '.' with
-         | [|rNr|] -> parseInt rNr * 1000
-         | [|rNr; rest|] -> parseInt rNr * 1000 + parseInt rest
-         | _ -> -1
-
   let groupGames =
       games
-          |> Seq.sortBy(fun g -> sortByRound g.GameMetaData.Round)
+          |> Seq.sortBy(fun g -> roundOrder g.GameMetaData.Round)
           |> Seq.groupBy (fun g -> g.GameMetaData.Round.Split '.' |> Seq.tryHead)
           |> Seq.toList
 

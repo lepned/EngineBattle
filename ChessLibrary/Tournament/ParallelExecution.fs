@@ -404,8 +404,10 @@ let parallelTournamentRun
                 ResizeArray<PgnGame>()
           // writeRawPgnGamesAdjustedToFile deletes the target before writing, so handing it an
           // empty sequence would erase a good "_ordered" file from an earlier run - turning a
-          // hang into data loss. Only rewrite it when we actually have the games.
-          if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not && games.Count > 0 then
+          // hang into data loss. Only rewrite it when we actually have the games, and only when
+          // the PGN is out of round order (parallel games finish out of order; a sequential run's
+          // copy would be the PGN again).
+          if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not && games.Count > 0 && not (ChessLibrary.PGNWriter.inRoundOrder games) then
               let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
               let path = Path.GetFileNameWithoutExtension(tourny.PgnOutPath) + "_ordered" + ".pgn"
               let combined = Path.Combine(directory,path)

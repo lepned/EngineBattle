@@ -1386,3 +1386,13 @@ let ``real PGN games replay to the FEN python-chess computes`` (file: string, pl
         played <- played + 1
     Assert.Equal(plies, played)
     Assert.Equal(finalFen, board.FEN())
+
+/// The tournament writes "<name>_ordered.pgn" only when its PGN is out of round order.
+[<Fact>]
+let ``inRoundOrder: a sequential run's PGN is in order, parallel games out of order are not`` () =
+    let game (round: string) = { PgnGame.Empty 1 with GameMetaData = { GameMetadata.Empty with Round = round } }
+    Assert.True(PGNWriter.inRoundOrder [ game "1.1"; game "1.2"; game "2.1"; game "2.2"; game "10.1" ])
+    Assert.False(PGNWriter.inRoundOrder [ game "1.1"; game "2.1"; game "1.2" ])
+    // round 10 after round 9 (numbers, not text)
+    Assert.True(PGNWriter.inRoundOrder [ game "9.2"; game "10.1" ])
+    Assert.True(PGNWriter.inRoundOrder [])

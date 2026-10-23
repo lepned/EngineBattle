@@ -130,7 +130,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
 
 ### Output Paths
 
-- **PgnOutPath**: Path to the output PGN file.
+- **PgnOutPath**: Path to the output PGN file. Games are written as they finish; when games ran in parallel and finished out of order, a copy sorted by round is written next to it at the end (`<name>_ordered.pgn`).
 - **ReferencePGNPath**: Path to the reference PGN file.
 
 ### Engine Setup
