@@ -309,13 +309,30 @@ type SearchLimit =
     | ByClock of overheadMs: int
     | FixedNodes of nodes: int
 
-/// The go command for our move. By the clock the overhead comes off our own time (never below 10 ms).
+/// A clock search: the times less the overhead (never below 10 ms), and the increment.
+let private clockSearch (overhead: int) (wtime: int64) (btime: int64) (inc: int64) =
+    let clamp (t: int64) = TimeSpan.FromMilliseconds(float (max 10L (t - int64 overhead)))
+    let control =
+        if inc > 0L then TimeControlTypes.WithIncrement (TimeSpan.Zero, TimeSpan.FromMilliseconds(float inc))
+        else TimeControlTypes.FixedTime TimeSpan.Zero
+    Game.GoCommand.ClockTimes (control, clamp wtime, clamp btime)
+
+/// The search for our move. By the clock the overhead comes off both times (never below 10 ms).
 let goCommand (limit: SearchLimit) (s: GameState) =
     match limit with
-    | FixedNodes n -> sprintf "go nodes %d" n
+    | FixedNodes n -> Game.GoCommand.NodeCount n
+    | ByClock overhead -> clockSearch overhead s.WTime s.BTime s.WInc
+
+/// The search to ponder with after our move, played `elapsedMs` after the state `s` came: our clock
+/// less that time plus the increment, the opponent's as it was. None with a fixed number of nodes.
+let ponderSearch (limit: SearchLimit) (s: GameState) (botIsWhite: bool) (elapsedMs: int64) =
+    match limit with
+    | FixedNodes _ -> None
     | ByClock overhead ->
-        let clamp (t: int64) = max 10L (t - int64 overhead)
-        sprintf "go wtime %d btime %d winc %d binc %d" (clamp s.WTime) (clamp s.BTime) s.WInc s.BInc
+        let inc = if botIsWhite then s.WInc else s.BInc
+        let ours (t: int64) = max 0L (t - elapsedMs) + inc
+        let w, b = if botIsWhite then ours s.WTime, s.BTime else s.WTime, ours s.BTime
+        Some (clockSearch overhead w b inc)
 
 let private startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
@@ -326,7 +343,9 @@ let position (game: GameFull) (s: GameState) (botIsWhite: bool) : (string * bool
     let board = Board()
     board.ResetBoardState()
     board.LoadFen start
-    // a Chess960 start that looks like the standard one plays like it: the board decides, not the variant
+    // a Chess960 game is Chess960 whatever its start (one may look like the standard one): it castles as
+    // the king taking its rook, as Lichess sends and wants it, and the engine plays it with UCI_Chess960
+    if game.Variant = "chess960" then board.IsFRC <- true
     let standard = not board.IsFRC
     let moves = ResizeArray<string>()
     let mutable ok = true
@@ -353,6 +372,45 @@ let position (game: GameFull) (s: GameState) (botIsWhite: bool) : (string * bool
         let from = if start = startFen then "position startpos" else sprintf "position fen %s" start
         let command = if moves.Count = 0 then from else sprintf "%s moves %s" from (String.concat " " moves)
         Some (command, (board.Position.STM = 0uy) = botIsWhite)
+
+/// The last move of a position command; None without moves.
+let lastMove (command: string) =
+    match command.IndexOf " moves " with
+    | -1 -> None
+    | i -> command.Substring(i + 7).Split(' ', StringSplitOptions.RemoveEmptyEntries) |> Array.tryLast
+
+/// A position command with more moves after it.
+let withMoves (command: string) (moves: string list) =
+    if moves.IsEmpty then command
+    elif command.Contains " moves " then command + " " + String.concat " " moves
+    else command + " moves " + String.concat " " moves
+
+/// The board of a position command (startpos or fen, then the moves), a Chess960 board in a Chess960
+/// game (castles as the king taking its rook); None when a move does not play.
+let boardOf (chess960: bool) (command: string) =
+    let b = Board()
+    b.ResetBoardState()
+    let start, moves =
+        match command.IndexOf " moves " with
+        | -1 -> command, [||]
+        | i -> command.Substring(0, i), command.Substring(i + 7).Split(' ', StringSplitOptions.RemoveEmptyEntries)
+    if start.StartsWith "position fen " then b.LoadFen(start.Substring 13) else b.LoadFen startFen
+    if chess960 then b.IsFRC <- true
+    let mutable ok = true
+    for m in moves do
+        if ok then
+            match BoardUtils.tryGetMoveAndSanFromUci &b m with
+            | Some _ -> b.PlayUciMove m
+            | None -> ok <- false
+    if ok then Some b else None
+
+/// The position to ponder on: ours, our move and the reply the engine expects. None when the reply
+/// does not play or ends the game (no ponder then, as in tournaments).
+let ponderPosition (chess960: bool) (command: string) (ours: string) (reply: string) =
+    let after = withMoves command [ ours; reply ]
+    match boardOf chess960 after with
+    | Some b when b.AnyLegalMove() && not (b.InsufficientMaterial()) -> Some after
+    | _ -> None
 
 /// Whether the game has ended (any status but created and started).
 let isOver (s: GameState) = s.Status <> "started" && s.Status <> "created" && s.Status <> ""

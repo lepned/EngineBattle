@@ -643,6 +643,33 @@ let ``Tournament engine from CreateAsync is started as the constructor starts it
     finally stopTournament eng
 
 [<Fact>]
+let ``Tournament engine from CreateLoggedAsync logs every line in and out to its own file; CreateAsync logs nothing`` () =
+    // a name of its own: parallel tests may write engine logs to the same folder
+    let name = "IoLog" + Guid.NewGuid().ToString("N").Substring(0, 8)
+    let mine () =
+        let dir = Path.Combine(Environment.CurrentDirectory, "logs")
+        if Directory.Exists dir then Directory.GetFiles(dir, sprintf "engine_%s_*.log" name) else [||]
+    let plain = createAsync { config (newLogPath ()) "" [] with Name = name }
+    try
+        plain.IsReady()
+        Assert.True(plain.WaitForReadyOk(5000))
+    finally stopTournament plain
+    Assert.Empty(mine ())
+    // its stderr lines go to the log, not to the console
+    let cfg = { config (newLogPath ()) "--stderr-at-start 2" [] with Name = name }
+    let logged = ChessEngine.CreateLoggedAsync(cfg, initCommands cfg, Some (NullLogger.Instance :> ILogger)).GetAwaiter().GetResult()
+    try
+        logged.IsReady()
+        Assert.True(logged.WaitForReadyOk(5000))
+    finally stopTournament logged
+    let file = Assert.Single(mine ())
+    try
+        let lines = File.ReadAllLines file |> Array.map (fun l -> l.Substring(l.IndexOf(']') + 2))
+        for expected in [ ">>> uci"; "<<< uciok"; ">>> isready"; "<<< readyok"; ">>> quit"; "err startup line 1"; "err startup line 2" ] do
+            Assert.Contains(expected, lines)
+    finally File.Delete file
+
+[<Fact>]
 let ``Tournament engine from CreateAsync fails as the constructor does for a binary that is not an engine`` () =
     let log = newLogPath ()
     let ex = Assert.ThrowsAny<exn>(fun () -> createAsync (config log "--exit-on-uci" []) |> ignore)

@@ -13,7 +13,12 @@ open ChessLibrary.LichessBotLogic
 module G = LichessGameMachine
 
 let private config book depth : G.Config =
-    { BotId = "testbot"; Greeting = "hi"; Goodbye = "gg"; Limit = FixedNodes 1; Book = book; BookDepth = depth; AbortSeconds = 20 }
+    { BotId = "testbot"; Greeting = "hi"; Goodbye = "gg"; Limit = FixedNodes 1; Book = book; BookDepth = depth; AbortSeconds = 20; Ponder = false }
+
+/// The engine's move, no ponder.
+let private found (uci: string) : G.Found option = Some { Move = uci; Ponder = None; ElapsedMs = 0L }
+
+let private nodes1 = Game.GoCommand.NodeCount 1
 
 let private info = { EngineName = "Ceres"; Net = "C1.onnx"; Limit = FixedNodes 1; Playing = 1; MaxGames = 1 }
 
@@ -45,14 +50,14 @@ let private moves (effects: G.Effect list) =
 let ``a game: the greeting, a search on the bot's turn, the move, and the PGN and goodbye at the end`` () =
     let st, effects = run (G.initial (config false 8) "g1") [ fullAs true ]
     Assert.Contains(G.Chat ("player", "hi"), effects)
-    Assert.Contains(effects, fun e -> match e with G.Search (0, "position startpos", "go nodes 1") -> true | _ -> false)
-    let st, effects = run st [ G.Searched (0, Some "e2e4") ]
+    Assert.Contains(effects, fun e -> match e with G.Search (0, "position startpos", Game.GoCommand.NodeCount 1) -> true | _ -> false)
+    let st, effects = run st [ G.Searched (0, found "e2e4") ]
     Assert.Equal<(int * string) list>([ 0, "e2e4" ], moves effects)
     // the opponent's move: the bot's turn again at 2; the greeting is not said twice
     let st, effects = run st [ G.MoveDelivered 0; stateOf "e2e4 e7e5" "started" ]
     Assert.Contains(effects, fun e -> match e with G.Search (2, _, _) -> true | _ -> false)
     Assert.DoesNotContain(G.Chat ("player", "hi"), effects)
-    let st, effects = run st [ G.Searched (2, Some "g1f3"); G.MoveDelivered 2; stateOf "e2e4 e7e5 g1f3" "resign" ]
+    let st, effects = run st [ G.Searched (2, found "g1f3"); G.MoveDelivered 2; stateOf "e2e4 e7e5 g1f3" "resign" ]
     Assert.True(st.Over)
     Assert.Contains(effects, fun e -> match e with G.WritePgn (_, s, _) -> s.Status = "resign" | _ -> false)
     Assert.Contains(G.Chat ("player", "gg"), effects)
@@ -82,19 +87,19 @@ let ``the book plays while it may, the engine after the depth and after the book
     // a book with nothing: the engine at once, and the book is not asked again
     let st, effects = run (G.initial (config true 8) "g1") [ fullAs true; G.BookAnswered (0, None) ]
     Assert.Contains(effects, fun e -> match e with G.Search (0, _, _) -> true | _ -> false)
-    let _, effects = run st [ G.Searched (0, Some "e2e4"); G.MoveDelivered 0; stateOf "e2e4 e7e5" "started" ]
+    let _, effects = run st [ G.Searched (0, found "e2e4"); G.MoveDelivered 0; stateOf "e2e4 e7e5" "started" ]
     Assert.DoesNotContain(effects, fun e -> match e with G.LookUpBook _ -> true | _ -> false)
 
 [<Fact>]
 let ``a move Lichess did not take is sent again, and a late answer for an old position is ignored`` () =
-    let st, _ = run (G.initial (config false 8) "g1") [ fullAs true; G.Searched (0, Some "e2e4") ]
+    let st, _ = run (G.initial (config false 8) "g1") [ fullAs true; G.Searched (0, found "e2e4") ]
     let st, effects = run st [ G.MoveRefused (0, "HTTP 500") ]
     Assert.Contains(G.RetryAfter (0, 1000), effects)
     let st, effects = run st [ G.Retry 0 ]
     Assert.Equal<(int * string) list>([ 0, "e2e4" ], moves effects)
     // delivered; a search answer for ply 0 that comes late changes nothing
     let st, _ = run st [ G.MoveDelivered 0 ]
-    let _, effects = run st [ G.Searched (0, Some "d2d4") ]
+    let _, effects = run st [ G.Searched (0, found "d2d4") ]
     Assert.Empty(effects)
 
 [<Fact>]
@@ -121,6 +126,39 @@ let ``the chat answers spectators with the engine's view and keeps it from the o
     let _, said = run st [ chat "spectator" "!eval"; chat "player" "!top"; chat "spectator" "!top" ]
     Assert.Equal<G.Effect list>(
         [ G.Chat ("spectator", "+0.3"); G.Chat ("player", "I don't tell my opponent, sorry."); G.Chat ("spectator", "Policy: e4 40%") ], said)
+
+[<Fact>]
+let ``by the clock the bot ponders on the expected reply once its move is on Lichess, with its clock less the time it took`` () =
+    let ponderConfig = { config false 8 with Limit = ByClock 100; Ponder = true }
+    let moved = G.Searched (0, Some { Move = "e2e4"; Ponder = Some "e7e5"; ElapsedMs = 1000L })
+    let st, effects = run (G.initial ponderConfig "g1") [ fullAs true; moved ]
+    Assert.DoesNotContain(effects, fun e -> match e with G.Ponder _ -> true | _ -> false)
+    let st, effects = run st [ G.MoveDelivered 0 ]
+    let plan = effects |> List.pick (function G.Ponder p -> Some p | _ -> None)
+    Assert.Equal("position startpos moves e2e4 e7e5", plan.Position)
+    Assert.Equal("e7e5", plan.Reply)
+    // White's clock: 60 s less the second it thought, less the overhead; Black's less the overhead
+    Assert.Equal(Some "go wtime 58900 btime 59900 ponder", Game.GoCommand.ponderText plan.Search)
+    // the reply comes: the next search, on the position the player ponders (a hit there)
+    let _, effects = run st [ stateOf "e2e4" "started"; stateOf "e2e4 e7e5" "started" ]
+    Assert.Contains(effects, fun e -> match e with G.Search (2, "position startpos moves e2e4 e7e5", _) -> true | _ -> false)
+
+[<Fact>]
+let ``no ponder when the reply is already there, the engine expects none or one that does not play, by nodes, or when it is off`` () =
+    let ponderConfig = { config false 8 with Limit = ByClock 100; Ponder = true }
+    let moved reply = G.Searched (0, Some { Move = "e2e4"; Ponder = reply; ElapsedMs = 1000L })
+    let ponders (cfg: G.Config) events =
+        let _, effects = run (G.initial cfg "g1") events
+        effects |> List.exists (function G.Ponder _ -> true | _ -> false)
+    // the reply came before Lichess took the move: the search, not a ponder
+    let _, effects = run (G.initial ponderConfig "g1") [ fullAs true; moved (Some "e7e5"); stateOf "e2e4 e7e5" "started"; G.MoveDelivered 0 ]
+    Assert.Contains(effects, fun e -> match e with G.Search (2, _, _) -> true | _ -> false)
+    Assert.DoesNotContain(effects, fun e -> match e with G.Ponder _ -> true | _ -> false)
+    Assert.False(ponders ponderConfig [ fullAs true; moved None; G.MoveDelivered 0 ])
+    Assert.False(ponders ponderConfig [ fullAs true; moved (Some "e7e4"); G.MoveDelivered 0 ])
+    Assert.False(ponders { ponderConfig with Limit = FixedNodes 100 } [ fullAs true; moved (Some "e7e5"); G.MoveDelivered 0 ])
+    Assert.False(ponders { ponderConfig with Ponder = false } [ fullAs true; moved (Some "e7e5"); G.MoveDelivered 0 ])
+    Assert.True(ponders ponderConfig [ fullAs true; moved (Some "e7e5"); G.MoveDelivered 0 ])
 
 // ---------------------------------------------------------------- the account
 
@@ -248,7 +286,7 @@ let ``an opponent that does not make its first move is aborted, and the game is 
     Assert.DoesNotContain(effects, fun e -> match e with G.WritePgn _ | G.Chat _ -> true | _ -> false)
     Assert.Equal(G.Finished, List.last effects)
     // as White the timer waits for Black's reply; a move in time ends it
-    let st, effects = run (G.initial (config false 8) "g1") [ fullAs true; G.Searched (0, Some "e2e4"); G.MoveDelivered 0; stateOf "e2e4" "started" ]
+    let st, effects = run (G.initial (config false 8) "g1") [ fullAs true; G.Searched (0, found "e2e4"); G.MoveDelivered 0; stateOf "e2e4" "started" ]
     Assert.Contains(G.FirstMoveTimer (1, 20000), effects)
     let _, effects = run st [ stateOf "e2e4 e7e5" "started"; G.FirstMoveDue 1 ]
     Assert.DoesNotContain(effects, fun e -> match e with G.Abort _ -> true | _ -> false)
@@ -295,7 +333,7 @@ let private searches (effects: Q.Effect<string> list) =
 
 [<Fact>]
 let ``the games' searches run one at a time on the one engine, each answered to its game`` () =
-    let st, effects = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "position startpos", "go nodes 1"); Q.Ask (2, "position startpos moves d2d4", "go nodes 1") ]
+    let st, effects = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "position startpos", nodes1, false); Q.Ask (2, "position startpos moves d2d4", nodes1, false) ]
     // the second waits for the first
     Assert.Equal<(string * int * string) list>([ "e1", 1, "position startpos" ], searches effects)
     let st, effects = runQ st [ Q.Done (1, Some "e2e4") ]
@@ -306,7 +344,7 @@ let ``the games' searches run one at a time on the one engine, each answered to 
 
 [<Fact>]
 let ``a failed engine is started again and the search tried once more; twice is None`` () =
-    let st, _ = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "p", "g") ]
+    let st, _ = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "p", nodes1, false) ]
     let st, effects = runQ st [ Q.Done (1, None) ]
     Assert.Contains(Q.QuitEngine "e1", effects)
     Assert.Contains(Q.StartEngine, effects)
@@ -319,7 +357,7 @@ let ``a failed engine is started again and the search tried once more; twice is 
 
 [<Fact>]
 let ``no engine before the first search starts one; one that does not start answers every search None`` () =
-    let st, effects = runQ Q.initial [ Q.Ask (1, "p", "g"); Q.Ask (2, "p", "g") ]
+    let st, effects = runQ Q.initial [ Q.Ask (1, "p", nodes1, false); Q.Ask (2, "p", nodes1, false) ]
     Assert.Equal<Q.Effect<string> list>([ Q.StartEngine ], effects)
     let _, effects = runQ st [ Q.StartFailed "no net" ]
     Assert.Contains(Q.Reply (1, None), effects)
@@ -327,16 +365,16 @@ let ``no engine before the first search starts one; one that does not start answ
 
 [<Fact>]
 let ``shutting down quits the engine, answers what waits, and answers a running search as it ends`` () =
-    let st, _ = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "p", "g"); Q.Ask (2, "p", "g") ]
+    let st, _ = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "p", nodes1, false); Q.Ask (2, "p", nodes1, false) ]
     let st, effects = runQ st [ Q.Shutdown ]
     Assert.Equal<Q.Effect<string> list>([ Q.QuitEngine "e1"; Q.Reply (2, None) ], effects)
-    let st, effects = runQ st [ Q.Done (1, None); Q.Ask (3, "p", "g") ]
+    let st, effects = runQ st [ Q.Done (1, None); Q.Ask (3, "p", nodes1, false) ]
     Assert.Equal<Q.Effect<string> list>([ Q.Reply (1, None); Q.Reply (3, None) ], effects)
 
 [<Fact>]
 let ``the page's view carries the eval for the bar, and none for a book move`` () =
     let shown (effects: G.Effect list) = effects |> List.choose (function G.Show v -> Some v | _ -> None) |> List.last
-    let st, _ = run (G.initial (config false 8) "g1") [ fullAs true; G.EngineView (Some "+0.30", None, Some (Some 0.3, None)); G.Searched (0, Some "e2e4") ]
+    let st, _ = run (G.initial (config false 8) "g1") [ fullAs true; G.EngineView (Some "+0.30", None, Some (Some 0.3, None)); G.Searched (0, found "e2e4") ]
     let _, effects = run st [ G.MoveDelivered 0; stateOf "e2e4 e7e5" "started" ]
     let v = shown effects
     Assert.Equal(Nullable 0.3, v.EvalPawns)
@@ -349,7 +387,7 @@ let ``the page's view carries the eval for the bar, and none for a book move`` (
 
 [<Fact>]
 let ``a game that ends drops its waiting search and stops its running one`` () =
-    let st, _ = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "p", "g"); Q.Ask (2, "p", "g"); Q.Ask (3, "p", "g") ]
+    let st, _ = runQ Q.initial [ Q.Started "e1"; Q.Ask (1, "p", nodes1, false); Q.Ask (2, "p", nodes1, false); Q.Ask (3, "p", nodes1, false) ]
     // waiting: dropped and answered, the others keep their order
     let st, effects = runQ st [ Q.Cancel 2 ]
     Assert.Equal<Q.Effect<string> list>([ Q.Reply (2, None) ], effects)

@@ -26,13 +26,20 @@ type LichessBotSettings =
       Matchmaking: Matchmaking option
       /// With a fixed number of nodes: one engine plays every game, its searches in turn (one net
       /// loaded). By the clock each game always has its own: a search must not wait for another game's.
-      ShareEngine: bool }
+      ShareEngine: bool
+      /// Pondering in the opponent's time, by the clock only, for an engine with a Ponder option.
+      Ponder: bool }
 
-/// An engine of the bot. Engines are kept between games, so its search info goes to whichever game
-/// holds it now: `Listener` is switched when a game takes it.
+/// An engine of the bot: the process and the player that reads it (the tournament's, pondering
+/// included). Engines are kept between games, so the player's updates go to whichever game holds it
+/// now: `Listener` is switched when a game takes it.
 type LichessBotEngine =
-    { Engine: AnalysisEngine
-      Listener: (SearchUpdate -> unit) ref }
+    { Engine: Engine.ChessEngine
+      Listener: (TournamentTypes.Update -> unit) ref
+      /// One per game (ucinewgame goes between them, read by the engine), one for the shared engine's life.
+      Player: Game.Player.Player option ref
+      /// The UCI_Chess960 value sent last: games may mix standard and Chess960.
+      Chess960: bool option ref }
 
 /// A message to the bot's agent: a step of LichessBotMachine, or a wait until every message before
 /// it has been handled.
@@ -86,6 +93,8 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                 let board = Chess.Board()
                 board.ResetBoardState()
                 if start <> "" then board.LoadFen start
+                // the moves castle as the king taking its rook in a Chess960 game (LichessBotLogic.position)
+                if full.Variant = "chess960" then board.IsFRC <- true
                 let sans = ResizeArray<string>()
                 let whiteFirst = board.Position.STM = 0uy
                 let fullMove = board.NextMoveNumber()
@@ -134,13 +143,74 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                     File.AppendAllText(settings.PgnPath, sb.ToString()))
             with ex -> logger.LogWarning(ex, "Lichess bot: game {Game} not written to the PGN", full.Id)
 
-    /// A new engine; its search info goes to the listener of the game that holds it.
-    let startEngine () =
-        let listener = ref (fun (_: SearchUpdate) -> ())
-        let e = EngineHelper.createAnalysisEngine ((fun u -> listener.Value u), settings.Engine, logger, false)
-        e.EchoEngineText <- false
-        { Engine = e; Listener = listener }
-    let quit (e: LichessBotEngine) = Task.Run(fun () -> try e.Engine.Quit() with _ -> ())
+    // pondering by the clock only: with fixed nodes the opponent's time is no search's time
+    let ponders = settings.Ponder && (match settings.Limit with ByClock _ -> true | FixedNodes _ -> false)
+    // a net's first load (a TensorRT plan built for a new net) can take long
+    let readyTimeoutMs = int (TimeSpan.FromHours 2.0).TotalMilliseconds
+
+    let quietly (f: unit -> unit) = try f () with _ -> ()
+
+    /// A new engine, warmed up (one search: a net's first load) and ready for a game; throws when it
+    /// does not start. Ponder is set as the bot plays it.
+    let startEngine () : Task<LichessBotEngine> = task {
+        let config = Configuration.Validation.withPonderOption ponders settings.Engine
+        // every line in and out to logs/engine_<name>_<time>.log: a lost game is read there
+        let! e = EngineHelper.createLoggedEngineAsync (config, Some logger)
+        let! ready = task { try return! e.PrepareNewGameAsync(readyTimeoutMs) with ex -> return false }
+        if ready then return { Engine = e; Listener = ref ignore; Player = ref None; Chess960 = ref None }
+        else
+            quietly e.Quit
+            do! e.StopProcessAsync()
+            return failwithf "the engine %s does not start%s" settings.Engine.Name (match e.ReadyFailure with "" -> "" | r -> ": " + r)
+    }
+
+    /// The engine's player stops reading, the engine quits (killed after 3 s).
+    let quit (e: LichessBotEngine) : Task =
+        Task.Run(fun () ->
+            task {
+                e.Player.Value |> Option.iter (fun p -> (p :> IDisposable).Dispose())
+                e.Player.Value <- None
+                quietly e.Engine.Quit
+                try do! e.Engine.StopProcessAsync() with _ -> () } :> Task)
+
+    /// A player for the engine: it reads the engine's output from now on, its updates to the listener.
+    let newPlayer (e: LichessBotEngine) =
+        let settings : Game.PlayerMachine.Settings =
+            { Player = e.Engine.Name; CanPing = e.Engine.CanPing; PingTimeout = Game.GameLoop.pingTimeout
+              StopWait = Game.GameLoop.stopWait; StatusInterval = TimeSpan.FromSeconds 1.0 }
+        let p = new Game.Player.Player(Game.Player.engineIO e.Engine, settings, (fun u -> e.Listener.Value u), logger)
+        e.Player.Value <- Some p
+        p
+
+    /// UCI_Chess960 as the position needs it, when it changes and the engine has the option. Sent only
+    /// while nothing runs on the engine (no reply comes to a setoption).
+    let setChess960 (e: LichessBotEngine) (frc: bool) =
+        if e.Chess960.Value <> Some frc then
+            if e.Engine.GetOptionsMap().ContainsKey "UCI_Chess960" then
+                e.Engine.Write (sprintf "setoption name UCI_Chess960 value %b" frc)
+            e.Chess960.Value <- Some frc
+
+    /// SAN for the PVs and the policy lines of a position.
+    let viewOf (b: Chess.Board) : Game.PlayerMachine.PositionView =
+        { ShortPv = fun pv -> BoardUtils.getShortSanPVFromLongSanPVFast (Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)) &b pv
+          ShortSan = fun block -> BoardUtils.makeShortSan block &b }
+
+    /// The player's request for our move: whether the position is Chess960, and the request. With a
+    /// clock the search is stopped after our whole time (a hung engine then answers or is given up).
+    /// None when the command does not play.
+    let thinkRequest (chess960: bool) (command: string) (search: Game.GoCommand.Search) =
+        match boardOf chess960 command with
+        | None -> None
+        | Some b ->
+            let whiteToMove = b.Position.STM = 0uy
+            let stopAfter =
+                match search with
+                | Game.GoCommand.ClockTimes (_, w, bl) -> Some ((if whiteToMove then w else bl) + TimeSpan.FromSeconds 2.0)
+                | _ -> None
+            let request : Game.PlayerMachine.ThinkRequest =
+                { Position = command; LastMove = lastMove command; Search = search; StopAfter = stopAfter
+                  WhiteToMove = whiteToMove; View = viewOf b }
+            Some (b.IsFRC, request)
 
     // the account's agent, and what waits on it: page challenges and games asking for an engine
     [<VolatileField>]
@@ -167,7 +237,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
     // one engine for every game (LichessEngineQueue): only with a fixed number of nodes
     let shared = settings.ShareEngine && (match settings.Limit with FixedNodes _ -> true | ByClock _ -> false)
     let queueReplies = Dictionary<int, TaskCompletionSource<string option>>()
-    let queueListeners = ConcurrentDictionary<int, SearchUpdate -> unit>()
+    let queueListeners = ConcurrentDictionary<int, TournamentTypes.Update -> unit>()
     let mutable queueAgent : MailboxProcessor<LichessEngineQueue.Event<LichessBotEngine>> option = None
     let postQueue e = queueAgent |> Option.iter (fun (a: MailboxProcessor<LichessEngineQueue.Event<LichessBotEngine>>) -> a.Post e)
     let startQueue () =
@@ -177,23 +247,30 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                 | LichessEngineQueue.StartEngine ->
                     task {
                         try
-                            let! e = Task.Run(fun () -> startEngine ())
+                            let! e = Task.Run<LichessBotEngine>(Func<Task<LichessBotEngine>> startEngine)
                             inbox.Post (LichessEngineQueue.Started e)
                         with ex -> inbox.Post (LichessEngineQueue.StartFailed ex.Message) } |> ignore
                 | LichessEngineQueue.RunSearch (e, r) ->
                     // the search's info goes to the game that asked
                     e.Listener.Value <- (match queueListeners.TryGetValue r.Token with | true, l -> l | _ -> ignore)
-                    task {
-                        let search = task { try return! e.Engine.Search(r.Position, r.Go) |> Async.StartAsTask with ex -> return AnalysisOutcome.Failed ex.Message }
-                        // every game waits on this engine: a search that never answers (a hung engine) is a
-                        // failure after a minute - the engine is quit and started again
-                        let! first = Task.WhenAny(search :> Task, Task.Delay(TimeSpan.FromSeconds 60.0))
-                        if obj.ReferenceEquals(first, search) then
-                            let move = match search.Result with AnalysisOutcome.Completed (Some info) -> Some info.Move | _ -> None
-                            inbox.Post (LichessEngineQueue.Done (r.Token, move))
-                        else
-                            say "the engine did not answer in a minute"
-                            inbox.Post (LichessEngineQueue.Done (r.Token, None)) } |> ignore
+                    match thinkRequest r.Chess960 r.Position r.Search with
+                    | None -> inbox.Post (LichessEngineQueue.Done (r.Token, None))
+                    | Some (frc, request) ->
+                        // one player for the shared engine's life: the games' searches only take turns
+                        let player = match e.Player.Value with Some p -> p | None -> newPlayer e
+                        setChess960 e frc
+                        task {
+                            let search = task { try return! player.Think request |> Async.StartAsTask with ex -> return Game.PlayerMachine.Stalled ex.Message }
+                            // every game waits on this engine: a search that never answers (a hung engine) is a
+                            // failure after a minute - the engine is quit and started again
+                            let! first = Task.WhenAny(search :> Task, Task.Delay(TimeSpan.FromSeconds 60.0))
+                            if obj.ReferenceEquals(first, search) then
+                                let move = match search.Result with Game.PlayerMachine.Moved (move, _, _, _) -> Some move | _ -> None
+                                inbox.Post (LichessEngineQueue.Done (r.Token, move))
+                            else
+                                say "the engine did not answer in a minute"
+                                inbox.Post (LichessEngineQueue.Done (r.Token, None)) } |> ignore
+                // stop to the engine: the player takes its bestmove as the search's answer
                 | LichessEngineQueue.StopSearch e -> (try e.Engine.Stop() with _ -> ())
                 | LichessEngineQueue.Reply (token, move) ->
                     queueListeners.TryRemove token |> ignore
@@ -208,7 +285,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                     with ex ->
                         logger.LogError(ex, "Lichess bot: engine queue: {Event} not handled", sprintf "%A" event)
                         match event with
-                        | LichessEngineQueue.Ask (token, _, _) | LichessEngineQueue.Done (token, _) -> state, [ LichessEngineQueue.Reply (token, None) ]
+                        | LichessEngineQueue.Ask (token, _, _, _) | LichessEngineQueue.Done (token, _) -> state, [ LichessEngineQueue.Reply (token, None) ]
                         | _ -> state, []
                 for effect in effects do
                     try execute effect
@@ -217,7 +294,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
             loop LichessEngineQueue.initial)
     /// A search on the shared engine: the move, or None when the engine cannot give one. `asked`
     /// gets the search's token, so a game that ends can cancel it.
-    let sharedSearch (position: string) (go: string) (onUpdate: SearchUpdate -> unit) (asked: int -> unit) : Task<string option> =
+    let sharedSearch (position: string) (search: Game.GoCommand.Search) (chess960: bool) (onUpdate: TournamentTypes.Update -> unit) (asked: int -> unit) : Task<string option> =
         match queueAgent with
         | None -> Task.FromResult None
         | Some q ->
@@ -226,7 +303,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
             let tcs = TaskCompletionSource<string option>(TaskCreationOptions.RunContinuationsAsynchronously)
             lock queueReplies (fun () -> queueReplies.[token] <- tcs)
             queueListeners.[token] <- onUpdate
-            q.Post (LichessEngineQueue.Ask (token, position, go))
+            q.Post (LichessEngineQueue.Ask (token, position, search, chess960))
             tcs.Task
 
     /// An engine for a game: an idle one from the account's agent, or a new one.
@@ -236,31 +313,32 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
         lock engineReplies (fun () -> engineReplies.[token] <- tcs)
         postBot (LichessBotMachine.EngineWanted token)
         match! tcs.Task with
-        | Some e ->
-            e.Engine.NewGame()
-            return e
-        | None -> return! Task.Run(fun () -> startEngine ())
+        | Some e -> return e
+        | None -> return! Task.Run<LichessBotEngine>(Func<Task<LichessBotEngine>> startEngine)
     }
 
     /// One game, to its end, run by its own agent (LichessGameMachine).
     let runGame (gameId: string) (ct: CancellationToken) : Task = task {
         let config : LichessGameMachine.Config =
             { BotId = published.BotId; Greeting = settings.Greeting; Goodbye = settings.Goodbye; Limit = settings.Limit
-              Book = not (String.IsNullOrWhiteSpace settings.Book); BookDepth = settings.BookDepth; AbortSeconds = 20 }
+              Book = not (String.IsNullOrWhiteSpace settings.Book); BookDepth = settings.BookDepth; AbortSeconds = 20
+              Ponder = ponders && not shared }
         let finished = TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
         let engine : LichessBotEngine option ref = ref None
         let engineFailed = ref false
+        // the game's variant, from its first gameFull: a Chess960 game is played as Chess960 whatever its start
+        let chess960 = ref false
         let stream : CancellationTokenSource option ref = ref None
         let rng = Random()
         let gameAgent : MailboxProcessor<LichessGameMachine.Event> option ref = ref None
         let post e = gameAgent.Value |> Option.iter (fun (a: MailboxProcessor<LichessGameMachine.Event>) -> a.Post e)
-        let onUpdate (u: SearchUpdate) =
-            match u.Update with
-            | Status s when s.MultiPV <= 1 ->
+        let onUpdate (u: TournamentTypes.Update) =
+            match u with
+            | TournamentTypes.Update.Status s when s.MultiPV <= 1 ->
                 let wdl = match s.WDL with HasValue w -> sprintf ", WDL %.0f/%.0f/%.0f" (w.Win / 10.0) (w.Draw / 10.0) (w.Loss / 10.0) | NotFound -> ""
                 let score = match s.Eval with MiscTypes.EvalType.CP p -> Some (Some p, None) | MiscTypes.EvalType.Mate m -> Some (None, Some m) | MiscTypes.EvalType.NA -> None
                 post (LichessGameMachine.EngineView (Some (sprintf "%s (White's view)%s, depth %d, %d nodes" (s.Eval.ToString()) wdl s.Depth s.Nodes), None, score))
-            | NNSeq values when values.Count > 0 ->
+            | TournamentTypes.Update.NNSeq values when values.Count > 0 ->
                 let top = values |> Seq.sortByDescending (fun v -> v.P) |> Seq.truncate 3 |> Seq.map (fun v -> sprintf "%s %.1f%%" (if v.SANMove <> "" then v.SANMove else v.LANMove) v.P)
                 post (LichessGameMachine.EngineView (None, Some ("Policy: " + String.concat ", " top), None))
             | _ -> ()
@@ -271,48 +349,66 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
         let over () = finished.Task.IsCompleted || ct.IsCancellationRequested
         /// The bot's move, or None when the engine cannot give one (after one fresh start). A game that
         /// ended meanwhile is not searched (an engine that started for it is kept for the next game).
-        let search (command: string) (go: string) = task {
-          if shared then return! sharedSearch command go onUpdate (fun token -> sharedToken.Value <- Some token)
+        let search (command: string) (go: Game.GoCommand.Search) : Task<LichessGameMachine.Found option> = task {
+          if shared then
+            let! move = sharedSearch command go chess960.Value onUpdate (fun token -> sharedToken.Value <- Some token)
+            return move |> Option.map (fun m -> ({ Move = m; Ponder = None; ElapsedMs = 0L } : LichessGameMachine.Found))
           else
-            let mutable played : string option = None
-            let mutable tries = 2
-            while played.IsNone && tries > 0 && not (over ()) do
-                tries <- tries - 1
-                let! e =
-                    task {
-                        match engine.Value with
-                        | Some e -> return Some e
-                        | None ->
-                            try
-                                let! e = engineForGame ()
-                                e.Listener.Value <- onUpdate
-                                engine.Value <- Some e
-                                return Some e
-                            with ex ->
-                                say (sprintf "%s: the engine does not start: %s" gameId ex.Message)
-                                return None }
-                match e with
-                | None -> tries <- 0
-                | Some _ when over () -> tries <- 0
-                | Some e ->
-                    let! outcome = task { try return! e.Engine.Search(command, go) |> Async.StartAsTask with ex -> return AnalysisOutcome.Failed ex.Message }
-                    match outcome with
-                    | AnalysisOutcome.Completed (Some info) -> played <- Some info.Move
-                    // stopped because the game ended: not an engine fault, and no fresh start
-                    | _ when over () -> tries <- 0
-                    | other ->
-                        say (sprintf "%s: the engine failed (%A)%s" gameId other (if tries > 0 then ", starting it again" else ""))
-                        pending.Add(quit e)
-                        engine.Value <- None
-                        engineFailed.Value <- true
-            return played }
+            match thinkRequest chess960.Value command go with
+            | None -> return None
+            | Some (frc, request) ->
+                let mutable played : LichessGameMachine.Found option = None
+                let mutable tries = 2
+                while played.IsNone && tries > 0 && not (over ()) do
+                    tries <- tries - 1
+                    let! e =
+                        task {
+                            match engine.Value with
+                            | Some e -> return Some e
+                            | None ->
+                                try
+                                    let! e = engineForGame ()
+                                    engine.Value <- Some e
+                                    // ready for this game: its variant, ucinewgame, and a player of its own
+                                    setChess960 e frc
+                                    let! ready = e.Engine.PrepareNewGameAsync(readyTimeoutMs)
+                                    if not ready then failwithf "not ready for the game%s" (match e.Engine.ReadyFailure with "" -> "" | r -> ": " + r)
+                                    e.Listener.Value <- onUpdate
+                                    newPlayer e |> ignore
+                                    return Some e
+                                with ex ->
+                                    say (sprintf "%s: the engine does not start: %s" gameId ex.Message)
+                                    engine.Value |> Option.iter (fun e -> pending.Add(quit e))
+                                    engine.Value <- None
+                                    return None }
+                    match e with
+                    | None -> tries <- 0
+                    | Some _ when over () -> tries <- 0
+                    | Some e ->
+                        let player = match e.Player.Value with Some p -> p | None -> newPlayer e
+                        let! outcome = task { try return! player.Think request |> Async.StartAsTask with ex -> return Game.PlayerMachine.Stalled ex.Message }
+                        match outcome with
+                        // no legal move ("(none)"): not an engine fault, and nothing to play
+                        | Game.PlayerMachine.Moved (move, _, _, _) when move = "" || move = "(none)" || move = "0000" -> tries <- 0
+                        | Game.PlayerMachine.Moved (move, ponder, elapsed, _) ->
+                            played <- Some ({ Move = move; Ponder = ponder; ElapsedMs = int64 elapsed.TotalMilliseconds } : LichessGameMachine.Found)
+                        // stopped because the game ended: not an engine fault, and no fresh start
+                        | _ when over () -> tries <- 0
+                        | other ->
+                            say (sprintf "%s: the engine failed (%A)%s" gameId other (if tries > 0 then ", starting it again" else ""))
+                            pending.Add(quit e)
+                            engine.Value <- None
+                            engineFailed.Value <- true
+                return played }
         let chatInfo () =
             { EngineName = settings.Engine.Name; Net = net; Limit = settings.Limit; Playing = published.Games.Count; MaxGames = settings.Filter.MaxGames }
         let onLine (line: string) =
             match (try parseGameMessage line with _ -> None) with
             | Some m ->
                 match m with
-                | Full g -> postBot (LichessBotMachine.Opponent (if g.White.Id = config.BotId then g.Black.Name else g.White.Name))
+                | Full g ->
+                    chess960.Value <- (g.Variant = "chess960")
+                    postBot (LichessBotMachine.Opponent (if g.White.Id = config.BotId then g.Black.Name else g.White.Name))
                 | _ -> ()
                 post (LichessGameMachine.Message (m, chatInfo ()))
             | None -> ()
@@ -343,8 +439,18 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
             | LichessGameMachine.Search (count, command, go) ->
                 searching.Value <-
                     task {
-                        let! uci = search command go
-                        post (LichessGameMachine.Searched (count, uci)) } :> Task
+                        let! found = search command go
+                        post (LichessGameMachine.Searched (count, found)) } :> Task
+            // the player ponders until our next search: a hit goes on as that search, a miss is stopped
+            | LichessGameMachine.Ponder plan ->
+                match engine.Value with
+                | Some e when not shared && e.Engine.SupportsPonder ->
+                    match e.Player.Value, boardOf chess960.Value plan.Position, Game.GoCommand.ponderText plan.Search with
+                    | Some p, Some b, Some command ->
+                        p.Ponder { Position = plan.Position; Move = plan.Reply; Command = command
+                                   WhiteToMove = (b.Position.STM = 0uy); View = viewOf b }
+                    | _ -> ()
+                | _ -> ()
             | LichessGameMachine.SendMove (count, uci) ->
                 task {
                     match! send (fun () -> client.Move(gameId, uci, ct)) "move" ct with
@@ -405,10 +511,18 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
         let coming = not shared && (engine.Value.IsSome || not searching.Value.IsCompleted)
         if coming then postBot LichessBotMachine.EngineComing
         postBot (LichessBotMachine.GameEnded (gameId, DateTime.UtcNow))
-        // a search under way is stopped and waited for (an engine still starting too): an engine
+        // whatever runs on the engine (a search, a ponder) is stopped and its bestmove drained: the player
+        // answers when the engine is idle, false when it stopped answering (not trusted again then)
+        if not shared then
+            match engine.Value |> Option.bind (fun e -> e.Player.Value) with
+            | Some p ->
+                let ending = p.EndGame() |> Async.StartAsTask
+                let! first = Task.WhenAny(ending :> Task, Task.Delay 15000)
+                if not (obj.ReferenceEquals(first, ending) && ending.Result) then engineFailed.Value <- true
+            | None -> ()
+        // a search under way ends with it, and is waited for (an engine still starting too): an engine
         // goes back only when nothing of this game runs on it any more
         if not searching.Value.IsCompleted then
-            engine.Value |> Option.iter (fun e -> try e.Engine.Stop() with _ -> ())
             if shared then sharedToken.Value |> Option.iter (fun token -> postQueue (LichessEngineQueue.Cancel token))
             let! _ = Task.WhenAny(searching.Value, Task.Delay 15000)
             ()
@@ -416,7 +530,10 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
         let release () =
             match engine.Value with
             | Some e when not engineFailed.Value && not ct.IsCancellationRequested ->
+                // the next game reads the engine itself first (ucinewgame), then with a player of its own
                 e.Listener.Value <- ignore
+                e.Player.Value |> Option.iter (fun p -> (p :> IDisposable).Dispose())
+                e.Player.Value <- None
                 postBot (LichessBotMachine.EngineBack e)
             | Some e ->
                 pending.Add(quit e)
@@ -552,29 +669,23 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                     say (sprintf "starting %s (a net's first load can take minutes)" settings.Engine.Name)
                     // the start and the first search can take minutes (a TensorRT plan built for a new net):
                     // going offline meanwhile stops them, and an engine that comes up after that is quit
-                    let starting = Task.Run(fun () -> startEngine ())
+                    let starting = Task.Run<LichessBotEngine>(Func<Task<LichessBotEngine>> startEngine)
                     let! _ = Task.WhenAny(starting, Task.Delay(Timeout.Infinite, ct))
                     if not starting.IsCompleted then
                         starting.ContinueWith(fun (t: Task<LichessBotEngine>) ->
-                            if t.Status = TaskStatus.RanToCompletion then (try t.Result.Engine.Quit() with _ -> ())) |> ignore
+                            if t.Status = TaskStatus.RanToCompletion then (quit t.Result).Wait()) |> ignore
                         ct.ThrowIfCancellationRequested()
-                    let! warm = starting
-                    let! first =
-                        task {
-                            use _quitOnStop = ct.Register(fun () -> try warm.Engine.Stop(); warm.Engine.Quit() with _ -> ())
-                            try return! warm.Engine.Search("position startpos", "go nodes 1") |> Async.StartAsTask
-                            with ex -> return AnalysisOutcome.Failed ex.Message }
-                    ct.ThrowIfCancellationRequested()
-                    match first with
-                    | AnalysisOutcome.Completed (Some _) when shared ->
+                    // started means warmed up: its first search (go nodes 1) is done
+                    let! warm = task { try return! starting with ex -> return failwithf "%s: check its def" ex.Message }
+                    if shared then
                         let q = startQueue ()
                         queueAgent <- Some q
                         q.Post (LichessEngineQueue.Started warm)
                         say "one engine plays every game"
-                    | AnalysisOutcome.Completed (Some _) -> agent.Post (Step (LichessBotMachine.EngineBack warm))
-                    | other ->
-                        (try warm.Engine.Quit() with _ -> ()) |> ignore
-                        failwithf "the engine %s does not play (%A): check its def" settings.Engine.Name other
+                    else agent.Post (Step (LichessBotMachine.EngineBack warm))
+                    if ponders then
+                        say (if warm.Engine.SupportsPonder then "pondering in the opponent's time"
+                             else sprintf "%s has no Ponder option: no pondering" settings.Engine.Name)
                     agent.Post (Step (LichessBotMachine.WentOnline (id, DateTime.UtcNow)))
                     do! sync ()
                     say (sprintf "online as %s (%s)" name settings.Engine.Name)
@@ -623,7 +734,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
                 agent.Post (Step LichessBotMachine.Shutdown)
                 // the shared engine is quit; a search asked after that is answered at once, when the quit is under way
                 postQueue LichessEngineQueue.Shutdown
-                (try (sharedSearch "" "" ignore ignore).Wait(TimeSpan.FromSeconds 5.0) |> ignore with _ -> ())
+                (try (sharedSearch "" (Game.GoCommand.NodeCount 1) false ignore ignore).Wait(TimeSpan.FromSeconds 5.0) |> ignore with _ -> ())
                 (try (sync ()).Wait(TimeSpan.FromSeconds 5.0) |> ignore with _ -> ())
                 (try Task.WaitAll(pending.ToArray(), TimeSpan.FromSeconds 10.0) |> ignore with _ -> ())
     }

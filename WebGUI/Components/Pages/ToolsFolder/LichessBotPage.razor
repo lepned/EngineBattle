@@ -61,6 +61,10 @@
           {
             <label title="With nodes per move, one engine (one net loaded) plays every game in turn; each search has its game's whole position"><input type="checkbox" @bind="o.ShareEngine" disabled="@Bot.IsRunning" /> One engine for all games</label>
           }
+          else
+          {
+            <label title="The engine thinks on the reply it expects while the opponent thinks; a right guess goes on as the next search. Only an engine with a Ponder option ponders"><input type="checkbox" @bind="o.Ponder" disabled="@Bot.IsRunning" /> Ponder</label>
+          }
         </div>
         <div style="display:flex; gap:12px; align-items:end; margin-top:8px;">
           <div class="tool-input-group" style="margin-bottom:0; flex:1"><label>Opening book (.bin; empty: none)</label>
@@ -378,7 +382,7 @@
         var variants = !o.Chess960 ? new[] { "standard" } : o.Chess960Only ? new[] { "chess960" } : new[] { "standard", "chess960" };
         var filter = new LichessBotLogic.Filter(tcs.ResultValue, ListModule.OfArray(variants), o.Rated, o.Casual, opponents, o.Games);
         var limit = o.Nodes > 0 ? LichessBotLogic.SearchLimit.NewFixedNodes(o.Nodes) : LichessBotLogic.SearchLimit.NewByClock(o.OverheadMs);
-        var settings = new LichessBotSettings(engine, filter, limit, o.PgnPath, o.Greeting ?? "", o.Goodbye ?? "", book, o.BookDepth, matchmaking, o.ShareEngine);
+        var settings = new LichessBotSettings(engine, filter, limit, o.PgnPath, o.Greeting ?? "", o.Goodbye ?? "", book, o.BookDepth, matchmaking, o.ShareEngine, o.Ponder);
         Save();
         if (Bot.Start(o.Token.Trim(), settings)) SetStatus("");
         else SetStatus("The bot is running already.", true);

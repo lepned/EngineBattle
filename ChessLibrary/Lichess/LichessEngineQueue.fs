@@ -5,7 +5,9 @@ module ChessLibrary.LichessEngineQueue
 type Request =
     { Token: int
       Position: string
-      Go: string
+      Search: Game.GoCommand.Search
+      /// A Chess960 game: the engine plays it with UCI_Chess960.
+      Chess960: bool
       /// Tried on an engine that failed already.
       Retried: bool }
 
@@ -21,7 +23,7 @@ type State<'E> =
       Stopped: bool }
 
 type Event<'E> =
-    | Ask of token: int * position: string * go: string
+    | Ask of token: int * position: string * search: Game.GoCommand.Search * chess960: bool
     /// The engine started (or the warm one is handed over).
     | Started of 'E
     | StartFailed of why: string
@@ -51,8 +53,8 @@ let private next (st: State<'E>) =
 
 let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
     match event with
-    | Ask (token, _, _) when st.Stopped -> st, [ Reply (token, None) ]
-    | Ask (token, position, go) -> next { st with Queue = st.Queue @ [ { Token = token; Position = position; Go = go; Retried = false } ] }
+    | Ask (token, _, _, _) when st.Stopped -> st, [ Reply (token, None) ]
+    | Ask (token, position, search, chess960) -> next { st with Queue = st.Queue @ [ { Token = token; Position = position; Search = search; Chess960 = chess960; Retried = false } ] }
     | Started e when st.Stopped -> st, [ QuitEngine e ]
     | Started e ->
         match st.Engine with

@@ -400,6 +400,8 @@ public class LichessBotOptions
     public int OverheadMs { get; set; } = 100;
     /// <summary>With nodes per move: one engine plays every game in turn.</summary>
     public bool ShareEngine { get; set; } = true;
+    /// <summary>By the clock: think in the opponent's time (an engine with a Ponder option).</summary>
+    public bool Ponder { get; set; }
     public string PgnPath { get; set; } = "";
     public string Greeting { get; set; } = "";
     public string Goodbye { get; set; } = "Good game!";

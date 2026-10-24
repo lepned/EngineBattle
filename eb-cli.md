@@ -904,6 +904,7 @@ Options:
       --book FILE                 A Polyglot book (.bin) for the opening: a move drawn by the book's weights while it has one
       --book-depth N              Plies the book may play, counted from the start of the game (default 8)
       --engine-per-game           With --nodes, each game its own engine (default: one engine plays every game, one net loaded)
+      --ponder                    Think in the opponent's time, by the clock, when the engine has a Ponder option
       --matchmaking               Challenge bots online on its own whenever a place is free (after --match-pause once a game ends)
       --match-tc M+S,...          Matchmaking's time controls, one drawn per challenge (default 3+0,3+2,5+3)
       --match-range N             Challenge bots rated within N of the bot's own rating at that speed (default 300)

@@ -89,9 +89,9 @@ let private game fen moves =
 
 [<Fact>]
 let ``the go command is the clock less the overhead, or fixed nodes whatever the clock`` () =
-    Assert.Equal("go wtime 59900 btime 49900 winc 1000 binc 1000", goCommand (ByClock 100) (state []))
-    Assert.Equal("go wtime 10 btime 10 winc 0 binc 0", goCommand (ByClock 500) { state [] with WTime = 200L; BTime = 5L; WInc = 0L; BInc = 0L })
-    Assert.Equal("go nodes 1", goCommand (FixedNodes 1) (state []))
+    Assert.Equal("go wtime 59900 btime 49900 winc 1000 binc 1000", Game.GoCommand.text (goCommand (ByClock 100) (state [])))
+    Assert.Equal("go wtime 10 btime 10", Game.GoCommand.text (goCommand (ByClock 500) { state [] with WTime = 200L; BTime = 5L; WInc = 0L; BInc = 0L }))
+    Assert.Equal("go nodes 1", Game.GoCommand.text (goCommand (FixedNodes 1) (state [])))
 
 [<Fact>]
 let ``the position is startpos with the moves, castles as the engine expects, and says whose move it is`` () =
@@ -109,6 +109,15 @@ let ``the position is startpos with the moves, castles as the engine expects, an
     // another start: a FEN
     let fen = "4k3/8/8/8/8/8/8/4K2R w K - 0 1"
     Assert.Equal(Some (sprintf "position fen %s moves h1h8" fen, false), position (game fen []) (state [ "h1h8" ]) true)
+    // a Chess960 start that looks like the standard one (king e1, rooks a1 and h1): still Chess960, so the
+    // castle stays the king taking its rook, as the engine with UCI_Chess960 reads it; from a FEN in a
+    // standard game it is the standard castle
+    let looksStandard = "rnqnkbbr/pppppppp/8/8/8/8/PPPPPPPP/R3KBBR w KQkq - 0 1"
+    let c960 = { game looksStandard [] with Variant = "chess960" }
+    Assert.Equal(Some (sprintf "position fen %s moves e1a1" looksStandard, false), position c960 (state [ "e1a1" ]) true)
+    Assert.Equal(Some (sprintf "position fen %s moves e1c1" looksStandard, false), position (game looksStandard []) (state [ "e1a1" ]) true)
+    Assert.True((boardOf true (sprintf "position fen %s moves e1a1" looksStandard)).IsSome)
+    Assert.True((boardOf false (sprintf "position fen %s moves e1a1" looksStandard)).IsNone)
 
 [<Fact>]
 let ``the chat answers its commands, and keeps the engine's view for spectators`` () =
@@ -246,7 +255,8 @@ let ``the bot accepts what the filter takes, declines the rest, plays its moves,
           Book = ""
           BookDepth = 16
           Matchmaking = None
-          ShareEngine = true }
+          ShareEngine = true
+          Ponder = false }
     use client = new LichessBotClient(server.Url, "test-token")
     let lines = Collections.Concurrent.ConcurrentQueue<string>()
     let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
@@ -349,7 +359,8 @@ let ``the bot plays the book's move while it has one and the engine after the bo
           Book = book
           BookDepth = 2
           Matchmaking = None
-          ShareEngine = true }
+          ShareEngine = true
+          Ponder = false }
     use client = new LichessBotClient(server.Url, "test-token")
     let lines = Collections.Concurrent.ConcurrentQueue<string>()
     let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
@@ -369,6 +380,139 @@ let ``the bot plays the book's move while it has one and the engine after the bo
         cts.Cancel()
         try File.Delete pgn with _ -> ()
         try File.Delete book with _ -> ()
+
+// ---------------------------------------------------------------- Chess960
+
+[<Fact>]
+let ``a Chess960 game whose start looks standard is played as Chess960: UCI_Chess960, and the castle sent as the king taking its rook`` () =
+    // the start of a game lost on time: Lichess refused e1c1 ("Piece on e1 cannot move to c1") until the flag fell
+    let start = "rnqnkbbr/pppppppp/8/8/8/8/PPPPPPPP/R3KBBR w KQkq - 0 1"
+    let engineLog = Path.Combine(Path.GetTempPath(), sprintf "eb_bot_960_%s.log" (Guid.NewGuid().ToString("N")))
+    let pgn = Path.Combine(Path.GetTempPath(), sprintf "eb_bot_960_%s.pgn" (Guid.NewGuid().ToString("N")))
+    let onPost (server: FakeLichess) (path: string) (_: string) =
+        match path with
+        | "/api/challenge/c1/accept" ->
+            server.Game (gameFullLine "chess960" start)
+            server.Event """{"type":"gameStart","game":{"gameId":"g1","id":"g1"}}"""
+        | "/api/bot/game/g1/move/e1a1" -> server.Game (gameState "e1a1" "resign" (Some "white"))
+        | _ -> ()
+    use server = new FakeLichess(onPost, [])
+    server.Event (challengeLine "c1" "Alice" "" "bullet" false 60 0 "chess960")
+    // the fake engine's move off its line: the long castle, in Chess960 notation
+    let options = Collections.Generic.Dictionary<string, obj>(dict [ "FakeBestMove", box "e1a1" ])
+    let settings =
+        { Engine = { TypesDef.CoreTypes.EngineConfig.Empty with Name = "Fake"; Path = fakeEngine; Protocol = "UCI"; Args = sprintf "--log \"%s\"" engineLog; Options = options }
+          Filter = { defaultFilter with Variants = [ "chess960" ] }
+          Limit = ByClock 100
+          PgnPath = pgn
+          Greeting = ""
+          Goodbye = ""
+          Book = ""
+          BookDepth = 8
+          Matchmaking = None
+          ShareEngine = true
+          Ponder = false }
+    use client = new LichessBotClient(server.Url, "test-token")
+    let lines = Collections.Concurrent.ConcurrentQueue<string>()
+    let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
+    use cts = new CancellationTokenSource(TimeSpan.FromSeconds 60.0)
+    let run = bot.Run cts.Token
+    try
+        let deadline = DateTime.UtcNow.AddSeconds 30.0
+        while not (File.Exists pgn && File.ReadAllText(pgn).Contains "1-0") && DateTime.UtcNow < deadline do Thread.Sleep 50
+        cts.Cancel()
+        run.Wait(TimeSpan.FromSeconds 20.0) |> ignore
+        let sent =
+            use fs = new FileStream(engineLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete)
+            use reader = new StreamReader(fs)
+            reader.ReadToEnd().Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
+        let log = sprintf "engine got: %s; bot log: %s" (String.Join(" / ", sent)) (String.Join(" / ", lines))
+        Assert.True(server.Posts |> Array.exists (fun (p, _) -> p = "/api/bot/game/g1/move/e1a1"), log)
+        Assert.DoesNotContain(server.Posts, fun (p, _) -> p.Contains "/move/e1c1")
+        let chess960 = Array.IndexOf(sent, "setoption name UCI_Chess960 value true")
+        let search = Array.IndexOf(sent, sprintf "position fen %s" start)
+        Assert.True(chess960 >= 0 && search > chess960, log)
+        Assert.Contains("1. O-O-O 1-0", File.ReadAllText pgn)
+    finally
+        cts.Cancel()
+        try File.Delete engineLog with _ -> ()
+        try File.Delete pgn with _ -> ()
+
+// ---------------------------------------------------------------- pondering
+
+[<Fact>]
+let ``by the clock the bot ponders in the opponent's time: ponderhit when the reply is the expected one, stop and a new search when not`` () =
+    let engineLog = Path.Combine(Path.GetTempPath(), sprintf "eb_bot_ponder_%s.log" (Guid.NewGuid().ToString("N")))
+    // the opponent answers a moment after the bot's move: the ponder has started by then
+    let later (server: FakeLichess) (moves: string) status winner =
+        Task.Delay(700).ContinueWith(fun (_: Task) -> server.Game (gameState moves status winner)) |> ignore
+    // the bot has Black: White's 1.e4 is played; the engine's replies and ponder moves follow its line
+    // (1...e5 expecting 2.Nf3, 2...Nc6 expecting 3.Bb5) until White leaves it with 3.d4
+    let full = """{"type":"gameFull","id":"g1","variant":{"key":"standard"},"rated":false,"speed":"bullet","white":{"id":"alice","name":"Alice","rating":1500},"black":{"id":"testbot","name":"TestBot","title":"BOT"},"initialFen":"startpos","state":{"type":"gameState","moves":"e2e4","wtime":60000,"btime":60000,"winc":0,"binc":0,"status":"started"}}"""
+    let onPost (server: FakeLichess) (path: string) (_: string) =
+        match path with
+        | "/api/challenge/c1/accept" ->
+            server.Game full
+            server.Event """{"type":"gameStart","game":{"gameId":"g1","id":"g1"}}"""
+        // the expected reply
+        | "/api/bot/game/g1/move/e7e5" -> later server "e2e4 e7e5 g1f3" "started" None
+        // another reply than the expected f1b5
+        | "/api/bot/game/g1/move/b8c6" -> later server "e2e4 e7e5 g1f3 b8c6 d2d4" "started" None
+        // off its line the fake engine has no move: the bot resigns
+        | "/api/bot/game/g1/resign" -> later server "e2e4 e7e5 g1f3 b8c6 d2d4" "resign" (Some "white")
+        | _ -> ()
+    use server = new FakeLichess(onPost, [])
+    server.Event (challengeLine "c1" "Alice" "" "bullet" false 60 0 "standard")
+    let settings =
+        { Engine = { TypesDef.CoreTypes.EngineConfig.Empty with Name = "Fake"; Path = fakeEngine; Protocol = "UCI"; Args = sprintf "--log \"%s\"" engineLog }
+          Filter = defaultFilter
+          Limit = ByClock 100
+          PgnPath = ""
+          Greeting = ""
+          Goodbye = ""
+          Book = ""
+          BookDepth = 8
+          Matchmaking = None
+          ShareEngine = true
+          Ponder = true }
+    use client = new LichessBotClient(server.Url, "test-token")
+    let lines = Collections.Concurrent.ConcurrentQueue<string>()
+    let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
+    use cts = new CancellationTokenSource(TimeSpan.FromSeconds 60.0)
+    let run = bot.Run cts.Token
+    try
+        let deadline = DateTime.UtcNow.AddSeconds 30.0
+        while not (server.Posts |> Array.exists (fun (p, _) -> p = "/api/bot/game/g1/resign")) && DateTime.UtcNow < deadline do Thread.Sleep 50
+        cts.Cancel()
+        run.Wait(TimeSpan.FromSeconds 20.0) |> ignore
+        let sent =
+            // the engine may still hold its log open while it quits
+            use fs = new FileStream(engineLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete)
+            use reader = new StreamReader(fs)
+            reader.ReadToEnd().Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries) |> Array.filter (fun l -> not (l.StartsWith "#"))
+        let log = String.Join(" / ", lines)
+        let at (line: string) = Array.IndexOf(sent, line)
+        let after (from: int) (pred: string -> bool) = sent |> Array.indexed |> Array.tryFind (fun (i, l) -> i > from && pred l) |> Option.map fst
+        Assert.True(server.Posts |> Array.exists (fun (p, _) -> p = "/api/bot/game/g1/move/b8c6"), sprintf "the bot did not play on; bot log: %s; engine got: %s" log (String.Join(" / ", sent)))
+        Assert.Contains("setoption name Ponder value true", sent)
+        Assert.Contains(lines, fun l -> l.Contains "pondering in the opponent's time")
+        // the hit: ponder on 2.Nf3, then ponderhit and no new position before 2...Nc6
+        let hitPonder = at "position startpos moves e2e4 e7e5 g1f3"
+        Assert.True(hitPonder >= 0, sprintf "no ponder on 2.Nf3; engine got: %s; posts: %s; bot log: %s" (String.Join(" / ", sent)) (String.Join(" / ", server.Posts |> Array.map fst)) log)
+        Assert.Matches("^go wtime \\d+ btime \\d+ ponder$", sent.[hitPonder + 1])
+        Assert.Equal("ponderhit", sent.[hitPonder + 2])
+        // the miss: ponder on 3.Bb5, stopped when 3.d4 came, then a search on the real position
+        let missPonder = at "position startpos moves e2e4 e7e5 g1f3 b8c6 f1b5"
+        Assert.True(missPonder > hitPonder, sprintf "no ponder on 3.Bb5; engine got: %s" (String.Join(" / ", sent)))
+        Assert.Matches("ponder$", sent.[missPonder + 1])
+        let stop = after missPonder ((=) "stop")
+        let real = after missPonder ((=) "position startpos moves e2e4 e7e5 g1f3 b8c6 d2d4")
+        Assert.True(stop.IsSome && real.IsSome && stop.Value < real.Value, sprintf "no stop before the new search; engine got: %s" (String.Join(" / ", sent)))
+        Assert.Matches("^go wtime \\d+ btime \\d+$", sent.[real.Value + 2])
+        Assert.DoesNotContain(lines, fun l -> l.Contains "the engine failed")
+    finally
+        cts.Cancel()
+        try File.Delete engineLog with _ -> ()
 
 // ---------------------------------------------------------------- challenges the bot sends
 
@@ -414,7 +558,8 @@ let ``the bot challenges a player, counts the challenge while it waits and hears
           Book = ""
           BookDepth = 16
           Matchmaking = None
-          ShareEngine = true }
+          ShareEngine = true
+          Ponder = false }
     use client = new LichessBotClient(server.Url, "test-token")
     let lines = Collections.Concurrent.ConcurrentQueue<string>()
     let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
@@ -502,7 +647,8 @@ let ``matchmaking challenges a bot in range, and after a decline another one, ne
           Book = ""
           BookDepth = 16
           Matchmaking = Some { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 1500; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
-          ShareEngine = true }
+          ShareEngine = true
+          Ponder = false }
     use client = new LichessBotClient(server.Url, "test-token")
     let lines = Collections.Concurrent.ConcurrentQueue<string>()
     let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
@@ -565,7 +711,8 @@ let ``a game that ends during a search hands its engine on only when the search 
           Book = ""
           BookDepth = 8
           Matchmaking = None
-          ShareEngine = true }
+          ShareEngine = true
+          Ponder = false }
     use client = new LichessBotClient(server.Url, "test-token")
     let lines = Collections.Concurrent.ConcurrentQueue<string>()
     let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)
@@ -614,7 +761,8 @@ let private twoGamesAtOnce (share: bool) =
           Book = ""
           BookDepth = 8
           Matchmaking = None
-          ShareEngine = share }
+          ShareEngine = share
+          Ponder = false }
     use client = new LichessBotClient(server.Url, "test-token")
     let lines = Collections.Concurrent.ConcurrentQueue<string>()
     let bot = LichessBot(client, settings, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, lines.Enqueue)

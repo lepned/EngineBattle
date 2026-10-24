@@ -61,6 +61,10 @@ module EngineHelper =
   let createEngineAsync (config: EngineConfig, logger: ILogger option) : Task<ChessEngine> =
       ChessEngine.CreateAsync(config, validatedCommands config, logger)
 
+  /// As createEngineAsync, with every line in and out logged to logs/engine_<name>_<time>.log.
+  let createLoggedEngineAsync (config: EngineConfig, logger: ILogger option) : Task<ChessEngine> =
+      ChessEngine.CreateLoggedAsync(config, validatedCommands config, logger)
+
   /// An analysis engine, started: blocks until it is ready (a network load can take minutes, so
   /// call it off a UI thread, e.g. in Task.Run), and throws when it cannot start. Every update
   /// arrives with the id and FEN of the search it belongs to.

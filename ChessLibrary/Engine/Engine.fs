@@ -108,6 +108,9 @@ module Engine =
       let protocol = protocolFor config logger
       let optionsMap = Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)
       let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
+      // every line written and read, when the caller asks for it (LogIOToFile); off in tournaments
+      let mutable ioLog : EngineProcess.IoLog option = None
+      let logIO (direction: string) (text: string) = match ioLog with Some log -> log.Write(direction, text) | None -> ()
       // the setoption commands sent, one copy each; not the per-move traffic, which grew by tens
       // of KB a game for as long as the process lived
       let commands = ResizeArray<string>()
@@ -189,7 +192,14 @@ module Engine =
           let t =
             EngineProcess.Transport(config, arguments, stderr,
               (fun msg -> printfn "[%s] %s" name msg),
-              (fun line -> printfn "[STDERR %s]: %s" name (EngineProcess.stripAnsi line)),
+              // with the I/O log on, stderr goes there (and to the debug log), not to the console
+              (fun line ->
+                match ioLog with
+                | Some log ->
+                    let text = EngineProcess.stripAnsi line
+                    log.Write("err", text)
+                    logDebug (sprintf "[STDERR %s]: %s" name text)
+                | None -> printfn "[STDERR %s]: %s" name (EngineProcess.stripAnsi line)),
               (fun code ->
                 if generation = startGeneration then
                   if code.IsSome then lastExitCode <- code
@@ -228,9 +238,11 @@ module Engine =
                   if isEnabled LogLevel.Debug then logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
                   let delay = lineDelayMs config protocol i cmd
                   if delay > 0 then Thread.Sleep delay
+                  logIO ">>>" cmd
                   running.Transport.WriteLine cmd)
             | Uci ->
                 if isEnabled LogLevel.Trace then logger.Value.LogTrace(sprintf "Writing to %s: %s" name s)
+                logIO ">>>" s
                 running.Transport.WriteLine s
           else
             printfn "Warning: Attempted to write to disposed engine %s" name
@@ -242,7 +254,10 @@ module Engine =
       let readStamped (token: CancellationToken) =
         let output = running.Output
         task {
-          try return! output.Reader.ReadAsync(token).AsTask().ConfigureAwait(false)
+          try
+            let! struct (at, line) = output.Reader.ReadAsync(token).AsTask().ConfigureAwait(false)
+            if not (isNull line) then logIO "<<<" line
+            return struct (at, line)
           with :? ChannelClosedException -> return struct (0L, null)
         }
       let readRaw (token: CancellationToken) =
@@ -515,6 +530,15 @@ module Engine =
           return engine
         }
 
+      /// As CreateAsync, with every line in and out logged to a file from the start (LogIOToFile).
+      static member CreateLoggedAsync(config: EngineConfig, initCommands: string seq, logger: ILogger option) : Task<ChessEngine> =
+        task {
+          let engine = new ChessEngine(config, initCommands, logger, false)
+          engine.LogIOToFile() |> ignore
+          do! engine.StartProcessAsync().ConfigureAwait(false)
+          return engine
+        }
+
       new (config: EngineConfig, initCommands: string seq, logger: ILogger option) = new ChessEngine(config, initCommands, logger, true)
 
       member _.GetExitCode() = lastExitCode
@@ -608,8 +632,28 @@ module Engine =
             else do! (terminateProcessAsync running.Process 3000).ConfigureAwait(false)
           with :? InvalidOperationException ->
             logCritical (sprintf "Engine %s: process was never started or is in a bad state — check engine path, permissions, and dependencies" name)
+          // the I/O log ends with the process
+          ioLog |> Option.iter (fun log -> (log :> IDisposable).Dispose())
+          ioLog <- None
         }
       member this.StopProcess() = this.StopProcessAsync().GetAwaiter().GetResult()
+
+      /// Every line written to the engine and read from it, from now on, to logs/engine_<name>_<time>.log
+      /// (as the analysis engine logs); its stderr goes there too, instead of the console. Call it
+      /// before the process starts to have the uci handshake too. The log closes with StopProcessAsync.
+      /// The path, or "" when the file cannot be made.
+      member this.LogIOToFile() : string =
+        match ioLog with
+        | Some _ -> ""
+        | None ->
+            try
+              let path, log = EngineProcess.IoLog.Open name
+              ioLog <- Some log
+              logInformation $"Engine I/O logging to: {path}"
+              path
+            with ex ->
+              logCritical (sprintf "Engine %s: no I/O log (%s)" name ex.Message)
+              ""
 
       member _.PassedValidation = passed
       member this.BenchmarkLC0Cmd = benchMarkLC0Cmd

@@ -46,6 +46,7 @@ let runSpec =
             value "book" "FILE" "A Polyglot book (.bin) for the opening: a move drawn by the book's weights while it has one"
             value "book-depth" "N" "Plies the book may play, counted from the start of the game" |> withDefault "8"
             switch "engine-per-game" "With --nodes, each game its own engine (default: one engine plays every game, one net loaded)"
+            switch "ponder" "Think in the opponent's time, by the clock, when the engine has a Ponder option"
             switch "matchmaking" "Challenge bots online on its own whenever a place is free (after --match-pause once a game ends)"
             value "match-tc" "M+S,..." "Matchmaking's time controls, one drawn per challenge" |> withDefault "3+0,3+2,5+3"
             value "match-range" "N" "Challenge bots rated within N of the bot's own rating at that speed" |> withDefault "300"
@@ -100,6 +101,7 @@ let run (p: Parsed) =
           Book = book
           BookDepth = positive "book-depth" 8
           ShareEngine = not (has p "engine-per-game")
+          Ponder = has p "ponder"
           Matchmaking =
             if not (has p "matchmaking") then None
             else

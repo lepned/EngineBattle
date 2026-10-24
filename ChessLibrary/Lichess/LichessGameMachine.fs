@@ -14,7 +14,20 @@ type Config =
       Book: bool
       BookDepth: int
       /// The least wait for the opponent's first move before aborting (s); longer games wait 10% of the clock (0: never).
-      AbortSeconds: int }
+      AbortSeconds: int
+      /// Pondering on the reply the engine expects, in the opponent's time (by the clock only).
+      Ponder: bool }
+
+/// The engine's move: the reply it expects (for pondering) and the time it took.
+type Found = { Move: string; Ponder: string option; ElapsedMs: int64 }
+
+/// A ponder to start once our move at `Count` has reached Lichess.
+type PonderPlan =
+    { Count: int
+      /// The position after our move and the expected reply.
+      Position: string
+      Reply: string
+      Search: Game.GoCommand.Search }
 
 type State =
     { Config: Config
@@ -44,13 +57,15 @@ type State =
       Backoff: int
       /// The move count the opponent's first move is awaited at (a timer runs), and whether the bot aborted.
       AwaitingFirst: int option
-      Aborting: bool }
+      Aborting: bool
+      /// The ponder for the move on its way.
+      PonderNext: PonderPlan option }
 
 type Event =
     | Message of GameMessage * ChatInfo
     | BookAnswered of count: int * uci: string option
     /// None: the engine could not give a move.
-    | Searched of count: int * uci: string option
+    | Searched of count: int * found: Found option
     | EngineView of eval: string option * top: string option * score: (float option * int option) option
     | MoveDelivered of count: int
     | MoveRefused of count: int * why: string
@@ -62,7 +77,10 @@ type Event =
 
 type Effect =
     | LookUpBook of count: int * fen: string
-    | Search of count: int * position: string * go: string
+    | Search of count: int * position: string * search: Game.GoCommand.Search
+    /// Searches the position after the expected reply until the opponent moves: our next Search then
+    /// hits it (the reply came) or replaces it.
+    | Ponder of PonderPlan
     | SendMove of count: int * uci: string
     | RetryAfter of count: int * ms: int
     | Chat of room: string * text: string
@@ -82,7 +100,8 @@ let bookNote = "The last move came from the opening book: no search yet."
 let initial (config: Config) (gameId: string) =
     { Config = config; GameId = gameId; Full = None; Latest = None; Moved = -1; Busy = None; Sending = None
       Greeted = false; Resigned = false; Over = false; BookPlies = Set.empty; LeftBook = not config.Book
-      LastFromBook = false; Eval = None; Top = None; Score = (None, None); Backoff = 5000; AwaitingFirst = None; Aborting = false }
+      LastFromBook = false; Eval = None; Top = None; Score = (None, None); Backoff = 5000; AwaitingFirst = None; Aborting = false
+      PonderNext = None }
 
 /// The position now: the game, its state, the position command, the FEN and the move count; None
 /// before the game is known or when a move does not play.
@@ -91,10 +110,9 @@ let private current (st: State) =
     | Some g, Some s ->
         match position g s (g.White.Id = st.Config.BotId) with
         | Some (command, ourTurn) ->
-            let b = Chess.Board()
-            b.ResetBoardState()
-            b.PlayCommands(command.Replace("position startpos", "position fen " + b.FEN()))
-            Some (g, s, command, b.FEN(), s.Moves.Length, ourTurn)
+            match boardOf (g.Variant = "chess960") command with
+            | Some b -> Some (g, s, command, b.FEN(), s.Moves.Length, ourTurn)
+            | None -> None
         | None -> None
     | _ -> None
 
@@ -187,7 +205,16 @@ let step (st: State) (event: Event) : State * Effect list =
         | Some (_, s, command, _, now, true) when now = count && not st.Over ->
             { st with LeftBook = true; LastFromBook = false }, [ Search (count, command, goCommand st.Config.Limit s) ]
         | _ -> decide { st with Busy = None; LeftBook = true }
-    | Searched (count, Some uci) when st.Busy = Some count -> play st count uci false
+    | Searched (count, Some found) when st.Busy = Some count ->
+        // the ponder is planned with the move, and started when Lichess has the move
+        let plan =
+            match current st, found.Ponder with
+            | Some (g, s, command, _, now, true), Some reply when st.Config.Ponder && now = count ->
+                match ponderPosition (g.Variant = "chess960") command found.Move reply, ponderSearch st.Config.Limit s (g.White.Id = st.Config.BotId) found.ElapsedMs with
+                | Some position, Some search -> Some { Count = count; Position = position; Reply = reply; Search = search }
+                | _ -> None
+            | _ -> None
+        play { st with PonderNext = plan } count found.Move false
     | Searched (count, None) when st.Busy = Some count && not st.Over ->
         { st with Busy = None; Resigned = true }, [ Log (sprintf "%s: the engine cannot play, resigning" st.GameId); Resign "the engine cannot play" ]
     | EngineView (eval, top, score) ->
@@ -199,7 +226,12 @@ let step (st: State) (event: Event) : State * Effect list =
             let st = { st with Moved = count; Busy = None; Sending = None; BookPlies = (if fromBook then st.BookPlies.Add count else st.BookPlies) }
             let note = if fromBook then [ Log (sprintf "%s: book move %s" st.GameId uci) ] else []
             let st, effects = decide st
-            st, note @ effects
+            // pondering in the opponent's time, unless the reply is already here (decide searched)
+            let ponder =
+                match st.PonderNext with
+                | Some p when p.Count = count && st.Busy.IsNone && not st.Over && not st.Resigned -> [ Ponder p ]
+                | _ -> []
+            { st with PonderNext = None }, note @ effects @ ponder
         | _ -> st, []
     | MoveRefused (count, why) ->
         match st.Sending with
