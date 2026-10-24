@@ -437,7 +437,7 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
         | LichessBotMachine.PostChallenge (token, r) ->
             task {
                 // no retry here: the page waits for this answer
-                let! reply = task { try return! client.Challenge(r.Name, r.Seconds, r.Increment, r.Rated, r.Color, gamesCt) with ex -> return LichessReply.Refused (0, ex.Message) }
+                let! reply = task { try return! client.Challenge(r.Name, r.Seconds, r.Increment, r.Rated, r.Color, r.Variant, gamesCt) with ex -> return LichessReply.Refused (0, ex.Message) }
                 let result =
                     match reply with
                     | LichessReply.Done body ->
@@ -504,16 +504,17 @@ type LichessBot(client: LichessBotClient, settings: LichessBotSettings, logger: 
     /// What became of the last challenge the bot sent: sent, accepted, declined (with Lichess's reason)...
     member _.LastChallengeAnswer = published.LastAnswer
 
-    /// Challenges a player (a person or a bot) to a standard game: the game that follows is played like
-    /// any other. Ok with the challenge's id; Error with why not (offline, full, or Lichess's refusal).
-    member _.Challenge(username: string, seconds: int, increment: int, rated: bool, color: string, _ct: CancellationToken) : Task<Result<string, string>> =
+    /// Challenges a player (a person or a bot) in a variant the bot takes (standard or chess960): the game
+    /// that follows is played like any other. Ok with the challenge's id; Error with why not (offline,
+    /// full, a variant the bot does not take, or Lichess's refusal).
+    member _.Challenge(username: string, seconds: int, increment: int, rated: bool, color: string, variant: string, _ct: CancellationToken) : Task<Result<string, string>> =
         match botAgent with
         | None -> Task.FromResult(Error "the bot is not online")
         | Some a ->
             let token = Interlocked.Increment &nextToken
             let tcs = TaskCompletionSource<Result<string, string>>(TaskCreationOptions.RunContinuationsAsynchronously)
             lock challengeReplies (fun () -> challengeReplies.[token] <- tcs)
-            let request : LichessBotMachine.Request = { Name = username; Seconds = seconds; Increment = increment; Rated = rated; Color = color; Auto = false }
+            let request : LichessBotMachine.Request = { Name = username; Seconds = seconds; Increment = increment; Rated = rated; Color = color; Variant = variant; Auto = false }
             a.Post (Step (LichessBotMachine.Send (token, request, DateTime.UtcNow)))
             tcs.Task
 

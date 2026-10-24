@@ -931,7 +931,7 @@ Challenge a player or a bot on Lichess from the bot account
 
 Usage: eb-cli bot challenge <user> [options]
 
-Sends a standard-chess challenge from the bot account of EB_LICHESS_BOT_TOKEN and prints its id. The bot running with that account (bot run, or the bot page) plays the game when it is accepted; nothing plays it when no bot is online. Lichess limits how many challenges a bot may send.
+Sends a challenge (standard chess or Chess960) from the bot account of EB_LICHESS_BOT_TOKEN and prints its id. The bot running with that account (bot run, or the bot page) plays the game when it is accepted; nothing plays it when no bot is online. Lichess limits how many challenges a bot may send.
 
 Arguments:
   <user>  The Lichess username to challenge
@@ -940,6 +940,8 @@ Options:
       --tc M+S                    The time control, minutes+seconds (default 3+2)
       --rated                     A rated game (casual when not given)
       --color random|white|black  The bot's colour (default random)
+      --variant standard|chess960
+                                  The variant (default standard)
       --server URL                The Lichess server (default https://lichess.org)
 
 Examples:

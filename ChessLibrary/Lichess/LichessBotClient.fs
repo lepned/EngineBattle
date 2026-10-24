@@ -104,12 +104,12 @@ type LichessBotClient(baseUrl: string, token: string) =
     member _.Abort(gameId: string, ct) = post (sprintf "/api/bot/game/%s/abort" gameId) [] ct
     /// `room`: player or spectator.
     member _.Chat(gameId: string, room: string, text: string, ct) = post (sprintf "/api/bot/game/%s/chat" gameId) [ "room", room; "text", text ] ct
-    /// Challenges a player to a standard game: seconds + increment, rated or casual, the bot's colour
-    /// (random, white or black). The answer is the challenge, with its id.
-    member _.Challenge(username: string, seconds: int, increment: int, rated: bool, color: string, ct) =
+    /// Challenges a player: seconds + increment, rated or casual, the bot's colour (random, white or
+    /// black), the variant (standard or chess960). The answer is the challenge, with its id.
+    member _.Challenge(username: string, seconds: int, increment: int, rated: bool, color: string, variant: string, ct) =
         post (sprintf "/api/challenge/%s" (Uri.EscapeDataString username))
              [ "clock.limit", string seconds; "clock.increment", string increment; "rated", (if rated then "true" else "false")
-               "color", color; "variant", "standard" ] ct
+               "color", color; "variant", variant ] ct
     /// The bots online now (at most `count`), one JSON user per line.
     member _.OnlineBots(count: int, ct: CancellationToken) : Task<Result<string[], string>> = task {
         use cts = CancellationTokenSource.CreateLinkedTokenSource ct

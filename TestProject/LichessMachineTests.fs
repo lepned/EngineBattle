@@ -134,7 +134,7 @@ let private challenge id (who: string) =
     | Some (ChallengeArrived c) -> c
     | _ -> failwith "no challenge"
 
-let private request name : B.Request = { Name = name; Seconds = 180; Increment = 2; Rated = false; Color = "white"; Auto = false }
+let private request name : B.Request = { Name = name; Seconds = 180; Increment = 2; Rated = false; Color = "white"; Variant = "standard"; Auto = false }
 
 let private runB (st: B.State<string>) (events: B.Event<string> list) =
     events |> List.fold (fun (st, all) e -> let st, effects = B.step st e in st, all @ effects) (st, [])
@@ -193,7 +193,7 @@ let ``going offline withdraws the challenges sent`` () =
 [<Fact>]
 let ``matchmaking reads the bots, challenges one in range, then another after a decline, and says when none fits`` () =
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 1500; Rated = false; PauseSeconds = 60; GapSeconds = 30 }
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None; Chess960 = None }
     let st = online (Some m)
     // no pause after going online: the bot list is read at the first tick
     let st, effects = runB st [ B.Tick (t0.AddSeconds 2.0, 0) ]
@@ -215,6 +215,30 @@ let ``matchmaking reads the bots, challenges one in range, then another after a 
     Assert.Contains(effects, fun e -> match e with B.PostChallenge (_, r) -> r.Name = "Near" | _ -> false)
 
 [<Fact>]
+let ``with Chess960 only, matchmaking challenges in Chess960 by the Chess960 rating, and a standard challenge is refused`` () =
+    let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 1500; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
+    let bot name blitz c960 : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None; Chess960 = c960 }
+    // Near in blitz, far in Chess960; Wide the other way round; Plain plays no Chess960
+    let bots = [| bot "testbot" 2000 (Some 1800); bot "Near" 2050 (Some 2400); bot "Wide" 2600 (Some 1850); bot "Plain" 2000 None |]
+    let start = fst (B.step (B.initial { Filter = { filter1 with Variants = [ "chess960" ] }; Matchmaking = Some m }) (B.WentOnline ("testbot", t0)))
+    let st, _ = runB start [ B.Listed (Ok bots, t0) ]
+    for roll in [ 0; 1 <<< 8; 1 <<< 16; 3 <<< 16 ] do
+        let _, effects = runB st [ B.Tick (t0.AddSeconds 1.0, roll) ]
+        Assert.Contains(effects, fun e -> match e with B.PostChallenge (_, r) -> r.Name = "Wide" && r.Variant = "chess960" | _ -> false)
+    let _, effects = runB st [ B.Send (1, request "alice", t0) ]
+    Assert.Contains(effects, fun e -> match e with B.Answer (1, Error why) -> why.Contains "does not take standard" | _ -> false)
+    let _, effects = runB st [ B.Send (1, { request "alice" with Variant = "chess960" }, t0) ]
+    Assert.Contains(B.PostChallenge (1, { request "alice" with Variant = "chess960" }), effects)
+    // both variants: each is drawn
+    let both = fst (B.step (B.initial { Filter = { filter1 with Variants = [ "standard"; "chess960" ] }; Matchmaking = Some m }) (B.WentOnline ("testbot", t0)))
+    let st, _ = runB both [ B.Listed (Ok bots, t0) ]
+    let variants =
+        [ for roll in [ 0; 1 <<< 8 ] do
+            let _, effects = runB st [ B.Tick (t0.AddSeconds 1.0, roll) ]
+            yield! effects |> List.choose (function B.PostChallenge (_, r) -> Some (r.Name, r.Variant) | _ -> None) ]
+    Assert.Equal<(string * string) list>([ "Near", "standard"; "Wide", "chess960" ], variants)
+
+[<Fact>]
 let ``an opponent that does not make its first move is aborted, and the game is not written`` () =
     let st, effects = run (G.initial (config false 8) "g1") [ fullAs false ]
     Assert.Contains(G.FirstMoveTimer (0, 20000), effects)
@@ -232,7 +256,7 @@ let ``an opponent that does not make its first move is aborted, and the game is 
 [<Fact>]
 let ``matchmaking uses the start rating while the bot has no games, and skips a bot that did not move`` () =
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = blitz; Rapid = None; Classical = None; Chess960 = None }
     // the bot itself has no blitz games: 2000, so Near (2100) and not Strong (2900)
     let bots = [| bot "testbot" None; bot "Near" (Some 2100); bot "Strong" (Some 2900) |]
     let st, _ = runB (online (Some m)) [ B.Listed (Ok bots, t0) ]
@@ -349,7 +373,7 @@ let ``the page's view has the players' ratings`` () =
 [<Fact>]
 let ``with two games at once matchmaking fills the free place while a game runs, the pause only after a game ends`` () =
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 60; GapSeconds = 30 }
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None; Chess960 = None }
     let st = fst (B.step (B.initial { Filter = { defaultFilter with MaxGames = 2 }; Matchmaking = Some m }) (B.WentOnline ("testbot", t0)))
     let st, _ = runB st [ B.Listed (Ok [| bot "A" 2000; bot "B" 2050 |], t0.AddSeconds 61.0) ]
     // a game starts 70 s in: the other place is filled at once, not a pause later
@@ -378,7 +402,7 @@ let ``the wait for the first move grows with the clock: 10 percent, at least 20 
 [<Fact>]
 let ``a rate limit pauses matchmaking a minute, doubling while it lasts, and a challenge that goes through resets it`` () =
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None; Chess960 = None }
     let st0, _ = runB (online (Some m)) [ B.Listed (Ok [| bot "A" 2000 |], t0) ]
     /// one challenge at `at`, answered with `result`: the pause it sets, in minutes from `at`
     let attempt (st: B.State<string>) (at: DateTime) result =
@@ -401,7 +425,7 @@ let ``a rate limit pauses matchmaking a minute, doubling while it lasts, and a c
 [<Fact>]
 let ``a rate limit that names its wait is waited out, and its reason is logged`` () =
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 0 }
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None; Chess960 = None }
     let st, effects = runB (online (Some m)) [ B.Listed (Ok [| bot "A" 2000 |], t0); B.Tick (t0.AddSeconds 1.0, 0) ]
     let token = effects |> List.pick (function B.PostChallenge (t, _) -> Some t | _ -> None)
     let why = "You played 100 games against other bots today, please wait before challenging another bot."
@@ -425,7 +449,7 @@ let ``a 429's wait is read from Lichess's ratelimit object`` () =
 [<Fact>]
 let ``after a rate limit challenges are spaced further apart, and the gap eases back every 30 minutes`` () =
     let m = { TimeControls = [ 180, 0 ]; RatingRange = 300; StartRating = 2000; Rated = false; PauseSeconds = 0; GapSeconds = 30 }
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = Some blitz; Rapid = None; Classical = None; Chess960 = None }
     let bots = [| bot "A" 2000; bot "B" 2000; bot "C" 2000; bot "D" 2000 |]
     /// a challenge at `at` answered with `result`, then declined (its place free again): the gap that follows
     let challenge (st: B.State<string>) (at: DateTime) result =

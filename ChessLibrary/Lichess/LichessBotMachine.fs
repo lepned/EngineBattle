@@ -16,6 +16,8 @@ type Request =
       Increment: int
       Rated: bool
       Color: string
+      /// standard or chess960.
+      Variant: string
       Auto: bool }
 
 /// An answer to a challenge whose id was not known yet.
@@ -149,7 +151,7 @@ let private answer (id: string) (a: EarlyAnswer) (now: DateTime) (st: State<'E>)
 /// Matchmaking's turn: a challenge to a bot that fits, when the bot is free and has waited.
 let private matchmake (m: Matchmaking) (now: DateTime) (roll: int) (st: State<'E>) =
     let waiting = st.Sending |> Map.exists (fun _ c -> c.Auto) || st.Outgoing |> Map.exists (fun _ c -> c.Auto)
-    if not st.Online || st.ShuttingDown || m.TimeControls.IsEmpty || waiting
+    if not st.Online || st.ShuttingDown || m.TimeControls.IsEmpty || (challengeVariants st.Config.Filter).IsEmpty || waiting
        || taken st >= st.Config.Filter.MaxGames
        || (now - st.LastActivity).TotalSeconds < float m.PauseSeconds || now < st.NextAuto then st, []
     elif now - st.BotsAt > TimeSpan.FromMinutes 5.0 then
@@ -162,7 +164,10 @@ let private matchmake (m: Matchmaking) (now: DateTime) (roll: int) (st: State<'E
             else st
         let st = { st with NextAuto = now.AddSeconds(float (m.GapSeconds * st.GapFactor)) }
         let seconds, increment = m.TimeControls.[(roll &&& 0xFFFF) % m.TimeControls.Length]
-        let speed = speedOf seconds increment
+        // one of the variants the bot takes (the filter has one at least: matchmake checks it)
+        let variants = challengeVariants st.Config.Filter
+        let variant = variants.[((roll >>> 8) &&& 0xFF) % variants.Length]
+        let speed = perfOf variant seconds increment
         // no games at this speed yet: the start rating, not Lichess's placeholder
         let own = st.Bots |> Array.tryFind (fun b -> same b.Name st.BotId) |> Option.bind (ratingIn speed) |> Option.defaultValue m.StartRating
         let skip (name: string) =
@@ -175,8 +180,8 @@ let private matchmake (m: Matchmaking) (now: DateTime) (roll: int) (st: State<'E
             if note = st.Note then st, [] else { st with Note = note }, [ Log note ]
         | Some b ->
             let token = st.NextToken
-            let request = { Name = b.Name; Seconds = seconds; Increment = increment; Rated = m.Rated; Color = "random"; Auto = true }
-            let c = { Id = ""; Opponent = b.Name; Seconds = seconds; Increment = increment; Rated = m.Rated; Color = "random"; At = now; Auto = true }
+            let request = { Name = b.Name; Seconds = seconds; Increment = increment; Rated = m.Rated; Color = "random"; Variant = variant; Auto = true }
+            let c = { Id = ""; Opponent = b.Name; Seconds = seconds; Increment = increment; Rated = m.Rated; Color = "random"; Variant = variant; At = now; Auto = true }
             { st with Note = ""; NextToken = token - 1; Sending = st.Sending.Add(token, c) }, [ PostChallenge (token, request) ]
 
 let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
@@ -241,8 +246,10 @@ let step (st: State<'E>) (event: Event<'E>) : State<'E> * Effect<'E> list =
         elif same name st.BotId then refuse "the bot cannot challenge itself"
         elif taken st >= st.Config.Filter.MaxGames then
             refuse (sprintf "the bot is full: %d game(s) at once, counting challenges waiting for an answer" st.Config.Filter.MaxGames)
+        elif not (List.contains r.Variant (challengeVariants st.Config.Filter)) then
+            refuse (sprintf "the bot does not take %s games (its variants: %s)" r.Variant (String.Join(", ", st.Config.Filter.Variants)))
         else
-            let c = { Id = ""; Opponent = name; Seconds = r.Seconds; Increment = r.Increment; Rated = r.Rated; Color = r.Color; At = now; Auto = r.Auto }
+            let c = { Id = ""; Opponent = name; Seconds = r.Seconds; Increment = r.Increment; Rated = r.Rated; Color = r.Color; Variant = r.Variant; At = now; Auto = r.Auto }
             { st with Sending = st.Sending.Add(token, c) }, [ PostChallenge (token, { r with Name = name }) ]
 
     | Sent (token, result, now) ->

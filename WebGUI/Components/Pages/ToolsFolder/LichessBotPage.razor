@@ -88,7 +88,10 @@
             </select></div>
           <label><input type="checkbox" @bind="o.Rated" disabled="@Bot.IsRunning" /> Rated</label>
           <label><input type="checkbox" @bind="o.Casual" disabled="@Bot.IsRunning" /> Casual</label>
-          <label><input type="checkbox" @bind="o.Chess960" disabled="@Bot.IsRunning" /> Chess960 too</label>
+          <div class="tool-input-group" style="margin-bottom:0"><label>Variants</label>
+            <select class="tool-input" style="width:140px" @bind="Variants" disabled="@Bot.IsRunning">
+              <option value="standard">Standard</option><option value="both">Standard + Chess960</option><option value="chess960">Chess960</option>
+            </select></div>
         </div>
       </div>
 
@@ -110,7 +113,7 @@
               <input type="number" class="tool-input" style="width:90px" @bind="o.MatchPauseSeconds" min="0" disabled="@Bot.IsRunning" /></div>
             <label><input type="checkbox" @bind="o.MatchRated" disabled="@Bot.IsRunning" /> Rated</label>
           </div>
-          <small>After a game ends and the pause has passed (at once while a game runs and a place is free), the bot challenges a bot online rated within the range of its own rating at that speed (the start rating until it has rated games there): never the last opponent, nor one that declined in the last hour or did not move in the last 6 hours. A challenge without an answer is withdrawn after a minute, and the challenges it gets still come first.</small>
+          <small>After a game ends and the pause has passed (at once while a game runs and a place is free), the bot challenges a bot online rated within the range of its own rating at that speed (the start rating until it has rated games there), in one of the variants it takes (Chess960 has one rating whatever the clock): never the last opponent, nor one that declined in the last hour or did not move in the last 6 hours. A challenge without an answer is withdrawn after a minute, and the challenges it gets still come first.</small>
         }
       </div>
 
@@ -186,13 +189,20 @@
             <select class="tool-input" style="width:100px" @bind="challengeColor" disabled="@(!Bot.IsOnline)">
               <option value="random">Random</option><option value="white">White</option><option value="black">Black</option>
             </select></div>
+          @if (o.Chess960 && !o.Chess960Only)
+          {
+            <div class="tool-input-group" style="margin-bottom:0"><label>Variant</label>
+              <select class="tool-input" style="width:110px" @bind="challengeVariant" disabled="@(!Bot.IsOnline)">
+                <option value="standard">Standard</option><option value="chess960">Chess960</option>
+              </select></div>
+          }
           <label><input type="checkbox" @bind="challengeRated" disabled="@(!Bot.IsOnline)" /> Rated</label>
           <button class="tool-action-btn" @onclick="SendChallenge" disabled="@(!Bot.IsOnline || challenging || string.IsNullOrWhiteSpace(challengeUser))">Challenge</button>
         </div>
         @foreach (var c in Bot.Outgoing)
         {
           <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
-            <span>Waiting for @c.Opponent (@($"{c.Seconds / 60.0:0.##}+{c.Increment}"), @(c.Rated ? "rated" : "casual"))</span>
+            <span>Waiting for @c.Opponent (@($"{c.Seconds / 60.0:0.##}+{c.Increment}"), @(c.Rated ? "rated" : "casual")@(c.Variant == "chess960" ? ", Chess960" : ""))</span>
             <button class="tool-action-btn" @onclick="() => Bot.CancelChallenge(c.Id)">Cancel</button>
           </div>
         }
@@ -213,13 +223,13 @@
           <input type="text" class="tool-input" style="width:100%; margin-top:6px;" placeholder="Filter by name" @bind="botFilter" @bind:event="oninput" />
           <div style="max-height:320px; overflow:auto; margin-top:6px;">
             <table style="width:100%; font-variant-numeric:tabular-nums; border-collapse:collapse;">
-              <thead><tr style="text-align:left; opacity:0.7;"><th>Bot (@onlineBots.Length online)</th><th>Bullet</th><th>Blitz</th><th>Rapid</th><th></th></tr></thead>
+              <thead><tr style="text-align:left; opacity:0.7;"><th>Bot (@onlineBots.Length online)</th><th>Bullet</th><th>Blitz</th><th>Rapid</th><th>960</th><th></th></tr></thead>
               <tbody>
                 @foreach (var b in onlineBots.Where(b => string.IsNullOrWhiteSpace(botFilter) || b.Name.Contains(botFilter.Trim(), StringComparison.OrdinalIgnoreCase)))
                 {
                   <tr>
                     <td><a href="@($"https://lichess.org/@/{b.Name}")" target="_blank" rel="noopener">@b.Name</a></td>
-                    <td>@Rating(b.Bullet)</td><td>@Rating(b.Blitz)</td><td>@Rating(b.Rapid)</td>
+                    <td>@Rating(b.Bullet)</td><td>@Rating(b.Blitz)</td><td>@Rating(b.Rapid)</td><td>@Rating(b.Chess960)</td>
                     <td><button class="tool-action-btn" style="padding:0 8px;" @onclick="() => challengeUser = b.Name">Pick</button></td>
                   </tr>
                 }
@@ -239,10 +249,19 @@
 @code {
 #nullable enable
     private LichessBotOptions o = new();
+    // the variants select over the two saved flags (Chess960 alone was "Chess960 too" before)
+    private string Variants
+    {
+        get => !o.Chess960 ? "standard" : o.Chess960Only ? "chess960" : "both";
+        set { o.Chess960 = value != "standard"; o.Chess960Only = value == "chess960"; }
+    }
     private string challengeUser = "";
     private string challengeTc = "3+2";
     private string challengeColor = "random";
     private bool challengeRated;
+    private string challengeVariant = "standard";
+    // the variant a challenge goes out in: the only one the bot takes, or the one picked when it takes both
+    private string ChallengeVariant => !o.Chess960 ? "standard" : o.Chess960Only ? "chess960" : challengeVariant;
     private bool challenging;
     private string challengeError = "";
     private LichessBotLogic.OnlineBot[]? onlineBots;
@@ -356,7 +375,7 @@
             "bots" => LichessBotLogic.Opponents.Bots,
             _ => LichessBotLogic.Opponents.Anyone,
         };
-        var variants = o.Chess960 ? new[] { "standard", "chess960" } : new[] { "standard" };
+        var variants = !o.Chess960 ? new[] { "standard" } : o.Chess960Only ? new[] { "chess960" } : new[] { "standard", "chess960" };
         var filter = new LichessBotLogic.Filter(tcs.ResultValue, ListModule.OfArray(variants), o.Rated, o.Casual, opponents, o.Games);
         var limit = o.Nodes > 0 ? LichessBotLogic.SearchLimit.NewFixedNodes(o.Nodes) : LichessBotLogic.SearchLimit.NewByClock(o.OverheadMs);
         var settings = new LichessBotSettings(engine, filter, limit, o.PgnPath, o.Greeting ?? "", o.Goodbye ?? "", book, o.BookDepth, matchmaking, o.ShareEngine);
@@ -388,7 +407,7 @@
         if (tc.IsError || tc.ResultValue.Length != 1) { challengeError = "Time control: one, like 3+2 (minutes+seconds)."; return; }
         var (seconds, increment) = tc.ResultValue.Head;
         challenging = true;
-        try { challengeError = await Bot.Challenge(challengeUser, seconds, increment, challengeRated, challengeColor) ?? ""; }
+        try { challengeError = await Bot.Challenge(challengeUser, seconds, increment, challengeRated, challengeColor, ChallengeVariant) ?? ""; }
         finally { challenging = false; }
     }
 

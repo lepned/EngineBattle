@@ -145,12 +145,13 @@ let upgrade (p: Parsed) =
 let challengeSpec =
     { command [ "bot"; "challenge" ] Group "Challenge a player or a bot on Lichess from the bot account" with
         Description =
-          Some "Sends a standard-chess challenge from the bot account of EB_LICHESS_BOT_TOKEN and prints its id. The bot running with that account (bot run, or the bot page) plays the game when it is accepted; nothing plays it when no bot is online. Lichess limits how many challenges a bot may send."
+          Some "Sends a challenge (standard chess or Chess960) from the bot account of EB_LICHESS_BOT_TOKEN and prints its id. The bot running with that account (bot run, or the bot page) plays the game when it is accepted; nothing plays it when no bot is online. Lichess limits how many challenges a bot may send."
         Args = [ arg "user" "The Lichess username to challenge" ]
         Options =
           [ value "tc" "M+S" "The time control, minutes+seconds" |> withDefault "3+2"
             switch "rated" "A rated game (casual when not given)"
             value "color" "random|white|black" "The bot's colour" |> withDefault "random"
+            value "variant" "standard|chess960" "The variant" |> withDefault "standard"
             server ]
         Examples =
           [ "eb-cli bot challenge maia1 --tc 3+0", "A casual 3+0 game against another bot"
@@ -166,9 +167,13 @@ let challenge (p: Parsed) =
         match defaultArg (valueOf p "color") "random" with
         | "random" | "white" | "black" as c -> c
         | other -> raise (Usage $"--color expects random, white or black, got '{other}'")
+    let variant =
+        match defaultArg (valueOf p "variant") "standard" with
+        | "standard" | "chess960" as v -> v
+        | other -> raise (Usage $"--variant expects standard or chess960, got '{other}'")
     let user = (argOf p "user").Value.Trim().TrimStart('@')
     use c = client p
-    match c.Challenge(user, seconds, increment, has p "rated", color, CancellationToken.None).GetAwaiter().GetResult() with
+    match c.Challenge(user, seconds, increment, has p "rated", color, variant, CancellationToken.None).GetAwaiter().GetResult() with
     | LichessReply.Done body ->
         match challengeIdOf body with
         | Some id -> printfn "Challenged %s: https://lichess.org/%s" user id; ExitOk

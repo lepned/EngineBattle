@@ -34,11 +34,11 @@ public sealed class LichessBotService : IDisposable
     /// <summary>What became of the last challenge the bot sent.</summary>
     public string LastChallengeAnswer => _bot?.LastChallengeAnswer ?? "";
 
-    /// <summary>Challenges a player to a standard game; null when it was sent, else why not.</summary>
-    public async Task<string?> Challenge(string username, int seconds, int increment, bool rated, string color)
+    /// <summary>Challenges a player in a variant the bot takes (standard or chess960); null when it was sent, else why not.</summary>
+    public async Task<string?> Challenge(string username, int seconds, int increment, bool rated, string color, string variant)
     {
         if (_bot == null || _cts == null || !IsOnline) return "The bot is not online.";
-        var result = await _bot.Challenge(username, seconds, increment, rated, color, _cts.Token);
+        var result = await _bot.Challenge(username, seconds, increment, rated, color, variant, _cts.Token);
         Changed?.Invoke();
         return result.IsError ? result.ErrorValue : null;
     }

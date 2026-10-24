@@ -388,6 +388,8 @@ public class LichessBotOptions
     /// <summary>minutes+seconds, comma separated; empty for every time control bots may play.</summary>
     public string TimeControls { get; set; } = "";
     public bool Chess960 { get; set; }
+    /// <summary>With Chess960: standard challenges are declined.</summary>
+    public bool Chess960Only { get; set; }
     /// <summary>anyone, humans or bots.</summary>
     public string Opponents { get; set; } = "anyone";
     public bool Rated { get; set; } = true;

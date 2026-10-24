@@ -113,7 +113,7 @@ let parseEvent (line: string) : Event option =
 
 /// A bot online on Lichess, from /api/bot/online: its name and ratings (None where it has no games:
 /// Lichess shows a placeholder rating there).
-type OnlineBot = { Name: string; Bullet: int option; Blitz: int option; Rapid: int option; Classical: int option }
+type OnlineBot = { Name: string; Bullet: int option; Blitz: int option; Rapid: int option; Classical: int option; Chess960: int option }
 
 /// One line of /api/bot/online (ndjson, one user per line); None for an empty line.
 let parseOnlineBot (line: string) : OnlineBot option =
@@ -131,7 +131,8 @@ let parseOnlineBot (line: string) : OnlineBot option =
                     if games = 0 then None
                     else match r.["rating"] with null -> None | v -> (try Some (v.GetValue<int>()) with _ -> None)
         Some { Name = (match str n "username" with "" -> str n "id" | u -> u)
-               Bullet = rating "bullet"; Blitz = rating "blitz"; Rapid = rating "rapid"; Classical = rating "classical" }
+               Bullet = rating "bullet"; Blitz = rating "blitz"; Rapid = rating "rapid"; Classical = rating "classical"
+               Chess960 = rating "chess960" }
 
 // ---------------------------------------------------------------- matchmaking
 
@@ -154,9 +155,14 @@ let speedOf (seconds: int) (increment: int) =
     elif estimate < 1500 then "rapid"
     else "classical"
 
-/// A bot's rating in a speed; None when it has none there.
+/// The rating a game counts for: the speed in standard chess, one Chess960 rating whatever the clock.
+let perfOf (variant: string) (seconds: int) (increment: int) =
+    if variant = "chess960" then "chess960" else speedOf seconds increment
+
+/// A bot's rating in a perf (a speed, or chess960); None when it has none there.
 let ratingIn (speed: string) (b: OnlineBot) =
     match speed with
+    | "chess960" -> b.Chess960
     | "bullet" -> b.Bullet
     | "blitz" -> b.Blitz
     | "rapid" -> b.Rapid
@@ -258,6 +264,9 @@ type Filter =
 
 let defaultFilter =
     { TimeControls = []; Variants = [ "standard" ]; Rated = true; Casual = true; Opponents = Anyone; MaxGames = 1 }
+
+/// The variants the bot can challenge in, of those it takes.
+let challengeVariants (f: Filter) = f.Variants |> List.filter (fun v -> v = "standard" || v = "chess960")
 
 /// "1+0,3+2,0.5+0" (minutes+seconds) as (seconds, increment) pairs.
 let parseTimeControls (text: string) : Result<(int * int) list, string> =

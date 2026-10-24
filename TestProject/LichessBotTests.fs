@@ -381,11 +381,11 @@ let ``Lichess's answers to a challenge are read: its id, an error, the bots onli
     Assert.Equal("Invalid clock", errorText """{"global":["Invalid clock"]}""")
     Assert.Equal("gone", errorText "gone")
     let bot = parseOnlineBot """{"id":"maia1","username":"maia1","perfs":{"bullet":{"games":2,"rating":1589},"blitz":{"games":4,"rating":1408}},"title":"BOT"}"""
-    Assert.Equal(Some { Name = "maia1"; Bullet = Some 1589; Blitz = Some 1408; Rapid = None; Classical = None }, bot)
+    Assert.Equal(Some { Name = "maia1"; Bullet = Some 1589; Blitz = Some 1408; Rapid = None; Classical = None; Chess960 = None }, bot)
     Assert.Equal(None, parseOnlineBot "")
     // no games at a speed: Lichess's placeholder rating is no rating
     let fresh = parseOnlineBot """{"id":"lepbot","username":"lepbot","perfs":{"bullet":{"games":0,"rating":3000,"prov":true},"blitz":{"games":3,"rating":2210,"prov":true}}}"""
-    Assert.Equal(Some { Name = "lepbot"; Bullet = None; Blitz = Some 2210; Rapid = None; Classical = None }, fresh)
+    Assert.Equal(Some { Name = "lepbot"; Bullet = None; Blitz = Some 2210; Rapid = None; Classical = None; Chess960 = None }, fresh)
 
 [<Fact>]
 let ``the bot challenges a player, counts the challenge while it waits and hears the answer`` () =
@@ -423,12 +423,12 @@ let ``the bot challenges a player, counts the challenge while it waits and hears
         let deadline = DateTime.UtcNow.AddSeconds 20.0
         while not (cond ()) && DateTime.UtcNow < deadline do Thread.Sleep 50
         Assert.True(cond (), sprintf "timed out; bot log: %s" (String.Join(" / ", lines)))
-    Assert.Equal(Result.Error "the bot is not online", bot.Challenge("alice", 180, 2, false, "white", cts.Token).Result)
+    Assert.Equal(Result.Error "the bot is not online", bot.Challenge("alice", 180, 2, false, "white", "standard", cts.Token).Result)
     let run = bot.Run cts.Token
     try
         until (fun () -> bot.IsOnline)
-        Assert.Equal(Result.Error "the bot cannot challenge itself", bot.Challenge("@TestBot", 180, 2, false, "white", cts.Token).Result)
-        Assert.Equal(Result.Ok "out1", bot.Challenge("alice", 180, 2, false, "white", cts.Token).Result)
+        Assert.Equal(Result.Error "the bot cannot challenge itself", bot.Challenge("@TestBot", 180, 2, false, "white", "standard", cts.Token).Result)
+        Assert.Equal(Result.Ok "out1", bot.Challenge("alice", 180, 2, false, "white", "standard", cts.Token).Result)
         let form = server.Posts |> Array.find (fun (p, _) -> p = "/api/challenge/alice") |> snd
         Assert.Equal("clock.limit=180&clock.increment=2&rated=false&color=white&variant=standard", form)
         Assert.Equal(1, bot.Outgoing.Length)
@@ -436,14 +436,14 @@ let ``the bot challenges a player, counts the challenge while it waits and hears
         until (fun () -> server.Posts |> Array.exists (fun (p, _) -> p = "/api/challenge/c9/decline"))
         Assert.Equal("reason=later", server.Posts |> Array.find (fun (p, _) -> p = "/api/challenge/c9/decline") |> snd)
         Assert.False(server.Posts |> Array.exists (fun (p, _) -> p = "/api/challenge/out1/decline"))
-        Assert.True((bot.Challenge("bob", 180, 2, false, "white", cts.Token).Result).IsError)
+        Assert.True((bot.Challenge("bob", 180, 2, false, "white", "standard", cts.Token).Result).IsError)
         // declined: the place is free again and the page hears why
         server.Event """{"type":"challengeDeclined","challenge":{"id":"out1","declineReason":"I'm not accepting challenges at the moment."}}"""
         until (fun () -> bot.Outgoing.Length = 0)
         Assert.Equal("alice declined: I'm not accepting challenges at the moment.", bot.LastChallengeAnswer)
         // accepted: the game starts and is played
         server.ReplyWith "/api/challenge/alice" """{"id":"out2","status":"created"}"""
-        Assert.Equal(Result.Ok "out2", bot.Challenge("alice", 180, 2, false, "white", cts.Token).Result)
+        Assert.Equal(Result.Ok "out2", bot.Challenge("alice", 180, 2, false, "white", "standard", cts.Token).Result)
         server.Game (gameFullOf "out2" "started")
         server.Event """{"type":"gameStart","game":{"gameId":"out2","id":"out2"}}"""
         until (fun () -> bot.LastChallengeAnswer = "alice accepted the challenge" && bot.Outgoing.Length = 0)
@@ -453,9 +453,9 @@ let ``the bot challenges a player, counts the challenge while it waits and hears
         server.Game (gameState "e2e4" "resign" (Some "white"))
         until (fun () -> bot.Games.Length = 0)
         server.ReplyWith "/api/challenge/erin" """{"id":"out4","status":"created"}"""
-        Assert.Equal(Result.Ok "out4", bot.Challenge("erin", 180, 2, false, "white", cts.Token).Result)
+        Assert.Equal(Result.Ok "out4", bot.Challenge("erin", 180, 2, false, "white", "standard", cts.Token).Result)
         until (fun () -> bot.Outgoing.Length = 0 && bot.LastChallengeAnswer = "erin declined: Not now.")
-        Assert.Equal(Result.Ok "out3", bot.Challenge("dave", 60, 0, true, "random", cts.Token).Result)
+        Assert.Equal(Result.Ok "out3", bot.Challenge("dave", 60, 0, true, "random", "standard", cts.Token).Result)
         cts.Cancel()
         run.Wait(TimeSpan.FromSeconds 20.0) |> ignore
         Assert.Contains("/api/challenge/out3/cancel", server.Posts |> Array.map fst)
@@ -473,7 +473,7 @@ let ``a time control's speed is Lichess's, and the opponent is drawn among the b
     Assert.Equal("blitz", speedOf 180 2)
     Assert.Equal("rapid", speedOf 600 0)
     Assert.Equal("classical", speedOf 1800 0)
-    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = blitz; Rapid = None; Classical = None }
+    let bot name blitz : OnlineBot = { Name = name; Bullet = None; Blitz = blitz; Rapid = None; Classical = None; Chess960 = None }
     let bots = [| bot "near" (Some 2100); bot "far" (Some 2600); bot "none" None; bot "low" (Some 1700) |]
     let rng = Random 3
     let picks = Array.init 200 (fun _ -> pickOpponent bots (Some 2000) 300 "blitz" (fun _ -> false) rng.Next |> Option.map (fun b -> b.Name))

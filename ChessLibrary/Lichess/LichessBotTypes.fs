@@ -28,6 +28,8 @@ type OutgoingChallenge =
       Increment: int
       Rated: bool
       Color: string
+      /// standard or chess960.
+      Variant: string
       At: DateTime
       /// Sent by matchmaking (withdrawn after a minute without an answer), not by hand (3 minutes).
       Auto: bool }
