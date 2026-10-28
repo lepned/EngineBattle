@@ -1,0 +1,30 @@
+@using ChessLibrary
+@implements IDisposable
+
+@* The GPUs' temperature for the tournament banner: "67 °C" (several GPUs "67 · 54 °C"), warning
+   colour within 5 °C of the card's own limit, error colour at it; load and power on hover. The banners mount it only
+   when the setting is on and Available, so a machine without an NVIDIA GPU shows no field at all. *@
+<span class="gpu-temp @heatClass" title="@detail">@(string.IsNullOrEmpty(text) ? "–" : text)</span>
+
+@code {
+    /// <summary>True when NVML reads at least one GPU; asked once per process.</summary>
+    public static bool Available => available.Value;
+    private static readonly Lazy<bool> available = new(GpuMonitor.available);
+
+    private string text = "";
+    private string detail;
+    private string heatClass;
+    private IDisposable subscription;
+
+    protected override void OnInitialized() =>
+        subscription = GpuMonitor.subscribe(readings => InvokeAsync(() =>
+        {
+            text = GpuMonitor.tempText(readings);
+            detail = GpuMonitor.detailText(readings);
+            var heat = GpuMonitor.hottest(readings);
+            heatClass = heat.IsHot ? "hot" : heat.IsWarm ? "warm" : null;
+            StateHasChanged();
+        }));
+
+    public void Dispose() => subscription?.Dispose();
+}

@@ -1,0 +1,12 @@
+.gpu-temp {
+    font-variant-numeric: tabular-nums;
+}
+
+.gpu-temp.warm {
+    color: var(--mud-palette-warning);
+}
+
+.gpu-temp.hot {
+    color: var(--mud-palette-error);
+    font-weight: 700;
+}

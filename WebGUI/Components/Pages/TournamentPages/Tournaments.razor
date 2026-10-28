@@ -148,7 +148,7 @@
 			@* The dot follows the running-game marker the banner already carries, rather
 			   than a flag that would only ever say "yes". *@
 			<TournamentBanner FontSize="@FontCeiling(FontKey.Banner)" R3="@r3" TB="TB"
-							  Move50="move50" DrawP="DrawP" Info="infoBannerInfo"
+							  Move50="move50" DrawP="DrawP" Info="infoBannerInfo" ShowGpu="@ShowGpu"
 							  IsLive="@(infoBannerInfo?.ResultTxt?.Trim() == "*")"
 							  WinRule="@WinRuleToken" WinRuleText="@WinRuleText"
 							  DrawRule="@DrawRuleToken" DrawRuleText="@DrawRuleText" />
@@ -156,7 +156,7 @@
 		else
 		{
 			<InfoBanner FontSize="@FontCeiling(FontKey.Banner)" R3="@r3" TB="TB"
-						Move50="move50" DrawP="DrawP" Info="infoBannerInfo" WidthFit="@bannerFit.Value" />
+						Move50="move50" DrawP="DrawP" Info="infoBannerInfo" WidthFit="@bannerFit.Value" ShowGpu="@ShowGpu" />
 		}
 	</div>
 

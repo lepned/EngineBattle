@@ -43,6 +43,7 @@
 
 		<!-- Runtime utilities (depends on QBBOperations, types, MoveGeneration) -->
 		<Compile Include="Utilities\RuntimeUtilities.fs" />
+		<Compile Include="Utilities\GpuMonitor.fs" />
 
 		<!-- Parsing modules (depend on types) -->
 		<Compile Include="Parsing\PGNComment.fs" />

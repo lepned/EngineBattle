@@ -531,6 +531,13 @@
                     </label>
                     <small>Label above value, with the win and draw rules beside the counters that run against them, and a progress bar for the games played. Turn it off to go back to the old two-row header while the new one is being proven.</small>
                 </div>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="showGpuTemperature" @bind:after="Apply" />
+                        Show the GPU temperature
+                    </label>
+                    <small>A GPU field after Hardware, read every ten seconds: yellow within 5 °C of the card's own limit (where it starts to slow down), red at it; load and power on hover. NVIDIA GPUs only - without one there is no field.</small>
+                </div>
             </div>
 
             <div class="appearance-section @SectionClass("effects")">
@@ -709,6 +716,7 @@
     private string blackMoveArrowColor = "#383231";
     private bool useNewTournamentBanner;
     private bool showEngineResources;
+    private bool showGpuTemperature;
     private string policyLabelMode = "auto";
     private string policyLabelColor = "#FFEB3B";
     private string policyLabelStyle = "circle";
@@ -838,6 +846,7 @@
         evalBarPlacement = s.EvalBarPlacement == "right" ? "right" : "left";
         useNewTournamentBanner = s.UseNewTournamentBanner;
         showEngineResources = s.ShowEngineResources;
+        showGpuTemperature = s.ShowGpuTemperature;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
         arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
@@ -1039,6 +1048,7 @@
         merged.EvalBarPlacement = evalBarPlacement;
         merged.UseNewTournamentBanner = useNewTournamentBanner;
         merged.ShowEngineResources = showEngineResources;
+        merged.ShowGpuTemperature = showGpuTemperature;
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
         merged.BoardArrowWidth = arrowWidth;
@@ -1076,6 +1086,7 @@
         moveHighlightMode = "auto";
         showEvalBar = d.ShowEvalBar;
         showEngineResources = d.ShowEngineResources;
+        showGpuTemperature = d.ShowGpuTemperature;
         evalBarPlacement = d.EvalBarPlacement;
         selRingMode = "auto";
         arrowMode = "auto";

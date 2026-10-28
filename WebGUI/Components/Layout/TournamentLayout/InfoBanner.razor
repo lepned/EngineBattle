@@ -7,7 +7,7 @@
     <MudItem Class="d-flex">
         <MudItem Style=@FontHeader Class="d-flex infoBanner mr-3" lg="12">
             <MudItem Style=@FontHeader Class="ml-1" lg="5"> Hardware </MudItem>
-            <MudItem Style=@FontHeader lg="1"> </MudItem>
+            <MudItem Style=@FontHeader lg="1"> @(ShowGpu ? "GPU" : "") </MudItem>
             <MudItem Style=@FontHeader lg="2"> Time control </MudItem>
             <MudItem Style=@FontHeader lg="1"> Game </MudItem>
             <MudItem Style=@FontHeader lg="1"> Round </MudItem>
@@ -42,7 +42,12 @@
     <MudItem Class="d-flex">
         <MudItem Class="d-flex infoBannerContent mr-3" lg="12">
             <MudItem Style=@FontNormal Class="ml-1" lg="5">@Info?.Hardware </MudItem>
-            <MudItem Style=@FontNormal lg="1"> </MudItem>
+            <MudItem Style=@FontNormal lg="1">
+                @if (ShowGpu)
+                {
+                    <GpuTemp />
+                }
+            </MudItem>
             <MudItem Style=@FontNormal lg="2"> @Info?.TCText </MudItem>
             <MudItem Style=@FontNormal lg="1"> @Info?.Game </MudItem>
             <MudItem Style=@FontNormal lg="1"> @Info?.Round </MudItem>
@@ -104,6 +109,10 @@
 
     [Parameter]
     public InfoBannerInfo Info { get; set; }
+
+    /// <summary>The GPU temperature in the empty column after Hardware.</summary>
+    [Parameter]
+    public bool ShowGpu { get; set; }
 
     // Constants now: the number they scale from arrives as --font-size, which .eb-scale
     // computes from the ceiling below and the user's nudge. The caps stay where they were -

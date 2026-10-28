@@ -121,6 +121,7 @@
 		<Compile Include="SwissPairingRuleTests.fs" />
 		<Compile Include="PgnStripTests.fs" />
 		<Compile Include="PgnOutputTests.fs" />
+		<Compile Include="GpuMonitorTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

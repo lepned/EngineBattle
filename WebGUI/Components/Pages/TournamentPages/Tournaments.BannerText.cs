@@ -62,6 +62,9 @@ public partial class Tournaments
 		}
 	}
 
+	// The GPU field: the setting, and only on a machine with an NVIDIA GPU to read.
+	bool ShowGpu => SettingsService.Settings.ShowGpuTemperature && Components.Layout.TournamentLayout.GpuTemp.Available;
+
 	// Two forms of the same rule: a token for the banner, which is a strip of short values,
 	// and the sentence for its tooltip.
 	string WinRuleToken => tournament == null ? "" :

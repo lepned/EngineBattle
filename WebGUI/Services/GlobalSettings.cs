@@ -60,6 +60,7 @@ public class GlobalSettings
     public double MinPolicyThreshold { get; set; } = 0.05;
     public bool ShowEvalBar { get; set; } = true;             // vertical eval bar beside analysis/review boards
     public bool ShowEngineResources { get; set; } = false;    // CPU and RAM row in the tournament engine panel
+    public bool ShowGpuTemperature { get; set; } = false;     // GPU field in the tournament header (NVIDIA only)
     // Rollout switch, not a permanent fork: the old InfoBanner is kept only until the new
     // header has been through enough real broadcasts, then it goes. Off by default while
     // the new one is still being built — the shipped default should be the proven page.

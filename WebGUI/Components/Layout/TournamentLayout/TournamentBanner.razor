@@ -18,6 +18,14 @@
 
     <div class="ib-fields">
         @Field("Hardware", Info?.Hardware)
+        @* A setting and a GPU that does not come and go, so the field never appears mid-run (see above). *@
+        @if (ShowGpu)
+        {
+            <div class="ib-field">
+                <span class="ib-label">GPU</span>
+                <span class="ib-value"><GpuTemp /></span>
+            </div>
+        }
         @Field("TC", Info?.TCText)
         @Field("Round", Info?.Round)
         @Field("50m", move50)
@@ -103,6 +111,8 @@
     /// <summary>Lights the dot at the head of the bar. Off leaves it grey — a dot that
     /// always says "live" says nothing.</summary>
     [Parameter] public bool IsLive { get; set; }
+    /// <summary>The GPU temperature after Hardware.</summary>
+    [Parameter] public bool ShowGpu { get; set; }
     /// <summary>Adjudication rules as short tokens, e.g. "≥5 ×5". The full sentence goes in
     /// the matching *Text parameter and is shown on hover.</summary>
     [Parameter] public string WinRule { get; set; }
