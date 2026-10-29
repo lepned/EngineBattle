@@ -90,7 +90,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 
 - **Streamer-Friendly Tournaments:** Optimized tournament mode for engaging chess engine streaming, making it easy to share standings and results in real time.
 - **Web Application:** Runs seamlessly in browsers, providing live console logs, pairings, standings, and results, ideal for live updates via Discord and other community platforms.
-- **Lichess Bot:** Play on Lichess as a bot with any engine: it answers challenges, finds bot opponents on its own and writes every game to a PGN (Tools → Lichess bot, or `eb-cli bot run`).
+- **Lichess Bot:** Play on Lichess as a bot with any engine: it answers challenges, finds bot opponents on its own, plays standard chess, Chess960 or both, can think on the opponent's time, and writes every game to a PGN (Tools → Lichess bot, or `eb-cli bot run`).
 
 ---
 

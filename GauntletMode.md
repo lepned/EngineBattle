@@ -65,6 +65,11 @@ works with either distribution. Older files had `Challengers` at the top level a
 - With `OpeningsTwice: false` the colours swap from one round to the next, so the challenger has
   White in half the games: `ChallengerColor` in the first round, the other colour in the second.
 
+## Ratings
+
+With one challenger the standings put it at 0 Elo and rate every opponent against it; with several
+challengers the pool average is 0. The line under each table names the reference.
+
 ## PreventMoveDeviation
 
 With `PreventMoveDeviation` the order of the opponents rotates from round to round. Combined with
