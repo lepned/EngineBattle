@@ -166,8 +166,9 @@
   text-overflow: ellipsis;
 }
 
+    /* --eb-active-color: the custom coordinate colour, when the user set one */
     .eval.active-eval {
-        color: #81c784;
+        color: var(--eb-active-color, #81c784);
         animation: pulse 2s ease-in-out infinite;
     }
 
@@ -203,7 +204,7 @@
     }
 
 ::deep .stat-cell.move-time.active-time {
-        color: #81c784;
+        color: var(--eb-active-color, #81c784);
     }
 
 /* Center Label Cells */

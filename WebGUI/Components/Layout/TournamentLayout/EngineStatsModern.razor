@@ -1,4 +1,6 @@
 ﻿@using WebGUI.Components.Layout.ChessboardLayout
+@implements IDisposable
+@inject BoardThemeService ThemeService
 
 @* The size arrives as a token like everywhere else; the stylesheet spends it. Everything
    inside this box is sized in em, so this one value still drives the whole panel.
@@ -13,7 +15,7 @@
    middle term of the clamp reaches the ceiling at exactly that width and falls away below it. *@
 <div class="engine-stats-fit">
 <div class="engine-stats-container eb-scale eb-g-enginepanel"
-     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem"); --eb-panel-k: @PanelWidthFactor; @MainLogoVars">
+     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem"); --eb-panel-k: @PanelWidthFactor; @MainLogoVars @ActiveColorVar">
   <!-- Row 1: Engine Headers & Main Logo -->
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
@@ -285,6 +287,18 @@
       return $"--eb-mainlogo-w: {w}px; --eb-mainlogo-h: {h}px;";
     }
   }
+
+  /// The side to move's eval and move time take the board coordinates' colour when the user
+  /// picked one (Appearance > Coordinates > Custom); otherwise the stylesheet's soft green.
+  private string ActiveColorVar =>
+    string.IsNullOrEmpty(ThemeService.Current.CoordColor) ? "" : $"--eb-active-color: {ThemeService.Current.CoordColor};";
+
+  protected override void OnInitialized() => ThemeService.ThemeChanged += OnThemeChanged;
+
+  // Raised from the settings page's circuit; marshal to this component's dispatcher.
+  private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+  public void Dispose() => ThemeService.ThemeChanged -= OnThemeChanged;
 
   private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"Img/{MainLogoFileName}";
 
