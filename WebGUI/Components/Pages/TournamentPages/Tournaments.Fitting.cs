@@ -340,8 +340,8 @@ public partial class Tournaments
 
 	/// The crosstable grows in both directions with the field; 0.55 is as small as it may get.
 	private readonly RegionWidthFit crosstableFit = new("#crosstableDiv", 0.55);
-	/// Both strips of the header banner; the wider one decides.
-	private readonly RegionWidthFit bannerFit = new(".infoBanner, .infoBannerContent", 0.5);
+	/// The header banner: one grid, its two rows share the columns.
+	private readonly RegionWidthFit bannerFit = new(".infoBannerGrid", 0.5);
 	/// The setup lines. A high floor, because past it the CSS ellipsis is the better answer.
 	private readonly RegionWidthFit descriptionFit = new("li.eb-g-description", 0.8);
 	/// The standings box. The fit belongs to the BOX, not to one table: measuring only the

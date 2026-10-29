@@ -240,6 +240,21 @@ html {
   background-color: black;
 }
 
+/* The banner's two rows share one set of columns: the tracks are set on .infoBannerGrid, each
+   row is a subgrid of them. A column is as wide as the wider of its header and its value; the
+   gap keeps a column that is at its text width (a long hardware line) off the next one. */
+.infoBannerGrid {
+  display: grid;
+  column-gap: 0.6em;
+}
+
+.infoBanner,
+.infoBannerContent {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+}
+
 /* The banner is one row by definition: a label that breaks in two ("Time control") turns the
    whole strip into two rows and pushes everything below it down. So the cells never wrap, the
    row overflows instead, and the page measures that overflow and lowers the banner's ceiling
@@ -247,9 +262,9 @@ html {
    width depends on content (the hardware line) that no formula predicts.
 
    overflow:hidden is the safety net for the frame before the measurement lands: it clips
-   rather than pushing a scrollbar onto the page. */
-.infoBanner,
-.infoBannerContent {
+   rather than pushing a scrollbar onto the page. On the grid, because the rows span the
+   tracks and are as wide as they are. */
+.infoBannerGrid {
   overflow: hidden;
 }
 
@@ -258,14 +273,13 @@ html {
   white-space: nowrap;
 }
 
-/* Between MudBlazor's md and lg the banner has no column widths at all: its items carry lg
-   sizes, and below 1280px those simply do not apply, so every label packs against the next and
-   the strip reads as one word. A gutter is all it needs. Scoped to that range so the wide
-   layout, where the lg widths do the spacing, is untouched. */
+/* Between MudBlazor's md and lg the page is narrow enough that the banner's columns sit at
+   their text width, so every label packs against the next and the strip reads as one word. A
+   gutter is all it needs (the rows take it from the grid). Scoped to that range so the wide
+   layout, where the column proportions do the spacing, is untouched. */
 @media (min-width: 960px) and (max-width: 1279.98px) {
-    .infoBanner > * + *,
-    .infoBannerContent > * + * {
-        margin-left: 0.9em;
+    .infoBannerGrid {
+        column-gap: 0.9em;
     }
 
     /* Same cause, different symptom. The description sits in a row whose columns are also lg

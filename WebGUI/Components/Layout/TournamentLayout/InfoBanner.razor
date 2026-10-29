@@ -4,73 +4,61 @@
    like every other region and the arithmetic that used to run in C# now runs in CSS. *@
 <MudItem Class="no-scroll ml-5 mr-5 mt-1 eb-scale eb-g-banner" Style=@FontToken>
 
-    <MudItem Class="d-flex">
-        <MudItem Style=@FontHeader Class="d-flex infoBanner mr-3" lg="12">
-            <MudItem Style=@FontHeader Class="ml-1" lg="5"> Hardware </MudItem>
-            <MudItem Style=@FontHeader lg="1"> @(ShowGpu ? "GPU" : "") </MudItem>
-            <MudItem Style=@FontHeader lg="2"> Time control </MudItem>
-            <MudItem Style=@FontHeader lg="1"> Game </MudItem>
-            <MudItem Style=@FontHeader lg="1"> Round </MudItem>
-            <MudItem Style=@FontHeader lg="1"> 50m </MudItem>
-            <MudItem Style=@FontHeader lg="1"> R3 </MudItem>
-            <MudItem Style=@FontHeader lg="1"> Draw </MudItem>
+    @* One grid for both rows: each row is a subgrid of the same column tracks, so a header
+       sits over its value whatever the content - two flex rows sized each column by its own text. *@
+    <div class="infoBannerGrid mr-3" style="grid-template-columns: @Columns;">
+        <div class="infoBanner">
+            <div style=@FontHeader class="ml-1"> Hardware </div>
+            <div style=@FontHeader> @(ShowGpu ? "GPU" : "") </div>
+            <div style=@FontHeader> Time control </div>
+            <div style=@FontHeader> Game </div>
+            <div style=@FontHeader> Round </div>
+            <div style=@FontHeader> 50m </div>
+            <div style=@FontHeader> R3 </div>
+            <div style=@FontHeader> Draw </div>
             @if (Info != null && Info.UseTBAdj)
             {
-                <MudItem Style=@FontHeader lg="1">
-                    TB
-                </MudItem>
+                <div style=@FontHeader> TB </div>
             }
             @if (Info != null && Info.UseDevCounter)
             {
-                <MudItem Style=@FontNormal lg="1">
-                    Dev
-                </MudItem>
+                <div style=@FontHeader> Dev </div>
             }
-            <MudItem Style=@FontHeader lg="2"> Result </MudItem>
-                        
-            <MudItem Class="mt-0" Style=@FontHeader lg="2">
+            <div style=@FontHeader> Result </div>
+            <div style=@FontHeader>
                 <div style="display:flex; align-items:center; justify-content:left;">
                     <span style="line-height:1;">⚔</span>
                     <span style="margin-left:6px;">H2H</span>
                 </div>
-            </MudItem>
-            <MudItem Style=@FontHeader lg="2"> Time left </MudItem>            
-            <MudItem Style=@FontHeader lg="3"> Ends (UTC) </MudItem>
-        </MudItem>
+            </div>
+            <div style=@FontHeader> Time left </div>
+            <div style=@FontHeader> Ends (UTC) </div>
+        </div>
 
-    </MudItem>
-    <MudItem Class="d-flex">
-        <MudItem Class="d-flex infoBannerContent mr-3" lg="12">
-            <MudItem Style=@FontNormal Class="ml-1" lg="5">@Info?.Hardware </MudItem>
-            <MudItem Style=@FontNormal lg="1">
+        <div class="infoBannerContent">
+            <div style=@FontNormal class="ml-1">@Info?.Hardware </div>
+            <div style=@FontNormal>
                 @if (ShowGpu)
                 {
                     <GpuTemp />
                 }
-            </MudItem>
-            <MudItem Style=@FontNormal lg="2"> @Info?.TCText </MudItem>
-            <MudItem Style=@FontNormal lg="1"> @Info?.Game </MudItem>
-            <MudItem Style=@FontNormal lg="1"> @Info?.Round </MudItem>
-            <MudItem Style=@FontNormal lg="1"> @move50 </MudItem>
-            <MudItem Style=@FontNormal lg="1"> @R3 </MudItem>
-            <MudItem Style=@FontNormal lg="1"> @(DrawP < 0 ? "off" : $"{DrawP}p") </MudItem>
+            </div>
+            <div style=@FontNormal> @Info?.TCText </div>
+            <div style=@FontNormal> @Info?.Game </div>
+            <div style=@FontNormal> @Info?.Round </div>
+            <div style=@FontNormal> @move50 </div>
+            <div style=@FontNormal> @R3 </div>
+            <div style=@FontNormal> @(DrawP < 0 ? "off" : $"{DrawP}p") </div>
             @if (Info != null && Info.UseTBAdj)
             {
-                <MudItem Style=@FontNormal lg="1">
-                    @TB
-                </MudItem>
+                <div style=@FontNormal> @TB </div>
             }
-
             @if (Info != null && Info.UseDevCounter)
             {
-                <MudItem Style=@FontNormal lg="1">
-                    @Info.DevCounter
-                </MudItem>
+                <div style=@FontNormal> @Info.DevCounter </div>
             }
-
-            <MudItem Style=@FontNormal Class="pl-1" lg="2"> @Info?.ResultTxt </MudItem>
-
-            <MudItem Style=@FontNormal lg="2">
+            <div style=@FontNormal class="pl-1"> @Info?.ResultTxt </div>
+            <div style=@FontNormal>
                 <div style="display:flex; align-items:center; justify-content:left;">
                     @for (int i = 0; i < H2HGroups.Length; i++)
                     {
@@ -81,13 +69,11 @@
                         }
                     }
                 </div>
-            </MudItem>
-
-            <MudItem Style=@FontNormal lg="2"> @Info?.TimeLeftTxt </MudItem>            
-            <MudItem Style=@FontNormal lg="3"> @Info?.TournamentEndsTxt </MudItem>
-        </MudItem>
-
-    </MudItem>
+            </div>
+            <div style=@FontNormal> @Info?.TimeLeftTxt </div>
+            <div style=@FontNormal> @Info?.TournamentEndsTxt </div>
+        </div>
+    </div>
 </MudItem>
 
 @code {
@@ -131,6 +117,20 @@
         + ((FontSize > 0 ? FontSize : 14) * WidthFit)
             .ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)
         + "px;";
+    /// The column widths, in the proportions the lg sizes used to give; a column never gets
+    /// narrower than its widest text, the page's width fit shrinks the font instead.
+    private string Columns
+    {
+        get
+        {
+            var cols = new List<int> { 5, 1, 2, 1, 1, 1, 1, 1 };
+            if (Info != null && Info.UseTBAdj) cols.Add(1);
+            if (Info != null && Info.UseDevCounter) cols.Add(1);
+            cols.AddRange([2, 2, 2, 3]);
+            return string.Join(" ", cols.Select(c => $"{c}fr"));
+        }
+    }
+
     private string move50 => $"{Move50 / 2}.{Move50 % 2}"; //CalcMove50();
 
     // computed H2H helper values
