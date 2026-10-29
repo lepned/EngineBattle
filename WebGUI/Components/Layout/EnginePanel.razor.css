@@ -189,8 +189,9 @@
     box-shadow: 0 0 0 3px rgba(94, 228, 195, 0.25), 0 0 20px rgba(94, 228, 195, 0.1);
 }
 
+/* room for 10 digits (a 100M node limit has 9) plus the padding */
 .engine-panel .ep-field input[type="number"] {
-    width: 90px;
+    width: calc(10ch + 26px);
     -moz-appearance: textfield;
 }
 
@@ -426,7 +427,11 @@
     gap: 12px;
 }
 
+/* net names and backend strings are long with no spaces: break anywhere rather than run past the panel */
 .engine-panel .ep-nn-info span {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     background: rgba(127, 177, 255, 0.1);
     padding: 4px 10px;
     border-radius: 6px;
