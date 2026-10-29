@@ -874,6 +874,7 @@ public partial class Tournaments
 
 	protected async override void OnAfterRender(bool firstRender)
 	{
+		var chartsDrawnBeforeLayout = false;
 		if (firstRender)
 		{
 			if (!FeedMode && TournamentSvc.IsRunning && TournamentSvc.IsParallelRun)
@@ -937,14 +938,52 @@ public partial class Tournaments
 				table = runner.GenerateStatsCrosstable(results);
 				pairings = runner.GetLastestPairings();
 				infoBannerInfo = new InfoBannerInfo(tournament);
+				// The game in play started before this page opened: its players, logos and defs
+				// would otherwise stay at the defaults until the next game
+				var currentGame = TournamentSvc.CurrentGame;
+				roundNr = TournamentSvc.CurrentRound;
+				totalNumberOfPairs = TournamentSvc.TotalPairs;
+				if (currentGame != null)
+				{
+					SetGameParams(currentGame);
+					SetPlayerNamesAndLogos(currentGame);
+					activeGameNr = currentGame.CurrentGameNr;   // user adjudication names the game
+					// the opening's (blue) moves and the pair's reference, without replaying the opening
+					UpdateDeviationReference(currentGame);
+					moveNr = 0;
+					openingMoves = string.Empty;
+					foreach (var move in currentGame.OpeningMovesAndFen)
+						CreateOpeningMoves(move);
+					RebuildBanner(currentGame);
+					SetHeadToHead();
+				}
 				// Re-create charts so live updates don't hit null
 				evalList = new LivePlot(chessModule, evalChart, whitePlayer, blackPlayer, "Eval in CP", "Centipawns");
 				nodeList = new LivePlot(chessModule, nodesChart, whitePlayer, blackPlayer, "Nodes per move", "Total nodes");
 				npsList = new LivePlot(chessModule, npsChart, whitePlayer, blackPlayer, "Speed (NPS)", "Nodes per sec");
 				epsList = new LivePlot(chessModule, epsChart, whitePlayer, blackPlayer, "Speed (EPS)", "NN eval per sec");
 				timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
-				// Subscribe last — after all state is ready for incoming updates
-				TournamentSvc.Subscribe(Update);
+				// Subscribe last — after all state is ready for incoming updates. The charts first get
+				// the moves the game played while the page was away.
+				TournamentSvc.SubscribeWithCatchUp(Update, (game, moves) =>
+				{
+					if (game == null || !ReferenceEquals(game, currentGame))
+						return;   // a game that started just now has nothing to catch up
+					var startMove = game.OpeningMovesAndFen.Count > 0 ? (game.OpeningMovesAndFen.Count + 1) / 2 + 1 : 1;
+					foreach (var plot in new[] { evalList, nodeList, npsList, epsList, timeUsageList })
+						plot.SetStartMove(startMove);
+					foreach (var move in moves)
+					{
+						if (move.Status.EPS > 0)
+						{
+							if (move.Info.Player == whitePlayer) whiteHasEps = true;
+							else blackHasEps = true;
+						}
+						AddMoveToCharts(move);
+					}
+				});
+				await DoChartUpdates();
+				chartsDrawnBeforeLayout = true;
 			}
 			else if (FeedMode)
 			{
@@ -1056,9 +1095,15 @@ public partial class Tournaments
 				autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
 			}
 			ValidatePVSize();
+			// kept, as UpdateState keeps them: a page that reconnected mid-game has already set them
 			var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;
+			var bannerTime = infoBannerInfo?.TimeLeftTxt ?? "";
+			var bannerEnd = infoBannerInfo?.TournamentEndsTxt ?? "";
 			infoBannerInfo = new InfoBannerInfo(tournament);
 			infoBannerInfo.HeadToHead = headToHead;
+			infoBannerInfo.TimeLeftTxt = bannerTime;
+			infoBannerInfo.TournamentEndsTxt = bannerEnd;
+			infoBannerInfo.Round = roundNr;
 			windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight") - 10;
 			tournamentHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "main-screen");
 			var cycleT = await chessModule.InvokeAsync<double>("calculateHeightByElementId", "cycleTable");
@@ -1078,6 +1123,13 @@ public partial class Tournaments
 			}
 			StateHasChanged();
 			await OnBrowserResize();
+			if (chartsDrawnBeforeLayout)
+			{
+				// drawn before the page sized the chart boxes, the plots keep the default 200px and cut
+				// the move numbers off; they are responsive, a resize fits them (as the menu toggle does)
+				await Task.Delay(300);
+				await chessModule.InvokeVoidAsync("triggerResizeEvent");
+			}
 		}
 
 		base.OnAfterRender(firstRender);

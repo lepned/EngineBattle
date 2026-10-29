@@ -1,5 +1,6 @@
 #nullable enable
 using ChessLibrary;
+using static ChessLibrary.TypesDef.CoreTypes;
 
 namespace WebGUI.Services
 {
@@ -8,6 +9,10 @@ namespace WebGUI.Services
         private Tournament.Manager.Runner? _runner;
         private Action<TournamentTypes.Update>? _subscriber;
         private LiveFeedRecorder? _recorder;
+        private StartGameInfo? _currentGame;
+        private readonly List<TournamentTypes.Update.BestMove> _currentMoves = new();
+        private string _round = "";
+        private int _totalPairs;
         private readonly JsonFeedService _jsonFeed;
         private readonly object _lock = new();
 
@@ -33,6 +38,14 @@ namespace WebGUI.Services
         /// A cancelled or finished run is still ending: its engines may still be up.
         public bool IsStopping { get { lock (_lock) { return _state == RunState.Stopping; } } }
         public Tournament.Manager.Runner? CurrentRunner => _runner;
+
+        /// The game the run is playing, from its last StartOfGame: a tournament page opened mid-game
+        /// shows its players (names, logos, defs) without waiting for the next game.
+        public StartGameInfo? CurrentGame { get { lock (_lock) { return _currentGame; } } }
+
+        /// The run's last RoundNr and TotalNumberOfPairs, for the banner of a page opened mid-run.
+        public string CurrentRound { get { lock (_lock) { return _round; } } }
+        public int TotalPairs { get { lock (_lock) { return _totalPairs; } } }
 
         /// <summary>True when the loaded tournament will use the parallel runner with more than
         /// one concurrent game (RR/Gauntlet). Pages use this to route to the grid view and to
@@ -71,6 +84,8 @@ namespace WebGUI.Services
 
         private void HandleUpdate(Tournament.Manager.Runner? from, TournamentTypes.Update update)
         {
+            LiveFeedRecorder? recorder;
+            Action<TournamentTypes.Update>? handler;
             lock (_lock)
             {
                 // a replaced run's late updates (a cancelled game, its standings, its end) are not this run's
@@ -78,11 +93,27 @@ namespace WebGUI.Services
                     return;
                 if (update is TournamentTypes.Update.EndOfTournament && _state == RunState.Running)
                     _state = RunState.Stopping;
+                if (update is TournamentTypes.Update.StartOfGame start)
+                {
+                    _currentGame = start.Game;
+                    _currentMoves.Clear();
+                }
+                else if (update is TournamentTypes.Update.BestMove move)
+                    _currentMoves.Add(move);
+                else if (update is TournamentTypes.Update.RoundNr round)
+                    _round = round.Round;
+                else if (update is TournamentTypes.Update.TotalNumberOfPairs pairs)
+                    _totalPairs = pairs.PairingsNumber;
+                else if (update is TournamentTypes.Update.EndOfTournament)
+                {
+                    _currentGame = null;
+                    _currentMoves.Clear();
+                }
+                // under the same lock as the move above: SubscribeWithCatchUp hands a move either
+                // to the catch-up or to the handler, never both and never neither
+                recorder = _recorder;
+                handler = _subscriber;
             }
-
-            LiveFeedRecorder? recorder;
-            Action<TournamentTypes.Update>? handler;
-            lock (_lock) { recorder = _recorder; handler = _subscriber; }
 
             try { recorder?.Record(update); }
             catch (Exception) { /* recording is best-effort */ }
@@ -104,6 +135,20 @@ namespace WebGUI.Services
         public void Subscribe(Action<TournamentTypes.Update> handler)
         {
             lock (_lock) { _subscriber = handler; }
+        }
+
+        /// Subscribes a page that opens mid-game. catchUp first gets the game in play and its moves so
+        /// far (it runs under the lock: keep it to in-memory work), then every later update goes to
+        /// the handler.
+        public void SubscribeWithCatchUp(Action<TournamentTypes.Update> handler,
+            Action<StartGameInfo?, IReadOnlyList<TournamentTypes.Update.BestMove>> catchUp)
+        {
+            lock (_lock)
+            {
+                // the page subscribes even if its catch-up fails: charts short of moves beat a frozen page
+                try { catchUp(_currentGame, _currentMoves.ToList()); }
+                finally { _subscriber = handler; }
+            }
         }
 
         public void Unsubscribe()
@@ -131,6 +176,9 @@ namespace WebGUI.Services
                 // the replaced runner's PGN file is closed now: its run has ended
                 _runner?.Retire();
                 _runner = NewRunner(logger);
+                _currentGame = null;
+                _currentMoves.Clear();
+                (_round, _totalPairs) = ("", 0);
                 _runner.LinkCancellation(shutdown.Token);
                 return _runner;
             }

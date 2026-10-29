@@ -40,16 +40,7 @@ public partial class Tournaments
 				ResetGameState();
 				// -1: draw adjudication is off (the banner says so)
 				DrawP = tournament.Adjudication.DrawOption.Enabled ? tournament.Adjudication.DrawOption.DrawMoveLength * 2 : -1;
-				var crossTable = table.FirstOrDefault(e => e.Player == whitePlayer);
-				if (crossTable != null)
-				{
-					var h2h = crossTable.StatsAgainst.FirstOrDefault(e => e.Item1 == blackPlayer);
-					if (h2h != null)
-					{
-						var wdl = h2h.Item2;
-						infoBannerInfo.HeadToHead = $"{wdl.Wins}-{wdl.Draws}-{wdl.Losses}";
-					}
-				}
+				SetHeadToHead();
 				if (layoutOptions.ShowCrosstableBetweenGames)
 				{
 					await InvokeAsync(CloseBetweenGamesDialogs);
@@ -147,16 +138,7 @@ public partial class Tournaments
 				TB = b.Info.PiecesLeft - ChessLibrary.GameAdjudication.adjudicatedMen(tournament);
 				move50 = b.Info.Move50;
 				r3 = b.Info.R3;
-				var white = b.Info.Player == whitePlayer;
-				if (b.Info.Eval.IsMate)
-					evalList.AddEvalData(white, true, b.Info.Eval.Value);
-				else
-					evalList.AddEvalData(white, false, b.Info.Eval.Value);
-				nodeList.AddData(white, b.Info.Nodes, false);
-				npsList.AddData(white, b.Info.NPS, true);				
-				if (whiteHasEps || blackHasEps)
-					epsList.AddData(white, b.Status.EPS, true);
-				timeUsageList.AddData(white, b.Info.MoveTime.TotalSeconds, false);
+				AddMoveToCharts(b);
 				var pv = b.Info.PV;
 				var pvLong = b.Info.LongPV;
 				// First, before the clock and the side change below: this runs off the dispatcher and the
@@ -271,7 +253,6 @@ public partial class Tournaments
 					gameResult = string.Empty;
 					activeGameNr = start.Game.CurrentGameNr;
 
-					TimeSpan duration = TimeSpan.Zero;
 					var roundNumber = 1;
 					if (!string.IsNullOrEmpty(roundNr) && roundNr.Contains('.'))
 					{
@@ -279,47 +260,7 @@ public partial class Tournaments
 							roundNumber = 1;
 					}
 
-					var gamesLeft = runner != null ? runner.GetAllPairings().Count : Math.Max(0, totalNumberOfPairs - activeGameNr);
-					var gamesLeftForEstimate = IsLadderMode
-						? Math.Max(0, tournament.TotalGames - tournament.CurrentGameNr + 1)
-						: gamesLeft;
-
-					if (results.Count > 5)
-					{
-						double avgTimePerGame = results.Average(e => e.GameTime);
-						double totalDelay = gamesLeftForEstimate * (tournament.DelayBetweenGames.TotalMilliseconds + 15000);
-						var timeLeft = (avgTimePerGame * gamesLeftForEstimate) + totalDelay;
-						var timespan = TimeSpan.FromMilliseconds(timeLeft);
-						duration = TimeSpan.FromSeconds(Math.Round(timespan.TotalSeconds));
-					}
-					else if (runner == null || IsLadderMode)
-					{
-						// feed mode (no runner) or ladder: estimate from completed-game average
-						double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
-						duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
-					}
-					else
-					{
-						var allPairings = runner.GetAllPairings();
-						if (allPairings.Count == 0)
-						{
-							double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
-							duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
-						}
-						else
-						{
-							var (tTime, _) = ChessLibrary.TournamentRunners.TournamentUtils.estimateTournamentAndGameTime(gamesLeft, tournament, allPairings);
-							duration = tTime;
-						}
-					}
-
-					infoBannerInfo = new InfoBannerInfo(tournament);
-					infoBannerInfo.TournamentEndsTxt = InfoBannerInfo.GetTournamentEnd(duration);
-					infoBannerInfo.TimeLeftTxt = InfoBannerInfo.Duration(duration);
-					ApplyGameProgress();
-					infoBannerInfo.Round = roundNr;
-					var playerTcId = start.Game.WhiteToMove ? start.Game.WhitePlayer.TimeControlID : start.Game.BlackPlayer.TimeControlID;
-					infoBannerInfo.TCText = tournament.TimeControlTextForPlayer(playerTcId);
+					RebuildBanner(start.Game);
 
 					if (tournament.PauseAfterRound > 0 && roundNumber > tournament.PauseAfterRound)
 					{
@@ -643,21 +584,10 @@ public partial class Tournaments
 		moveNr = 0;
 		TB = 0;
 		UpdateDeviationReference(info);
-		whitePlayer = info.WhitePlayer.Name;
-		if (String.IsNullOrEmpty(info.WhitePlayer.LogoPath))
-			whiteEngineLogo = "Img/chessLogo.jpg";
-		else
-			whiteEngineLogo = info.WhitePlayer.LogoPath;
-		WhiteEngineConfig = info.WhitePlayer;
-		BlackEngineConfig = info.BlackPlayer;
+		SetPlayerNamesAndLogos(info);
 		RestartMoveClock();
 		whiteClock = info.WhiteTime;
 		whiteTime = ClockTextForSide(true, whiteClock);
-		blackPlayer = info.BlackPlayer.Name;
-		if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
-			blackEngineLogo = "Img/chessLogo.jpg";
-		else
-			blackEngineLogo = info.BlackPlayer.LogoPath;
 		blackClock = info.BlackTime;
 		blackTime = ClockTextForSide(false, blackClock);
 		whiteToMove = info.WhiteToMove;
@@ -674,6 +604,86 @@ public partial class Tournaments
 		ResetGameState();
 		await PlayOpeningMoves(new List<MoveAndFen>(info.OpeningMovesAndFen));
 	}
+
+	/// The banner of the game in play: time left, end, progress, round and time control.
+	private void RebuildBanner(StartGameInfo game)
+	{
+		TimeSpan duration = TimeSpan.Zero;
+		var gamesLeft = runner != null ? runner.GetAllPairings().Count : Math.Max(0, totalNumberOfPairs - activeGameNr);
+		var gamesLeftForEstimate = IsLadderMode
+			? Math.Max(0, tournament.TotalGames - tournament.CurrentGameNr + 1)
+			: gamesLeft;
+
+		if (results.Count > 5)
+		{
+			double avgTimePerGame = results.Average(e => e.GameTime);
+			double totalDelay = gamesLeftForEstimate * (tournament.DelayBetweenGames.TotalMilliseconds + 15000);
+			var timeLeft = (avgTimePerGame * gamesLeftForEstimate) + totalDelay;
+			var timespan = TimeSpan.FromMilliseconds(timeLeft);
+			duration = TimeSpan.FromSeconds(Math.Round(timespan.TotalSeconds));
+		}
+		else if (runner == null || IsLadderMode)
+		{
+			// feed mode (no runner) or ladder: estimate from completed-game average
+			double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
+			duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
+		}
+		else
+		{
+			var allPairings = runner.GetAllPairings();
+			if (allPairings.Count == 0)
+			{
+				double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
+				duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
+			}
+			else
+			{
+				var (tTime, _) = ChessLibrary.TournamentRunners.TournamentUtils.estimateTournamentAndGameTime(gamesLeft, tournament, allPairings);
+				duration = tTime;
+			}
+		}
+
+		infoBannerInfo = new InfoBannerInfo(tournament);
+		infoBannerInfo.TournamentEndsTxt = InfoBannerInfo.GetTournamentEnd(duration);
+		infoBannerInfo.TimeLeftTxt = InfoBannerInfo.Duration(duration);
+		ApplyGameProgress();
+		infoBannerInfo.Round = roundNr;
+		var playerTcId = game.WhiteToMove ? game.WhitePlayer.TimeControlID : game.BlackPlayer.TimeControlID;
+		infoBannerInfo.TCText = tournament.TimeControlTextForPlayer(playerTcId);
+	}
+
+	private void SetHeadToHead()
+	{
+		var crossTable = table.FirstOrDefault(e => e.Player == whitePlayer);
+		var h2h = crossTable?.StatsAgainst.FirstOrDefault(e => e.Item1 == blackPlayer);
+		if (h2h != null)
+		{
+			var wdl = h2h.Item2;
+			infoBannerInfo.HeadToHead = $"{wdl.Wins}-{wdl.Draws}-{wdl.Losses}";
+		}
+	}
+
+	private void AddMoveToCharts(TournamentTypes.Update.BestMove b)
+	{
+		var white = b.Info.Player == whitePlayer;
+		evalList.AddEvalData(white, b.Info.Eval.IsMate, b.Info.Eval.Value);
+		nodeList.AddData(white, b.Info.Nodes, false);
+		npsList.AddData(white, b.Info.NPS, true);
+		if (whiteHasEps || blackHasEps)
+			epsList.AddData(white, b.Status.EPS, true);
+		timeUsageList.AddData(white, b.Info.MoveTime.TotalSeconds, false);
+	}
+
+	private void SetPlayerNamesAndLogos(StartGameInfo info)
+	{
+		whitePlayer = info.WhitePlayer.Name;
+		blackPlayer = info.BlackPlayer.Name;
+		whiteEngineLogo = LogoOf(info.WhitePlayer);
+		blackEngineLogo = LogoOf(info.BlackPlayer);
+	}
+
+	private static string LogoOf(EngineConfig engine) =>
+		String.IsNullOrEmpty(engine.LogoPath) ? "Img/chessLogo.jpg" : engine.LogoPath;
 
 	private void UpdateDeviationReference(StartGameInfo info)
 	{
