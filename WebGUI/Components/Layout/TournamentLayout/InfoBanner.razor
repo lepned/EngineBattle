@@ -22,13 +22,14 @@
             }
             @if (Info != null && Info.UseDevCounter)
             {
-                <div style=@FontHeader> Dev </div>
+                <div style=@FontHeader> Deviation </div>
             }
             <div style=@FontHeader> Result </div>
             <div style=@FontHeader>
-                <div style="display:flex; align-items:center; justify-content:left;">
+                <div style="display:flex; align-items:center; justify-content:center;">
                     <span style="line-height:1;">⚔</span>
-                    <span style="margin-left:6px;">H2H</span>
+                    <span style="margin:0 6px;">H2H</span>
+                    <span style="line-height:1;">⚔</span>
                 </div>
             </div>
             <div style=@FontHeader> Time left </div>
@@ -57,9 +58,9 @@
             {
                 <div style=@FontNormal> @Info.DevCounter </div>
             }
-            <div style=@FontNormal class="pl-1"> @Info?.ResultTxt </div>
+            <div style=@FontNormal> @Info?.ResultTxt </div>
             <div style=@FontNormal>
-                <div style="display:flex; align-items:center; justify-content:left;">
+                <div style="display:flex; align-items:center; justify-content:center;">
                     @for (int i = 0; i < H2HGroups.Length; i++)
                     {
                         <span style="@($"display:inline-block; text-align:center; min-width:{H2HMaxDigits}ch; {FontNormal} line-height:1;")">@H2HGroups[i]</span>

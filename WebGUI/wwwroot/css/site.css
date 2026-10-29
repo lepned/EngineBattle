@@ -271,6 +271,13 @@ html {
 .infoBanner > *,
 .infoBannerContent > * {
   white-space: nowrap;
+  text-align: center;
+}
+
+/* the hardware line is long free text: it reads from the left */
+.infoBanner > :first-child,
+.infoBannerContent > :first-child {
+  text-align: left;
 }
 
 /* Between MudBlazor's md and lg the page is narrow enough that the banner's columns sit at
