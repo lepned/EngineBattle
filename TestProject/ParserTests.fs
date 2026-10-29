@@ -232,7 +232,8 @@ let ``legacy PGN round-robin resume ends on opening 25`` () =
               Rounds = bookGames.Length
               OpeningsTwice = true
               PreventDeviation = false
-              Distribution = ChessLibrary.Scheduler.Shared }
+              Distribution = ChessLibrary.Scheduler.Shared
+              ChallengerWhite = true }
         let pairings = RoundRobinScheduler.generate cfg |> ChessLibrary.Scheduler.Diff.toPairings
         let left =
             System.Collections.Generic.HashSet<_>(

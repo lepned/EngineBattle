@@ -179,7 +179,7 @@ module MatchMapping =
           Site = t.Pgn.Site
           ConsoleOnly = true
           TournamentMode = if gauntlet then "Gauntlet" else "RR"
-          GauntletOptions = { GauntletOptions.Default with Challengers = max 1 seeds; RandomOpenings = (o.Order = MatchArgs.Random) }
+          GauntletOptions = { GauntletOptions.Default with Challengers = max 1 seeds; RandomOpenings = (o.Order = MatchArgs.Random); ChallengerColor = "white" }
           Rounds = t.Rounds
           AllowPondering = (pondering > 0)
           DelayBetweenGames = TimeSpan.FromMilliseconds(float (max 0 t.Wait))

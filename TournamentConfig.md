@@ -99,6 +99,7 @@ See `LiveFeedContract.md` for the wire protocol and the README section *Watching
 - **Challengers**: How many engines, from the top of `EngineDefList`, are the challengers; the rest are the opponents. Default 1.
 - **RandomOpenings**: True to draw the openings at random from the whole book, in random order (`Seed` fixes the draw); false for the book's order.
 - **Distribution**: How the openings are shared between the opponents. `"shared"` (the default): every opponent plays the same opening in a round, `Rounds` openings in all. `"spread"`: each opponent gets openings of its own, none played against another opponent, `Rounds` x opponents openings in all - in round *r* opponent *i* plays opening *r* x opponents + *i*. A book shorter than that starts over from its first opening, so some openings are played against more than one opponent, and a warning is printed at the start.
+- **ChallengerColor**: The challenger's colour in the first game of a pair: `"black"` (the default, also when the field is missing) or `"white"`. With `OpeningsTwice` the second game has the other colour; without it the colour swaps from round to round, starting with this one. A resumed tournament keeps the colours its games were played with (see [Gauntlet mode](GauntletMode.md#resuming)).
 
 A file from before these moved has `Challengers` at the top level and `Opening.RandomOpenings`, which meant both the random draw and `"spread"`; they are read as these settings when the block is absent.
 
@@ -354,7 +355,8 @@ setting.
   "GauntletOptions": {
     "Challengers": 1,
     "RandomOpenings": false,
-    "Distribution": "shared"
+    "Distribution": "shared",
+    "ChallengerColor": "black"
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

@@ -5,8 +5,8 @@ open ChessLibrary.PGNTypes
 
 /// What role an engine plays in a scheduled game, relative to the tournament mode.
 type Role =
-    /// The engine acts as the gauntlet "main player" (plays White first in each
-    /// pairing). Only used in Gauntlet mode.
+    /// The engine acts as the gauntlet "main player" (its colour in the first game
+    /// of a pair is `ScheduleConfig.ChallengerWhite`). Only used in Gauntlet mode.
     | Challenger
     /// The engine is paired against a challenger. Only used in Gauntlet mode.
     | Opponent
@@ -70,4 +70,7 @@ type ScheduleConfig =
       Rounds           : int
       OpeningsTwice    : bool
       PreventDeviation : bool
-      Distribution     : OpeningDistribution }
+      Distribution     : OpeningDistribution
+      /// Gauntlet: the challenger has White in the first game of a pair (without
+      /// OpeningsTwice: in the even rounds). Ignored by the other modes.
+      ChallengerWhite  : bool }

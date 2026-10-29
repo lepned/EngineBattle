@@ -650,15 +650,20 @@ module TypesDef =
     /// are the opponents. RandomOpenings: drawn from the whole book with Opening.Seed, as the other
     /// modes' switch. Distribution: "shared" = every opponent plays the round's opening, "spread" =
     /// each opponent its own slice of the book (Rounds x opponents openings in all).
+    /// ChallengerColor: the challenger's colour in the first game of a pair, "black" (also when
+    /// not given) or "white".
     type GauntletOptions =
       { Challengers: int
         RandomOpenings: bool
-        Distribution: string }
+        Distribution: string
+        ChallengerColor: string }
       with
-        static member Default = { Challengers = 1; RandomOpenings = false; Distribution = "shared" }
-        member private x.Is (word: string) = not (isNull x.Distribution) && x.Distribution.Trim().Equals(word, StringComparison.OrdinalIgnoreCase)
-        member x.Spread = x.Is "spread"
-        member x.Shared = x.Is "shared"
+        static member Default = { Challengers = 1; RandomOpenings = false; Distribution = "shared"; ChallengerColor = null }
+        static member private Is (value: string) (word: string) = not (isNull value) && value.Trim().Equals(word, StringComparison.OrdinalIgnoreCase)
+        member x.Spread = GauntletOptions.Is x.Distribution "spread"
+        member x.Shared = GauntletOptions.Is x.Distribution "shared"
+        member x.ChallengerWhite = GauntletOptions.Is x.ChallengerColor "white"
+        member x.ChallengerColorValid = String.IsNullOrWhiteSpace x.ChallengerColor || x.ChallengerWhite || GauntletOptions.Is x.ChallengerColor "black"
     type EngineSetup =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string

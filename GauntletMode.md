@@ -20,7 +20,8 @@ way to test a new engine or network against a set of references.
 "GauntletOptions": {
   "Challengers": 1,
   "RandomOpenings": false,
-  "Distribution": "shared"
+  "Distribution": "shared",
+  "ChallengerColor": "black"
 },
 "Opening": {
   "OpeningsPath": "C:/Books/book.pgn",
@@ -36,6 +37,7 @@ way to test a new engine or network against a set of references.
 | `OpeningsTwice` | `true`: each opening with both colours, the two games one after the other. `false`: each opening once (see *Colours*). |
 | `RandomOpenings` | `true`: the openings are drawn at random from the whole book, `Seed` picks the draw. `false`: the book's order. |
 | `Distribution` | How the openings are shared between the opponents: `shared` or `spread` (see *Openings*). |
+| `ChallengerColor` | The challenger's colour in the first game of a pair: `black` (the default) or `white` (see *Colours*). |
 | `NumberOfGamesInParallel` | Games played at the same time (see [Tournament configuration](TournamentConfig.md)). |
 
 The number of games is `Rounds` x challengers x opponents, twice that with `OpeningsTwice`. For
@@ -58,9 +60,10 @@ works with either distribution. Older files had `Challengers` at the top level a
 
 ## Colours
 
-- With `OpeningsTwice: true` the challenger plays each opening once with each colour.
+- With `OpeningsTwice: true` the challenger plays each opening once with each colour, first with
+  `ChallengerColor` (Black when not given), then with the other.
 - With `OpeningsTwice: false` the colours swap from one round to the next, so the challenger has
-  White in half the games.
+  White in half the games: `ChallengerColor` in the first round, the other colour in the second.
 
 ## PreventMoveDeviation
 
@@ -73,6 +76,13 @@ against every opponent, the games wait for each other and the run gets close to 
 
 A tournament whose `PgnOutPath` already holds games continues where it stopped: the games already
 in the file are matched by opening and colours and not played again.
+
+It goes on with the colours its games were played with. With `OpeningsTwice: false`, where the
+colour of a round is part of the game, a `ChallengerColor` other than the one the games were played
+with (or a tournament started before the option, when the challenger always had White first) would
+otherwise match none of them; the colour the file was played with is kept and a line at the start
+says so. With `OpeningsTwice: true` both colours of every pair are planned anyway, so only the
+order within the pairs still to play follows `ChallengerColor`.
 
 ## See Also
 

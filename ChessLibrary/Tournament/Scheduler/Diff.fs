@@ -99,6 +99,20 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
     let left = unmatched keys played
     plan |> List.mapi (fun i p -> i, p) |> List.filter (fun (i, _) -> left.[i]) |> List.map snd
 
+/// A resumed gauntlet keeps the colours its games were played with. Without OpeningsTwice
+/// the colour of a round is part of the game's key, so a plan with the other first colour
+/// (ChallengerColor changed, or a tournament started before the option, when the challenger
+/// always had White first) would match none of the games played and play them all again.
+/// The config is planned both ways and the colour that leaves fewer games to play wins; on a
+/// tie (nothing played, or OpeningsTwice, where both colours of a pair are planned anyway)
+/// the config's own colour stands.
+let keepPlayedColours (generate: ScheduleConfig -> PlannedGame list) (config: ScheduleConfig) (played: PgnGame array) : ScheduleConfig =
+    if played.Length = 0 then config
+    else
+        let left (c: ScheduleConfig) = diff (generate c) played |> List.length
+        let other = { config with ChallengerWhite = not config.ChallengerWhite }
+        if left other < left config then other else config
+
 /// The same subtraction for the legacy `Pairing` shape the runners and the GUI hold.
 let diffPairings (plan: Pairing list) (played: PgnGame array) : Pairing list =
     let keys =

@@ -531,6 +531,8 @@ module Validation =
           Errors ["GauntletOptions.Challengers must be at least 1: that many engines from the top of EngineDefList are the challengers."]
       elif normalized = "gauntlet" && not (tourny.GauntletOptions.Shared || tourny.GauntletOptions.Spread) then
           Errors [ sprintf "GauntletOptions.Distribution must be \"shared\" or \"spread\", not \"%s\"." tourny.GauntletOptions.Distribution ]
+      elif normalized = "gauntlet" && not tourny.GauntletOptions.ChallengerColorValid then
+          Errors [ sprintf "GauntletOptions.ChallengerColor must be \"black\" or \"white\", not \"%s\"." tourny.GauntletOptions.ChallengerColor ]
       elif normalized = "cup" && obj.ReferenceEquals(tourny.CupOptions, null) then
           Errors ["CupOptions must be set when TournamentMode is Cup."]
       // the cup runner refuses any other number at the start; say so before it

@@ -203,6 +203,19 @@ let ``a gauntlet refuses no challengers and an unknown distribution`` () =
     Assert.Contains(errorsOf t, fun m -> m.Contains "Distribution must be")
 
 [<Fact>]
+let ``GauntletOptions.ChallengerColor: Black first when not given, white or black as written, anything else refused`` () =
+    let engine name = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = name; TimeControlID = 1 }
+    let withEngines t = { t with EngineSetup = { t.EngineSetup with Engines = [ engine "A"; engine "B"; engine "C" ] } }
+    Assert.False (read (gauntlet "")).GauntletOptions.ChallengerWhite
+    Assert.False (read (gauntlet """, "GauntletOptions": { "Challengers": 1 } """)).GauntletOptions.ChallengerWhite
+    Assert.True (read (gauntlet """, "GauntletOptions": { "ChallengerColor": "White" } """)).GauntletOptions.ChallengerWhite
+    let black = withEngines (read (gauntlet """, "GauntletOptions": { "ChallengerColor": "black" } """))
+    Assert.False black.GauntletOptions.ChallengerWhite
+    Assert.DoesNotContain(errorsOf black, fun m -> m.Contains "ChallengerColor")
+    let t = withEngines (read (gauntlet """, "GauntletOptions": { "ChallengerColor": "random" } """))
+    Assert.Contains(errorsOf t, fun m -> m.Contains "ChallengerColor must be")
+
+[<Fact>]
 let ``engine defs that are not there are named together, with the folder they were looked for in`` () =
     let folder = Path.Combine(Path.GetTempPath(), "eb_defs_" + System.Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory folder |> ignore

@@ -40,7 +40,8 @@ let private gauntletConfig
       Rounds = rounds
       OpeningsTwice = true
       PreventDeviation = false
-      Distribution = Spread }
+      Distribution = Spread
+      ChallengerWhite = true }
 
 /// Turn a PlannedGame into the equivalent PgnGame shape the runner would
 /// write to disk. Used to simulate an already-played phase in resume tests.
@@ -281,7 +282,8 @@ let private rrConfig (players: EngineConfig list) (openings: PgnGame list) : Sch
       Rounds = openings.Length
       OpeningsTwice = false
       PreventDeviation = false
-      Distribution = Shared }
+      Distribution = Shared
+      ChallengerWhite = true }
 
 [<Fact>]
 let ``RR single: 4 players × 1 opening → 6 games, each pair appears exactly once`` () =
@@ -1030,3 +1032,32 @@ let ``gauntlet one game per opening: the challenger is White every other round``
     // the swapped games keep their roles: the challenger is still the challenger
     let swapped = games.[2]
     Assert.Equal((Opponent, Challenger), (swapped.RoleWhite, swapped.RoleBlack))
+
+[<Fact>]
+let ``gauntlet ChallengerWhite false: the challenger is Black in the first game of a pair`` () =
+    let cfg = { gauntletConfig [ mkEngine "A" ] [ mkEngine "B"; mkEngine "C" ] (List.init 2 (fun i -> mkOpening (i + 1))) 2 with Distribution = Shared; ChallengerWhite = false }
+    let pairs (gs: PlannedGame list) = gs |> List.map (fun g -> $"{g.White.Name}-{g.Black.Name}")
+    Assert.Equal<string list>([ "B-A"; "A-B"; "C-A"; "A-C"; "B-A"; "A-B"; "C-A"; "A-C" ], pairs (Gauntlet.generate cfg))
+    // one game per opening: Black in the even rounds, White in the odd ones
+    Assert.Equal<string list>([ "B-A"; "C-A"; "A-B"; "A-C" ], pairs (Gauntlet.generate { cfg with OpeningsTwice = false }))
+    // the same games either way with OpeningsTwice, only the order in the pair differs
+    let keys c = Gauntlet.generate c |> List.map (fun g -> g.Key) |> Set.ofList
+    Assert.Equal<Set<GameKey>>(keys cfg, keys { cfg with ChallengerWhite = true })
+
+[<Fact>]
+let ``a resumed gauntlet keeps the first colour its games were played with`` () =
+    let cfg = { gauntletConfig [ mkEngine "A" ] [ mkEngine "B"; mkEngine "C" ] (List.init 4 (fun i -> mkOpening (i + 1))) 4 with OpeningsTwice = false; Distribution = Shared }
+    let playedWith white n = Gauntlet.generate { cfg with ChallengerWhite = white } |> List.truncate n |> List.map playedPgnOf |> List.toArray
+    let kept white played = (Diff.keepPlayedColours Gauntlet.generate { cfg with ChallengerWhite = white } played).ChallengerWhite
+    // started with White first (as every gauntlet before the option), now configured Black: stays White
+    Assert.True(kept false (playedWith true 3))
+    Assert.False(kept true (playedWith false 3))
+    // and only the games not played are left
+    let resumed = { cfg with ChallengerWhite = kept false (playedWith true 3) }
+    Assert.Equal(5, (Diff.diff (Gauntlet.generate resumed) (playedWith true 3)).Length)
+    // nothing played: the config decides
+    Assert.False(kept false [||])
+    // OpeningsTwice plans both colours of a pair, so a half-played pair matches either way: the config decides
+    let twice = { cfg with OpeningsTwice = true }
+    let half = Gauntlet.generate { twice with ChallengerWhite = true } |> List.truncate 3 |> List.map playedPgnOf |> List.toArray
+    Assert.False((Diff.keepPlayedColours Gauntlet.generate { twice with ChallengerWhite = false } half).ChallengerWhite)

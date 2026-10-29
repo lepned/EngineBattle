@@ -86,9 +86,11 @@ let private planned
 ///   * Under `Shared`, every opponent plays every opening
 ///   * Without `OpeningsTwice` the colors swap every other round, so the
 ///     challenger is White in half the games (it used to be White in all)
+///   * The challenger's color in the first game of a pair (the even rounds
+///     without `OpeningsTwice`) is `ChallengerWhite`
 ///
 /// Games are emitted in **pair-consecutive** order: each (challenger, opp,
-/// opening) pair yields its direct game immediately followed by its reversed
+/// opening) pair yields its first game immediately followed by the reversed
 /// game when `OpeningsTwice` is on. This makes `Diff.applyPairLabels` trivial
 /// (label = `{pairIdx}.{colorIdx}`) and keeps both games of a pair together
 /// in the play queue. `RoundLabel` is a placeholder until a labeler pass
@@ -102,9 +104,12 @@ let generate (config: ScheduleConfig) : PlannedGame list =
             let opening = openingsFor.[oppOriginalIdx].[roundIdx]
             let openingHash = Hash.computeOpeningHashFromGame opening
             for challenger in challengers do
+                let asWhite = planned challenger opp opening openingHash Challenger Opponent
+                let asBlack = planned opp challenger opening openingHash Opponent Challenger
+                let first, second = if config.ChallengerWhite then asWhite, asBlack else asBlack, asWhite
                 if not config.OpeningsTwice && roundIdx % 2 = 1 then
-                    yield planned opp challenger opening openingHash Opponent Challenger
+                    yield second
                 else
-                    yield planned challenger opp opening openingHash Challenger Opponent
+                    yield first
                     if config.OpeningsTwice then
-                        yield planned opp challenger opening openingHash Opponent Challenger ]
+                        yield second ]

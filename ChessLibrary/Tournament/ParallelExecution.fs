@@ -136,14 +136,24 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
     // Build one ScheduleConfig and reuse it for both total-plan and diff.
     let scheduleCfg : Scheduler.ScheduleConfig =
         if isGauntlet then
-            { Mode = Scheduler.Gauntlet
-              Challengers = challengers
-              Opponents = rest
-              Openings = gamesToPlay
-              Rounds = tourny.Rounds
-              OpeningsTwice = tourny.Opening.OpeningsTwice
-              PreventDeviation = tourny.PreventMoveDeviation
-              Distribution = gauntletDistribution }
+            let configured : Scheduler.ScheduleConfig =
+                { Mode = Scheduler.Gauntlet
+                  Challengers = challengers
+                  Opponents = rest
+                  Openings = gamesToPlay
+                  Rounds = tourny.Rounds
+                  OpeningsTwice = tourny.Opening.OpeningsTwice
+                  PreventDeviation = tourny.PreventMoveDeviation
+                  Distribution = gauntletDistribution
+                  ChallengerWhite = tourny.GauntletOptions.ChallengerWhite }
+            // a resumed gauntlet goes on with the colours its games were played with
+            let kept = ChessLibrary.Scheduler.Diff.keepPlayedColours ChessLibrary.Scheduler.Gauntlet.generate configured gamesAlreadyPlayed
+            if kept.ChallengerWhite <> configured.ChallengerWhite then
+                let colour white = if white then "white" else "black"
+                ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow
+                    (sprintf "Resuming: the challenger keeps %s in the first game of a pair, as in the games already played (GauntletOptions.ChallengerColor says %s)."
+                        (colour kept.ChallengerWhite) (colour configured.ChallengerWhite))
+            kept
         else
             { Mode = Scheduler.RoundRobin
               Challengers = tourny.EngineSetup.Engines
@@ -152,7 +162,8 @@ let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
               Rounds = tourny.Rounds
               OpeningsTwice = tourny.Opening.OpeningsTwice
               PreventDeviation = tourny.PreventMoveDeviation
-              Distribution = Scheduler.Shared }
+              Distribution = Scheduler.Shared
+              ChallengerWhite = true }
     let plan =
         if isGauntlet
         then ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg

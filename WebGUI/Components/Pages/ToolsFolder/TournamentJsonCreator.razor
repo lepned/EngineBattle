@@ -72,6 +72,13 @@
                             <option value="spread">Spread: each opponent its own openings</option>
                         </select>
                     </div>
+                    <div class="field-group">
+                        <label>Challenger's colour in the first game of a pair</label>
+                        <select @bind="challengerColor">
+                            <option value="black">Black</option>
+                            <option value="white">White</option>
+                        </select>
+                    </div>
                 }
                 @if (tournamentMode == "Ladder")
                 {
@@ -430,6 +437,7 @@
     private int rounds = 50;
     private int challengers = 1;
     private string gauntletDistribution = "shared";
+    private string challengerColor = "black";
     private bool preventMoveDeviation = false;
     private int ladderGamePairsPerMatch = 4;
 
@@ -722,7 +730,7 @@
 
             // Gauntlet options: the gauntlet's own block, left out of the other modes
             if (tournamentMode == "Gauntlet")
-                root["GauntletOptions"] = new JsonObject { ["Challengers"] = challengers, ["RandomOpenings"] = randomOpenings, ["Distribution"] = gauntletDistribution };
+                root["GauntletOptions"] = new JsonObject { ["Challengers"] = challengers, ["RandomOpenings"] = randomOpenings, ["Distribution"] = gauntletDistribution, ["ChallengerColor"] = challengerColor };
             else
                 root.Remove("GauntletOptions");
 
