@@ -355,3 +355,14 @@ let ``the trainer reads what the writer writes: the side from the Event, our alt
         let black = tree.Root.Head.Next
         Assert.Equal<string list>([ "c5"; "e5" ], black |> List.map (fun n -> n.San))
         Assert.Equal<bool list>([ false; true ], black |> List.map (fun n -> n.AlsoGood))
+
+[<Fact>]
+let ``the engine's line after the last choice is told from the repertoire's moves`` () =
+    let pgn = "[Event \"Repertoire for White\"]\n\n1. e4 {[%eval 0.30]} e5 {[%eval 0.30]} 2. Nf3 Nc6 *\n"
+    match RepertoireTrainer.load pgn true with
+    | Error e -> failwith e
+    | Ok tree ->
+        let e4 = tree.Root.Head
+        let e5 = e4.Next.Head
+        let nf3 = e5.Next.Head
+        Assert.Equal<bool list>([ false; false; true; true ], [ e4; e5; nf3; nf3.Next.Head ] |> List.map RepertoireTrainer.isEngineLine)

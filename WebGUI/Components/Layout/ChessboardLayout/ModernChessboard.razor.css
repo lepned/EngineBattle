@@ -243,6 +243,8 @@
 .mcb-move-inaccuracy { color: #e6b800 !important; }
 .mcb-move-mistake { color: #e68a00 !important; }
 .mcb-move-blunder { color: #e05550 !important; }
+/* the engine's line beyond what a repertoire chose */
+.mcb-move-engine { opacity: 0.55; font-style: italic; }
 
 /* ── Annotation rows ── */
 .mcb-annotation-row td {

@@ -47,7 +47,7 @@
         <div class="rt-board-col">
             <ModernChessboard @ref="chessBoardRazor" ChessBoard="@board" FENposition="@fen"
                               ShowFenField="false" ShowChessNavButtons="@BoardFree" ShowMoveList="true"
-                              MoveListPosition="MoveListPosition.Right" MoveEvals="@MoveEvals" AllowNavigation="@BoardFree"
+                              MoveListPosition="MoveListPosition.Right" MoveEvals="@MoveEvals" MoveAnnotations="@EngineLine" AllowNavigation="@BoardFree"
                               MakeMoveListClickable="@BoardFree" AboveMoveList="@Rail" BelowBoard="@Bar"
                               ShowSizeSlider="true" SizeKey="repertoire-trainer" ShowPositionStatus="false"
                               OnBoardSizeChanged="@(n => { boardSizePx = n; StateHasChanged(); })"
@@ -564,6 +564,20 @@
                 evals[i] = Eval(line[i]);
             }
             return evals;
+        }
+    }
+
+    // The engine's line after the repertoire's last choice, dimmed in the move list.
+    private Dictionary<int, ModernChessboard.MoveAnnotation> EngineLine
+    {
+        get
+        {
+            var dimmed = new Dictionary<int, ModernChessboard.MoveAnnotation>();
+            if (state == null || building) return dimmed;
+            var line = state.Played.Reverse().ToList();
+            for (var i = 0; i < line.Count; i++)
+                if (RT.isEngineLine(line[i])) dimmed[i] = new("", "mcb-move-engine", "", "");
+            return dimmed;
         }
     }
 

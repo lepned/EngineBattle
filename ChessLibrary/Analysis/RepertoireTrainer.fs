@@ -62,6 +62,9 @@ let private shareOf (comment: string) =
 /// The comment without the [%eval] tag, as the page shows it.
 let text (comment: string) = evalRegex.Replace(comment, "").Trim()
 
+/// A move of the engine's line after the repertoire's last choice: no comment, nor any move after it.
+let rec isEngineLine (n: Node) = String.IsNullOrWhiteSpace n.Comment && List.forall isEngineLine n.Next
+
 /// A line of PlyMoves (each with its variations, the alternatives to it) as nodes; the opponent's
 /// alternatives are marked "?"/"??" by how much winning chance they give away against the first.
 let rec private nodesOf (white: bool) (fen: string) (line: PlyLine) (from: int) : Node list =
