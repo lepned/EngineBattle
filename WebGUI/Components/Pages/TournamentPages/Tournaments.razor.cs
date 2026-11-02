@@ -595,6 +595,26 @@ public partial class Tournaments
 		await DoChartUpdates();
 	}
 
+	// The standings' speed, pentanomial error and pair counts from the PGN games, off the circuit's thread.
+	private async Task RefreshStandingsFromPgn()
+	{
+		try
+		{
+			var standings = scoreTable;
+			var pgnGames = await Task.Run(() => UpdateSpeed(0));
+			GameAnalysis.PGNCalculator.populatePentanomialError(standings, pgnGames);
+			await InvokeAsync(() =>
+			{
+				ApplyPairCount(pgnGames);
+				StateHasChanged();
+			});
+		}
+		catch (Exception ex)
+		{
+			logger.LogWarning(ex, "Could not read the PGN games for the standings");
+		}
+	}
+
 	private void CreateOpeningMoves(MoveAndFen move)
 	{
 		if (move.Move.Color == "w")
@@ -957,6 +977,7 @@ public partial class Tournaments
 					RebuildBanner(currentGame);
 					SetHeadToHead();
 				}
+				GameAnalysis.StandingsTable.populatePairData(scoreTable, table);
 				// Re-create charts so live updates don't hit null
 				evalList = new LivePlot(chessModule, evalChart, whitePlayer, blackPlayer, "Eval in CP", "Centipawns");
 				nodeList = new LivePlot(chessModule, nodesChart, whitePlayer, blackPlayer, "Nodes per move", "Total nodes");
@@ -965,10 +986,12 @@ public partial class Tournaments
 				timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
 				// Subscribe last — after all state is ready for incoming updates. The charts first get
 				// the moves the game played while the page was away.
+				TournamentTypes.Update.BestMove lastMove = null;
 				TournamentSvc.SubscribeWithCatchUp(Update, (game, moves) =>
 				{
 					if (game == null || !ReferenceEquals(game, currentGame))
 						return;   // a game that started just now has nothing to catch up
+					lastMove = moves.Count > 0 ? moves[moves.Count - 1] : null;
 					var startMove = game.OpeningMovesAndFen.Count > 0 ? (game.OpeningMovesAndFen.Count + 1) / 2 + 1 : 1;
 					foreach (var plot in new[] { evalList, nodeList, npsList, epsList, timeUsageList })
 						plot.SetStartMove(startMove);
@@ -982,8 +1005,28 @@ public partial class Tournaments
 						AddMoveToCharts(move);
 					}
 				});
+				// The board and the move list where the game stands: the page is new, and without this they
+				// stay at the start until the next move. A move that came in meanwhile has set them already.
+				if (currentGame != null && ReferenceEquals(TournamentSvc.CurrentGame, currentGame) && string.IsNullOrEmpty(moveHistory))
+				{
+					if (lastMove != null)
+					{
+						moveHistory = lastMove.Info.MoveHistory;
+						board.LoadFen(lastMove.Info.MoveAndFen.FenAfterMove);
+						await streamingBoard.OnNotifyMoveAndFen(lastMove.Info.MoveAndFen);
+						await streamingBoard.UpdateMoveHistory(moveHistory);
+					}
+					else if (currentGame.OpeningMovesAndFen.Count > 0)
+						await streamingBoard.OnNotifyMoveAndFen(currentGame.OpeningMovesAndFen[currentGame.OpeningMovesAndFen.Count - 1]);
+					else
+						await streamingBoard.OnNewFen(currentGame.StartPos);
+				}
 				await DoChartUpdates();
 				chartsDrawnBeforeLayout = true;
+				// speed, pentanomial error and pair counts from the PGN games, as at the start of a game: after
+				// the subscription, in the background - a long PGN would hold up the page, and updates that
+				// came in meanwhile would be missed
+				_ = RefreshStandingsFromPgn();
 			}
 			else if (FeedMode)
 			{
@@ -1104,6 +1147,7 @@ public partial class Tournaments
 			infoBannerInfo.TimeLeftTxt = bannerTime;
 			infoBannerInfo.TournamentEndsTxt = bannerEnd;
 			infoBannerInfo.Round = roundNr;
+			ApplyCarriedBannerFields();
 			windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight") - 10;
 			tournamentHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "main-screen");
 			var cycleT = await chessModule.InvokeAsync<double>("calculateHeightByElementId", "cycleTable");
