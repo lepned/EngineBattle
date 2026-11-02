@@ -1,0 +1,748 @@
+@page "/play/repertoire"
+@using WebGUI.Components.Layout.ChessboardLayout
+@using WebGUI.Components.Layout
+@using WebGUI.Components.Layout.ExperimentalLayout
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+@using RT = ChessLibrary.RepertoireTrainer
+@using RB = ChessLibrary.RepertoireBuild
+@implements IDisposable
+@inject GlobalSettingsService SettingsService
+@inject RepertoireBuildService BuildService
+@inject NotifierService Notifier
+@inject IDialogService DialogService
+@inject ILogger<RepertoireTrainerPage> logger
+
+<PageTitle>Repertoire Trainer</PageTitle>
+
+<div class="rt-container" style="@($"--rt-board:{boardSizePx}px")">
+    <header class="rt-topbar">
+        <h2 class="rt-title">Repertoire Trainer</h2>
+        @if (!building)
+        {
+            <span class="rt-file-name" title="@path">@(string.IsNullOrWhiteSpace(path) ? "no repertoire chosen" : Path.GetFileName(path))</span>
+            <button class="rt-btn" title="Choose a repertoire PGN (made with Build or eb-cli book repertoire)" @onclick="Browse">Browse</button>
+        }
+        <span class="rt-spacer"></span>
+        @if (!building && state != null)
+        {
+            <div class="rt-modes">
+                @foreach (var (label, mode, tip) in Modes)
+                {
+                    <button class="rt-mode @(state.Mode.Equals(mode) ? "is-on" : "")" title="@tip" @onclick="() => SetMode(mode)">@label</button>
+                }
+            </div>
+        }
+        <div class="rt-tabs">
+            <button class="rt-tab @(building ? "" : "is-on")" @onclick="() => SetTab(false)" title="Train a repertoire: the board plays the opponent, you answer">Train</button>
+            <button class="rt-tab @(building ? "is-on" : "")" @onclick="() => SetTab(true)" title="Make a repertoire from the position on the board">Build</button>
+        </div>
+    </header>
+
+    @if (!building && error != null)
+    {
+        <div class="rt-error">@error</div>
+    }
+
+    <div class="rt-main">
+        <div class="rt-board-col">
+            <ModernChessboard @ref="chessBoardRazor" ChessBoard="@board" FENposition="@fen"
+                              ShowFenField="false" ShowChessNavButtons="@BoardFree" ShowMoveList="true"
+                              MoveListPosition="MoveListPosition.Right" MoveEvals="@MoveEvals" AllowNavigation="@BoardFree"
+                              MakeMoveListClickable="@BoardFree" AboveMoveList="@Rail" BelowBoard="@Bar"
+                              ShowSizeSlider="true" SizeKey="repertoire-trainer" ShowPositionStatus="false"
+                              OnBoardSizeChanged="@(n => { boardSizePx = n; StateHasChanged(); })"
+                              ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
+                              ExtraArrows="@Arrows" OnBoardFlipped="OnBoardFlipped"
+                              OnMoveMadeOnBoard="OnBoardMove" OnNewFENOnBoard="OnBoardFen" />
+
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Label, RT.Mode Mode, string Tip)[] Modes =
+    {
+        ("All lines", RT.Mode.AllLines, "Every line, the most played most often, due ones first"),
+        ("Traps", RT.Mode.Traps, "Only lines where the opponent makes a mistake to punish"),
+        ("Due", RT.Mode.Due, "Only lines with a position that is due again"),
+    };
+
+    private ModernChessboard chessBoardRazor;
+    private Chess.Board board = new();
+    private string fen = MiscTypes.startPosition;
+    private string path = "";
+    private string error;
+    private RT.State state;
+    private RT.Counts counts = new(0, 0);
+    private readonly Random random = new();
+    // The moves the board shows, from the start position; the board raises OnMoveMadeOnBoard for our
+    // own moves too, which are not the trainee's.
+    private readonly List<string> shown = new();
+    private bool applying;
+    private int syncGeneration;
+    private bool boardFlipped;
+    // the board's slider size: the layout keeps room for it (and the move list beside it)
+    private int boardSizePx = 700;
+
+    protected override void OnInitialized()
+    {
+        path = SettingsService.Settings.RepertoireTrainerFile ?? "";
+        boardSizePx = Math.Clamp(SettingsService.Settings.BoardSizeFor("repertoire-trainer"), 360, 900);
+        // one engine for Build and the kibitzer, at first the default engine
+        judgePath = SettingsService.Settings.DefaultEnginePath ?? "";
+        engineOn = SettingsService.Settings.RepertoireTrainerEngine;
+        engineMounted = engineOn;
+        if (engineOn) LoadDefaultEngine();
+        BuildService.Changed += OnBuildChanged;
+        // the page opens in Build: the board is the opening to build from
+        building = true;
+        ReadEngineFolder();
+    }
+
+    public void Dispose() => BuildService.Changed -= OnBuildChanged;
+
+    // ---------------------------------------------------------------- the board's bar and the right rail
+
+    // The answer (Train) or the build (Build), under the board and as wide as it.
+    private RenderFragment Bar => @<div class="rt-bar @(building ? BuildClass : FeedbackClass)">
+        @if (building)
+        {
+            <span class="rt-bar-text">@(BuildService.State == RepertoireBuildService.BuildState.Idle ? "Play the opening on the board, then Build." : BuildStatus)</span>
+            <button class="rt-btn rt-primary" @onclick="StartBuild" disabled="@BuildService.IsRunning">Build</button>
+            <button class="rt-btn" @onclick="BuildService.Stop" disabled="@(!BuildService.IsRunning)" title="Stop; Build again goes on from the cache">Stop</button>
+            @if (BuildService.State == RepertoireBuildService.BuildState.Done)
+            {
+                <button class="rt-btn rt-primary" @onclick="TrainBuilt">Train it</button>
+            }
+        }
+        else
+        {
+            <span class="rt-bar-text">@(state == null ? "Choose a repertoire with Browse, or make one in Build." : FeedbackText)</span>
+            @if (state != null)
+            {
+                <button class="rt-btn" @onclick="Show" disabled="@(!YourTurn)" title="Play the repertoire's move (counts as missed)">Show</button>
+                <button class="rt-btn rt-primary" @onclick="NextLine" title="Start the next line">Next line</button>
+            }
+        }
+    </div>;
+
+
+    // Train: the note on the opponent's move, the stats and the engine drawer; Build: the form and its log.
+    private RenderFragment Rail => @<div class="rt-rail">
+        @if (building)
+        {
+            <div class="rt-field">
+                <span class="rt-label">For</span>
+                <button class="rt-mode @(BuildWhite ? "is-on" : "")" @onclick="() => buildSide = true">White</button>
+                <button class="rt-mode @(BuildWhite ? "" : "is-on")" @onclick="() => buildSide = false">Black</button>
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">Engine</span>
+                <EnginePicker Engines="@EngineDefs" SelectedPath="@judgePath" Title="The engine that judges every move"
+                              OnPicked="UseEngine" />
+                <button class="rt-btn" title="An engine definition from another folder" @onclick="BrowseJudge">Other…</button>
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">People</span>
+                <select class="rt-select" @bind="humanPath" title="A net that plays like people (Maia): the opponent's moves as they are played">
+                    <option value="">none (the engine's replies only)</option>
+                    @foreach (var def in HumanDefs)
+                    {
+                        <option value="@def">@Path.GetFileNameWithoutExtension(def)</option>
+                    }
+                </select>
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">Moves ahead</span>
+                <input class="rt-num" type="number" min="1" max="20" @bind="buildMoves" @bind:event="oninput" title="Moves of each side to explore from the position on the board" />
+                <span class="rt-hint">= @(Math.Max(1, buildMoves) * 2) half-moves; forced lines run longer</span>
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">Search</span>
+                <select class="rt-select rt-kind" value="@limitKind" @onchange="e => SetLimitKind(e.Value?.ToString())" title="What limits the engine's search of a position">
+                    <option value="nodes">Nodes</option>
+                    <option value="movetime">Time (ms)</option>
+                    <option value="depth">Depth</option>
+                </select>
+                <input class="rt-num rt-wide" type="number" min="1" @bind="limitValue" title="@LimitTip" />
+            </div>
+            <div class="rt-field">
+                <span class="rt-label">File</span>
+                <input class="rt-text" type="text" value="@BuildOut" @onchange="e => outEdited = e.Value?.ToString()" title="The repertoire PGN; the caches go next to it" />
+            </div>
+            <details class="rt-more">
+                <summary>More options</summary>
+                <div class="rt-field">
+                    <span class="rt-label">Replies</span>
+                    <input class="rt-num" type="number" min="1" @bind="buildReplies" title="Opponent replies explored further per position" />
+                    <span class="rt-label rt-short">Window</span>
+                    <input class="rt-num" type="number" step="0.1" min="0" @bind="buildWindow" title="Replies this close (pawns) to the opponent's best are explored" />
+                </div>
+                <div class="rt-field">
+                    <span class="rt-label">Traps</span>
+                    <input class="rt-num" type="number" min="0" @bind="buildTraps" title="An idea after which the opponent must find this many only moves may cost up to Risk (0: off)" />
+                    <span class="rt-label rt-short">Risk</span>
+                    <input class="rt-num" type="number" step="0.1" min="0" @bind="buildRisk" title="What such an idea may cost (pawns)" />
+                </div>
+                <div class="rt-field">
+                    <label title="Only the mainline and the branches with an opponent mistake, an only move or a trap"><input type="checkbox" @bind="buildCritical" /> Critical lines only</label>
+                </div>
+                <div class="rt-field">
+                    <span class="rt-label">Book</span>
+                    <input class="rt-text" type="text" @bind="buildBook" placeholder="a Polyglot book (.bin), optional" title="Its moves played often are answered too" />
+                </div>
+            </details>
+            @if (buildError != null)
+            {
+                <div class="rt-error">@buildError</div>
+            }
+            @if (BuildService.Log.Count > 0)
+            {
+                <div class="rt-log">
+                    @foreach (var line in BuildService.Log)
+                    {
+                        <div>@line</div>
+                    }
+                </div>
+            }
+        }
+        else if (state != null)
+        {
+            <div class="rt-side">You play @(state.Tree.White ? "White" : "Black")</div>
+            @if (OpponentNote is { } note)
+            {
+                <div class="rt-note"><span class="rt-note-move">@note.Move</span> @note.Text</div>
+            }
+            <div class="rt-stats">
+                <span>Right</span><b>@state.Right</b><span>Wrong</span><b>@state.Wrongs</b>
+                <span>Lines</span><b>@state.Progress.Lines</b><span>Due</span><b>@counts.Due</b>
+                <span>Positions</span><b>@state.Tree.OurPositions</b><span>New</span><b>@counts.New</b>
+            </div>
+        }
+
+        <div class="rt-drawer @(engineOn ? "is-open" : "")">
+            <button class="rt-drawer-head" @onclick="ToggleEngine" aria-expanded="@(engineOn ? "true" : "false")"
+                    title="An engine to look at the position on the board: in Build and after a line, never during a line">
+                <span class="rt-drawer-arrow" aria-hidden="true">@(engineOn ? "▾" : "▸")</span>
+                <b>Engine</b>
+                <span class="rt-drawer-sum">@EngineSummary</span>
+            </button>
+            @if (engineMounted)
+            {
+                @* the broadcast page's compact kibitzer: held (stopped, its lines cleared) during a line *@
+                <div class="rt-kibitzer @(engineOn && !BuildService.IsRunning ? "" : "rt-engine-hidden")">
+                    <KibitzerPanel @ref="kibitzer" ChessBoard="@board" Id="@EngineSlot.A"
+                                   InitialEngine="engineConfig" InitialEnginePath="@judgePath"
+                                   OnEvalUpdated="OnEngineEval" OnEngineChanged="OnKibitzerEngine" />
+                </div>
+            }
+        </div>
+    </div>;
+
+    // ---------------------------------------------------------------- engine
+
+    // the drawer is open (remembered); the panel stays mounted once opened, so closing it keeps the engine
+    private bool engineOn;
+    private bool engineMounted;
+    private string engineEval;
+    private EngineConfig engineConfig;
+    private KibitzerPanel kibitzer;
+
+    // The engine sees the board only when it is free: after a line and in Build. During a line it
+    // would give the answer away.
+    private bool EngineAllowed => engineMounted && BoardFree && !BuildService.IsRunning;
+
+    private async Task ToggleEngine()
+    {
+        engineOn = !engineOn;
+        var settings = SettingsService.Settings;
+        settings.RepertoireTrainerEngine = engineOn;
+        SettingsService.Save(settings);
+        if (engineOn)
+        {
+            engineMounted = true;
+            if (engineConfig == null) LoadDefaultEngine();
+        }
+        StateHasChanged();
+        if (engineOn) await TellEngine();
+    }
+
+    private void OnEngineEval((double? Cp, int? Mate, string Fen) eval)
+    {
+        engineEval = eval.Mate is int m ? $"#{m}"
+            : eval.Cp is double cp ? cp.ToString("+0.00;-0.00", System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+        StateHasChanged();
+    }
+
+    // The drawer's closed line: what the engine says, or why it says nothing.
+    private string EngineSummary =>
+        // open, the panel shows the eval itself (the title's would lag behind it)
+        BuildService.IsRunning ? "paused while building"
+        : engineOn && BoardFree && engineMounted ? ""
+        : !engineMounted ? "open to analyse the board"
+        : !BoardFree ? "paused during the line"
+        : engineEval ?? "press ▶ to analyse";
+
+    // The kibitzer starts on the shared engine (Build's, at first the default engine).
+    private void LoadDefaultEngine()
+    {
+        var path = !string.IsNullOrWhiteSpace(judgePath) ? judgePath : SettingsService.Settings.DefaultEnginePath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        try { engineConfig = Configuration.JSON.readSingleEngineConfig(path); }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not read the engine {Path}", path); }
+    }
+
+    // One engine for both: picked in Build, the kibitzer takes it too; picked in the kibitzer, Build does.
+    private async Task UseEngine(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        judgePath = path;
+        engineConfig = null;
+        if (kibitzer != null) await kibitzer.SelectEngine(path);
+    }
+
+    private void OnKibitzerEngine(string path)
+    {
+        if (!EnginePicker.Same(path, judgePath)) judgePath = path;
+    }
+
+    // The position on the board to the engine, when it may see it; else it holds: its search stops
+    // and its lines clear, so nothing of the line's answer stays on screen.
+    private async Task TellEngine()
+    {
+        if (!engineMounted || kibitzer == null) return;
+        if (EngineAllowed)
+        {
+            kibitzer.ReleasePosition();
+            await Notifier.UpdateFen(board.FEN());
+        }
+        else
+        {
+            engineEval = null;
+            await kibitzer.HoldPosition();
+        }
+    }
+
+    // Navigation on a free board (the move list, the arrows).
+    private async Task OnBoardFen(string newFen)
+    {
+        if (applying) return;
+        if (EngineAllowed) await Notifier.UpdateFen(board.FEN());
+    }
+
+    // A build that starts or ends: the kibitzer holds while it runs (the two would share the engine's
+    // GPU or cores) and looks again after.
+    private bool buildWasRunning;
+
+    private void OnBuildChanged() => _ = InvokeAsync(async () =>
+    {
+        var running = BuildService.IsRunning;
+        if (running != buildWasRunning)
+        {
+            buildWasRunning = running;
+            await TellEngine();
+        }
+        StateHasChanged();
+    });
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && File.Exists(path)) await Load(path);
+    }
+
+    private bool YourTurn =>
+        state != null && !state.Over && !state.Here.IsEmpty && (state.Fen.Split(' ')[1] == "w") == state.Tree.White;
+
+    private async Task Browse()
+    {
+        var initial = !string.IsNullOrWhiteSpace(path) && File.Exists(path)
+            ? Path.GetDirectoryName(path) ?? ""
+            : SettingsService.Settings.PgnOutputFolder ?? "";
+        var parameters = new DialogParameters<FileBrowserDialog>
+        {
+            { x => x.InitialPath, initial },
+            { x => x.FileFilter, "*.pgn" },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<FileBrowserDialog>("Select a repertoire PGN", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) await Load((string)result.Data!);
+    }
+
+    private async Task Load(string file)
+    {
+        error = null;
+        try
+        {
+            var loaded = RT.load(await File.ReadAllTextAsync(file), true);
+            if (loaded.IsError)
+            {
+                error = $"{Path.GetFileName(file)}: {loaded.ErrorValue}";
+                StateHasChanged();
+                return;
+            }
+            path = file;
+            var settings = SettingsService.Settings;
+            settings.RepertoireTrainerFile = file;
+            SettingsService.Save(settings);
+            var progress = RT.loadProgress(RT.progressPath(file));
+            await Apply(RT.start(loaded.ResultValue, progress, state?.Mode ?? RT.Mode.AllLines, random.NextDouble()));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not load the repertoire {File}", file);
+            error = $"Could not read {Path.GetFileName(file)}: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private Task NextLine() => Step(RT.Event.NewNextLine(random.NextDouble()));
+    private Task Show() => Step(RT.Event.NewShow(random.NextDouble()));
+    private Task SetMode(RT.Mode mode) => Step(RT.Event.NewSetMode(mode, random.NextDouble()));
+
+    private async Task OnBoardMove(string uci)
+    {
+        // in Build the board is the opening to build from; Train sets it up again
+        if (building) { boardTouched = true; await TellEngine(); StateHasChanged(); return; }
+        if (applying || state == null) return;
+        // after the line the board is the trainee's to look around on; Next line sets it up again
+        if (state.Over) { await TellEngine(); return; }
+        // the board shows it now
+        shown.Add(uci);
+        if (!YourTurn)
+        {
+            // not the trainee's move to make: the board goes back to the line
+            await Sync(force: true);
+            return;
+        }
+        await Step(RT.Event.NewPlay(uci, random.NextDouble()));
+    }
+
+    private Task Step(RT.Event e) => state == null ? Task.CompletedTask : Apply(RT.step(state, e));
+
+    // Navigating (arrows, move list) only once the line is over: a step back during it would look like a
+    // move. In Build the board is free.
+    private bool LineOver => state?.Over == true;
+    private bool BoardFree => building || LineOver;
+
+    private async Task Apply(RT.State next)
+    {
+        // after a finished line or Build the board may have been navigated or played on: set it up afresh
+        var lookedAround = state?.Over == true || boardTouched;
+        boardTouched = false;
+        state = next;
+        counts = RT.counts(state);
+        if (state.Changed)
+        {
+            try { RT.saveProgress(RT.progressPath(path), state.Progress); }
+            catch (Exception ex) { logger.LogWarning(ex, "Could not save the training progress for {File}", path); }
+        }
+        // in Build the board is the opening being built from; Train sets the line up when it is chosen
+        if (building) { StateHasChanged(); return; }
+        await EnsureOrientation();
+        // a new line: the engine stops before the board shows it
+        if (!state.Over) await TellEngine();
+        await Sync(force: lookedAround);
+        // the line is over: the engine may look at where it ended
+        if (state.Over) await TellEngine();
+        StateHasChanged();
+    }
+
+    // The board shows the line: moves added are played (the opponent's after a moment), anything else
+    // (a wrong move taken back, an accepted alternative replaced, a new line) starts the board over.
+    private async Task Sync(bool force)
+    {
+        if (chessBoardRazor == null || state == null) return;
+        // a later Sync, or leaving Train, ends this one: its moves are not played on a board that has moved on
+        var generation = ++syncGeneration;
+        var target = state.Played.Reverse().Select(n => n.Uci).ToList();
+        var extends = !force && shown.Count <= target.Count && shown.SequenceEqual(target.Take(shown.Count));
+        applying = true;
+        try
+        {
+            if (!extends)
+            {
+                // a full reset first: the move list and any navigation go, even at the start position
+                await chessBoardRazor.ResetGameState();
+                board.ResetBoardStateFromFen(state.Tree.StartFen);
+                fen = state.Tree.StartFen;
+                await chessBoardRazor.OnReceivedFen(fen);
+                shown.Clear();
+            }
+            foreach (var uci in target.Skip(shown.Count).ToList())
+            {
+                if (extends) await Task.Delay(300);
+                if (generation != syncGeneration || building) return;
+                if (!await chessBoardRazor.PlayMove(uci))
+                {
+                    logger.LogWarning("The board refused {Move} in the repertoire line", uci);
+                    break;
+                }
+                shown.Add(uci);
+            }
+            fen = board.FEN();
+        }
+        finally
+        {
+            if (generation == syncGeneration) applying = false;
+        }
+    }
+
+    private async Task EnsureOrientation()
+    {
+        var shouldBeFlipped = !state.Tree.White;
+        if (boardFlipped != shouldBeFlipped && chessBoardRazor != null)
+        {
+            await chessBoardRazor.RotateBoard();
+            boardFlipped = shouldBeFlipped;
+        }
+    }
+
+    private Task OnBoardFlipped(bool isFlipped)
+    {
+        boardFlipped = isFlipped;
+        return Task.CompletedTask;
+    }
+
+    private static string Eval(RT.Node n) =>
+        n.Eval is { } e ? (e.Value >= 0 ? "+" : "") + e.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "";
+
+    private string Done => state.Over ? " The line is done." : "";
+
+    private string FeedbackText => state?.Feedback switch
+    {
+        RT.Feedback.Correct c => $"Right: {c.Item.San}.{Done}",
+        RT.Feedback.AlsoGood a => $"{a.played.San} is also good; the repertoire plays {a.main.San}.{Done}",
+        RT.Feedback.Wrong w => $"Not the repertoire's move. It plays {w.expected.San} ({Eval(w.expected)}): play it to go on.",
+        RT.Feedback.Shown s => $"The repertoire plays {s.Item.San} ({Eval(s.Item)}).{Done}",
+        { IsLineDone: true } => "The line is done.",
+        { IsNothingToTrain: true } => state.Mode.IsTraps ? "No traps in this repertoire." : "Nothing is due: train all lines.",
+        _ => YourTurn ? "Your move." : "",
+    };
+
+    private string FeedbackClass => state?.Feedback switch
+    {
+        RT.Feedback.Correct or RT.Feedback.AlsoGood => "is-right",
+        RT.Feedback.Wrong or RT.Feedback.Shown => "is-wrong",
+        _ => "",
+    };
+
+    // The comment of the opponent's move (how often it is played, what is better): after a miss the
+    // move to answer, else the one just answered - never the next, which would tell a mistake.
+    private (string Move, string Text)? OpponentNote
+    {
+        get
+        {
+            var shown = state?.Feedback is RT.Feedback.Wrong ? state.Opponent : state?.Answered;
+            if (shown is not { } opponent) return null;
+            var text = RT.text(opponent.Value.Comment);
+            var mistake = opponent.Value.Mistake;
+            return (opponent.Value.San + mistake, text);
+        }
+    }
+
+    // The line's evals by ply for the move list (White's view); not the opponent's move still to answer:
+    // its eval would tell a mistake before it is punished.
+    private Dictionary<int, string> MoveEvals
+    {
+        get
+        {
+            var evals = new Dictionary<int, string>();
+            if (state == null || building) return evals;
+            var line = state.Played.Reverse().ToList();
+            var hidden = YourTurn ? line.Count - 1 : -1;
+            for (var i = 0; i < line.Count; i++)
+            {
+                if (i == hidden || line[i].Eval == null) continue;
+                evals[i] = Eval(line[i]);
+            }
+            return evals;
+        }
+    }
+
+    // The repertoire's move after a miss, in green.
+    private IReadOnlyList<EbArrow> Arrows =>
+        state?.Feedback is RT.Feedback.Wrong w
+            ? new[] { new EbArrow(w.expected.Uci.Substring(0, 2), w.expected.Uci.Substring(2, 2), "#4caf50", 0.8) }
+            : Array.Empty<EbArrow>();
+
+    // ---------------------------------------------------------------- Build
+
+    private bool building = true;
+    // the board was played on or navigated outside a line: Train sets it up again
+    private bool boardTouched;
+    private bool? buildSide;
+    private string judgePath = "";
+    private string humanPath = "";
+    // moves of each side; the repertoire counts half-moves (twice as many)
+    private int buildMoves = 5;
+    // the search a position: nodes (the default, the same every run), time per position or depth
+    private string limitKind = "nodes";
+    private int limitValue = 2_000_000;
+    private int buildReplies = OpeningRepertoire.Settings.Defaults.Replies;
+    private double buildWindow = OpeningRepertoire.Settings.Defaults.Window;
+    private int buildTraps = OpeningRepertoire.Settings.Defaults.Traps;
+    private double buildRisk = OpeningRepertoire.Settings.Defaults.Risk;
+    private bool buildCritical;
+    private string buildBook = "";
+    private string outEdited;
+    private string buildError;
+
+    private async Task SetTab(bool build)
+    {
+        if (building == build) return;
+        building = build;
+        // a line still being played out stops here
+        syncGeneration++;
+        applying = false;
+        if (!build && state != null)
+        {
+            // back to the line: the board as the trainer left it, turned to the trainee's side
+            boardTouched = false;
+            await EnsureOrientation();
+            await Sync(force: true);
+        }
+        else
+        {
+            boardTouched = true;
+            ReadEngineFolder();
+        }
+        StateHasChanged();
+        await TellEngine();
+    }
+
+    // The position on the board (to the cursor): what the repertoire is built from.
+    private (string Fen, Microsoft.FSharp.Collections.FSharpList<string> Moves) BuildFrom
+    {
+        get
+        {
+            var parsed = RB.ofPositionCommand(board.PositionWithMovesFromGraph());
+            return (parsed.Item1, parsed.Item2);
+        }
+    }
+
+    private bool BuildWhite => buildSide ?? RB.sideOf(BuildFrom.Fen, BuildFrom.Moves);
+
+    private string OutFolder =>
+        !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? Path.GetDirectoryName(path)
+        : !string.IsNullOrWhiteSpace(SettingsService.Settings.PgnOutputFolder) ? SettingsService.Settings.PgnOutputFolder
+        : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+    private string BuildOut =>
+        !string.IsNullOrWhiteSpace(outEdited) ? outEdited
+        : Path.Combine(OutFolder, RB.fileName(BuildWhite, BuildFrom.Fen, BuildFrom.Moves)).Replace('\\', '/');
+
+    // The engine folder's defs: every one for the judge, those that look like a human net (Maia) for
+    // People. Read when the page opens and when Build is chosen, not on every render (a build renders
+    // the page at every search).
+    private IReadOnlyList<EnginePicker.Entry> EngineDefs = Array.Empty<EnginePicker.Entry>();
+    private IReadOnlyList<string> HumanDefs = Array.Empty<string>();
+
+    private void ReadEngineFolder()
+    {
+        var folder = SettingsService.Settings.EngineDefsFolder;
+        try
+        {
+            var files = string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)
+                ? Array.Empty<string>()
+                : Directory.GetFiles(folder, "*.json").OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase).ToArray();
+            EngineDefs = files.Select(f => new EnginePicker.Entry(f.Replace('\\', '/'), Path.GetFileNameWithoutExtension(f))).ToList();
+            HumanDefs = files.Where(f => Path.GetFileName(f).Contains("maia", StringComparison.OrdinalIgnoreCase)).Select(f => f.Replace('\\', '/')).ToList();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not read the engine folder {Folder}", folder);
+        }
+    }
+
+    private async Task BrowseJudge()
+    {
+        var initial = !string.IsNullOrWhiteSpace(judgePath) && File.Exists(judgePath)
+            ? Path.GetDirectoryName(judgePath) ?? ""
+            : SettingsService.Settings.EngineDefsFolder ?? "";
+        var parameters = new DialogParameters<FileBrowserDialog>
+        {
+            { x => x.InitialPath, initial },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<FileBrowserDialog>("Select the engine", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) await UseEngine((string)result.Data!);
+    }
+
+    private void StartBuild()
+    {
+        buildError = null;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(judgePath) || !File.Exists(judgePath)) throw new InvalidOperationException("choose the engine (an engine definition, .json)");
+            if (buildMoves < 1 || limitValue < 1) throw new InvalidOperationException("moves ahead and the search limit must be at least 1");
+            var from = BuildFrom;
+            // the position at the cursor, which the build starts from (not the board's last one)
+            var at = from.Moves.Aggregate(from.Fen, (f, m) => BoardUtils.tryMakeMove(f, m).Value);
+            var status = BoardUtils.getPositionStatus(at).Status;
+            if (status == "checkmate" || status == "stalemate") throw new InvalidOperationException($"the position is {status}: nothing to explore");
+            var book = buildBook?.Trim() ?? "";
+            if (book != "" && (!File.Exists(book) || !PolyglotFormat.isBookPath(book)))
+                throw new InvalidOperationException($"the book is not a Polyglot book (.bin) that exists: {book}");
+            var outPath = BuildOut;
+            var folder = Path.GetDirectoryName(outPath);
+            if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
+            var settings = RB.settings(BuildWhite, buildMoves * 2, Math.Max(1, buildReplies), Math.Max(0, buildWindow), Math.Max(0, buildTraps), Math.Max(0, buildRisk), buildCritical);
+            var request = RB.guiRequest(judgePath, humanPath, book, settings, from.Fen, from.Moves, limitKind, limitValue, outPath);
+            if (!BuildService.Start(request)) buildError = "A build is running already.";
+        }
+        catch (Exception ex)
+        {
+            buildError = ex.Message;
+        }
+    }
+
+    private void SetLimitKind(string kind)
+    {
+        limitKind = kind ?? "nodes";
+        limitValue = limitKind switch { "movetime" => 1000, "depth" => 20, _ => 2_000_000 };
+    }
+
+    private string LimitTip => limitKind switch
+    {
+        "movetime" => "Milliseconds the engine searches a position (depends on the machine's speed and load)",
+        "depth" => "The depth the engine searches a position to",
+        _ => "Nodes the engine searches a position (the same result every run)",
+    };
+
+    private async Task TrainBuilt()
+    {
+        var file = BuildService.OutPath;
+        await SetTab(false);
+        await Load(file);
+    }
+
+    private string BuildStatus
+    {
+        get
+        {
+            var time = BuildService.Elapsed.ToString(@"hh\:mm\:ss");
+            return BuildService.State switch
+            {
+                RepertoireBuildService.BuildState.Running => $"Building: {BuildService.Searched} positions searched, {time}.",
+                RepertoireBuildService.BuildState.Done when BuildService.Outcome is { } o =>
+                    $"Done: {o.Report.Lines} lines, the deepest {o.Report.Depth} plies; {o.Searched} positions searched in {time}.",
+                RepertoireBuildService.BuildState.Stopped => $"Stopped after {BuildService.Searched} positions. Build again goes on from the cache.",
+                RepertoireBuildService.BuildState.Failed => $"Failed: {BuildService.Error}",
+                _ => "",
+            };
+        }
+    }
+
+    private string BuildClass => BuildService.State switch
+    {
+        RepertoireBuildService.BuildState.Done => "is-right",
+        RepertoireBuildService.BuildState.Failed => "is-wrong",
+        _ => "",
+    };
+}

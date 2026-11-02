@@ -29,6 +29,10 @@ public class GlobalSettings
     public string TablebaseFolder { get; set; } = "";
     /// <summary>The Polyglot book (.bin) the analysis page's Book card shows; empty for none.</summary>
     public string AnalysisBookPath { get; set; } = "";
+    /// <summary>The repertoire PGN (book repertoire) the trainer opened last.</summary>
+    public string RepertoireTrainerFile { get; set; } = "";
+    /// <summary>The Repertoire Trainer shows its engine panel (off by default).</summary>
+    public bool RepertoireTrainerEngine { get; set; } = false;
     /// <summary>The Lichess bot page: token, engine, filter and how it plays (LichessBotService).</summary>
     public LichessBotOptions LichessBot { get; set; } = new();
     public string NeuralNetFolder { get; set; } = "";

@@ -151,6 +151,8 @@ Puzzles, books, tournaments and tuning
   book eval <book>                Filter an opening book down to balanced openings, checked by engines
   book make <pgn>                 Make a Polyglot book (.bin) from PGN games
   book export <book>              Write a Polyglot book's opening lines as PGN
+  book repertoire <engine>        An opening repertoire for one side, as a PGN with variations
+  book bot <engine>               An opening book (.bin) for a bot, both sides, searched by an engine
   puzzle run <config>             Run a Lichess puzzle test from a config
   puzzle eret <config>            Run an ERET test suite (EPD best-move positions) from a config
   puzzle trend                    Puzzle scores across a net's training checkpoints, from saved runs
@@ -736,6 +738,117 @@ Examples:
       The main lines of the book as openings
   eb-cli book export ccc.bin --count 500 --seed 2025 --max-ply 16
       The 500 openings a tournament with Seed 2025 plays
+```
+### book repertoire
+
+```text
+An opening repertoire for one side, as a PGN with variations
+
+Usage: eb-cli book repertoire <engine> [<fen>] [options]
+
+From the position (and --moves) the side of --side plays one move: the objectively best when the position is clear, a sound idea when it is level (|eval| below --equal) - or a riskier one (up to --risk) after which the opponent must find --traps only moves in a row, hard over the board; those come first. Up to --consider replies of the opponent are looked at, leaving out any that lose more than --catastrophe; those within --window of its best (at most --replies) are explored further, every other one gets our answer and the engine's line - marked ?!/?/?? with our ! move where it gives winning chances away. A line never ends mid-exchange. Where the opponent has one good move (the next is --only-move worse) the line runs on and the second best is punished. Every move carries [%eval] (White's view) in its comment. With --human a net that plays like people (Lc0 with a Maia net for the opponent's rating) adds the replies it plays at least --human-share of the time, however bad, and the replies explored are the most played of those near the best; each reply shows how often people play it. With --contempt an Lc0 picks the ideas for that rating gap, the evals staying with an objective engine (--judge, else a second copy of the engine without contempt). Searches are kept in <out>.judge.cache (and .ideas.cache, .human.cache): a run started again, or with other tree settings, does not search a position twice. The first Ctrl+C stops; run again to go on from the cache.
+
+Arguments:
+  <engine>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
+  [<fen>]   a FEN (quoted, or its six fields as they come) or startpos (default startpos)
+
+Options:
+      --moves "MOVES"             Moves played from the position first, SAN or UCI ("e4 e5 Nf3" or "e2e4 e7e5")
+      --side w|b                  The side the repertoire is for
+      --plies N                   Plies to explore from the position (default 10)
+      --consider N                Opponent replies looked at per position (the engine's best and the book's) (default 5)
+      --catastrophe PAWNS         Replies that lose more than this against the opponent's best are left out (default 2)
+      --replies N                 Replies explored further per position; the rest considered get our answer only (default 3)
+      --window PAWNS              Replies this close to the opponent's best are explored further (default 0.5)
+      --ideas N                   Our moves looked at in a level position (default 3)
+      --equal PAWNS               Below this either way a position is level: ideas instead of the best move (default 0.3)
+      --margin PAWNS              An idea may cost this much against the objective best (default 0.3)
+      --traps N                   An idea after which the opponent must find N only moves in a row may cost up to --risk (0: off) (default 2)
+      --risk PAWNS                What such an idea may cost against the objective best (default 1)
+      --only-move PAWNS           The opponent's best this far ahead of its second is an only move (default 0.7)
+      --decided PAWNS             From this either way the line ends with the engine's PV (default 2)
+      --keep all|critical         critical: only the mainline and the branches with an opponent mistake (? or ??), an only move or a trap (default all)
+      --book FILE                 A Polyglot book (.bin): its moves played at least --book-share are answered too
+      --book-share PCT            The share of a book move to answer it (default 10)
+      --human ENGINE              A net that plays like the opponent (Lc0 with a Maia net): its policy at one node is how often people play each reply
+      --uci-human NAME=VALUE      Set a UCI option of the human net (repeatable)
+      --human-share PCT           Replies the human net plays at least this share (percent) are answered, however bad (default 10)
+      --contempt RATING,OPPONENT  Ideas from Lc0's contempt for this rating gap (e.g. 2200,1700)
+      --judge ENGINE              The engine for the evals (default: the engine)
+      --uci-judge NAME=VALUE      Set a UCI option of the judge (repeatable)
+      --nodes N                   Search this many nodes (default 10000)
+      --movetime MS               Search this many milliseconds
+      --depth N                   Search to this depth
+      --uci NAME=VALUE            Set a UCI option of the engine (repeatable)
+  -o, --out FILE                  The PGN (default Repertoire_<side>.pgn)
+      --force                     Write over a file that exists
+  At most one of --nodes, --movetime, --depth.
+
+Examples:
+  eb-cli book repertoire lc0.json --moves "e4 d5" --side b -o scandi.pgn
+      Black's answers to everything White tries after 1.e4 d5
+  eb-cli book repertoire lc0.json --moves "d4 d5 Nf3 Nf6 g3" --side w --contempt 2300,1800
+      Ideas for White against a weaker player, evals from Lc0 without contempt
+  eb-cli book repertoire lc0.json --moves "e4 d5" --side b --book human.bin --plies 14
+      Also the moves people play, deeper
+  eb-cli book repertoire sf.json --moves "e4 c5 Nf3 e6" --side b --human maia1500.json
+      The replies 1500 players make, their mistakes punished
+
+Exit codes:
+  0    success
+  1    the command ran and failed, or found problems
+  2    usage: an unknown command or option, a bad value, a missing input file
+  130  interrupted with Ctrl+C
+```
+
+To learn a repertoire, open the PGN in the [Repertoire Trainer](RepertoireTrainer.md) (**Play & Analysis → Repertoire Trainer**).
+
+### book bot
+
+```text
+An opening book (.bin) for a bot, both sides, searched by an engine
+
+Usage: eb-cli book bot <engine> [options]
+
+Searches a Polyglot book for a bot that plays White and Black from the start position. In a position of ours the engine's best move goes in, and every move within --within of it (the bot varies its play; each weighs 1). The opponent's replies explored are its best --replies within --window, and every move the games of --games show at least --min-games times (with --player, only the moves of that player's opponents: what is played against the bot). From --narrow-from on the tree no longer branches: our best move and the opponent's best reply (and the games' moves), so the lines run deep at little cost. With --policy the net's policy decides instead of evals (a net engine with VerboseMoveStats; --nodes 1 is enough and fast): our moves with --policy-within of the top move's policy, the opponent's replies with --min-policy. The book for Black answers --first. A position at --decided or more either way ends the line. The tree is written as PGN next to the book (<out>.pgn) to look through. Searches are kept in <out>.cache: a run started again, or with other settings, does not search a position twice. The first Ctrl+C stops; run again to go on from the cache.
+
+Arguments:
+  <engine>  an engine definition (.json), an engine executable, or the name of a definition in engineDefsFolder (eb-cli.json)
+
+Options:
+      --plies N              Plies from the start position (default 16)
+      --within PAWNS         Our moves this close to the best go in beside it (default 0.1)
+      --ideas N              Our moves looked at per position (default 3)
+      --replies N            The engine's replies for the opponent explored per position (default 3)
+      --window PAWNS         Replies this close to the opponent's best are explored (default 0.5)
+      --decided PAWNS        From this either way the line ends (default 2)
+      --first MOVES          White's first moves the book for Black answers, comma-separated (none: the engine's and the games') (default e4,d4,c4,Nf3)
+      --games FILE           Games (.pgn) whose moves are answered too; Chess960 games are skipped
+      --player NAME          Only the moves of this player's opponents in --games (the bot's account)
+      --min-games N          Times a move of the games must be played to be answered (default 1)
+      --narrow-from PLY      From this ply on only our best move and the opponent's best reply (and the games' moves) (default 8)
+      --policy               The net's policy decides instead of evals (Lc0, Ceres, Mycel with VerboseMoveStats; with --nodes 1 fast)
+      --policy-within SHARE  With --policy: our moves with this share of the top move's policy go in beside it (default 0.6)
+      --min-policy PCT       With --policy: the opponent's replies with this policy in percent (default 10)
+      --nodes N              Search this many nodes (default 10000)
+      --movetime MS          Search this many milliseconds
+      --depth N              Search to this depth
+      --uci NAME=VALUE       Set a UCI option of the engine (repeatable)
+  -o, --out FILE             The book (default Bot.bin)
+      --force                Write over a file that exists
+  At most one of --nodes, --movetime, --depth.
+
+Examples:
+  eb-cli book bot Stockfish19.json --movetime 2000 --uci Threads=16 -o mycel.bin
+      Both sides, 16 plies, 2 seconds a position
+  eb-cli book bot sf.json --movetime 2000 --games lichess-bot.pgn --player lepbot -o mycel.bin
+      Also every move the bot's opponents played
+
+Exit codes:
+  0    success
+  1    the command ran and failed, or found problems
+  2    usage: an unknown command or option, a bad value, a missing input file
+  130  interrupted with Ctrl+C
 ```
 ### puzzle run
 

@@ -109,6 +109,9 @@
 		<Compile Include="LichessBotTests.fs" />
 		<Compile Include="LichessMachineTests.fs" />
 		<Compile Include="OpeningDedupeTests.fs" />
+		<Compile Include="OpeningRepertoireTests.fs" />
+		<Compile Include="RepertoireTrainerTests.fs" />
+		<Compile Include="RepertoireBuildTests.fs" />
 		<Compile Include="SwissMachineTests.fs" />
 		<Compile Include="CupMachineTests.fs" />
 		<Compile Include="LadderMachineTests.fs" />

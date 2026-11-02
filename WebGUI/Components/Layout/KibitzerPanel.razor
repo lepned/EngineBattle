@@ -14,16 +14,8 @@
    and policy overlay publishing. Slim replacement for EnginePanel on viewer pages. *@
 <div class="kib-panel">
     <div class="kib-row">
-        <select class="kib-select kib-engine-select" value="@selectedPath" @onchange="OnEngineSelected" title="Analysis engine">
-            @if (engineFiles.Count == 0)
-            {
-                <option value="">no engine definitions found</option>
-            }
-            @foreach (var f in engineFiles)
-            {
-                <option value="@f.Path">@f.Name</option>
-            }
-        </select>
+        <EnginePicker Engines="@PickerEngines" SelectedPath="@selectedPath" Title="Analysis engine"
+                      OnPicked="@(path => OnEngineSelected(new ChangeEventArgs { Value = path }))" />
         <button class="kib-power @(running ? "on" : "")" disabled="@(engineConfig == null)"
                 @onclick="ToggleRunning" title="@(running ? "Stop analysis" : "Start analysis")">
             @(running ? "■" : "▶")
@@ -100,6 +92,9 @@
     [Parameter] public string Id { get; set; } = EngineSlot.A;
     [Parameter] public EngineConfig InitialEngine { get; set; }
     [Parameter] public string InitialEnginePath { get; set; }
+    /// <summary>The engine picked in the panel (its definition's path): a host that shares the choice
+    /// (the Repertoire Trainer's Build) follows it.</summary>
+    [Parameter] public EventCallback<string> OnEngineChanged { get; set; }
     /// <summary>White-perspective eval of the best line (pawns, or mate distance) plus the
     /// FEN the search was started on — feeds an eval bar / eval chart.</summary>
     [Parameter] public EventCallback<(double? Cp, int? Mate, string Fen)> OnEvalUpdated { get; set; }
@@ -343,10 +338,13 @@
         await Send(PanelModel.Event.EngineGone);
     }
 
+    private IReadOnlyList<EnginePicker.Entry> PickerEngines =>
+        engineFiles.Select(f => new EnginePicker.Entry(f.Path, f.Name)).ToList();
+
     private async Task OnEngineSelected(ChangeEventArgs e)
     {
         var path = e.Value?.ToString();
-        if (string.IsNullOrWhiteSpace(path) || path == selectedPath) return;
+        if (string.IsNullOrWhiteSpace(path) || EnginePicker.Same(path, selectedPath)) return;
         EngineConfig config;
         try
         {
@@ -370,7 +368,11 @@
         await Send(PanelModel.Event.Reset);
         // still on: the new engine starts and searches the position
         if (wasRunning) await StartOrLoad();
+        if (OnEngineChanged.HasDelegate) await OnEngineChanged.InvokeAsync(path);
     }
+
+    /// <summary>The host picked another engine (a shared choice): the panel takes it, as if picked here.</summary>
+    public Task SelectEngine(string path) => InvokeAsync(() => OnEngineSelected(new ChangeEventArgs { Value = path }));
 
     // A search of the board's position; on one with no legal move only the engine starts, and
     // auto-search searches the next position (Settled while Starting keeps it pending).

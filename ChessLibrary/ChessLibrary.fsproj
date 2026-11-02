@@ -140,6 +140,10 @@
 		<Compile Include="Analysis\GameAccuracyAnalysis.fs" />
 		<Compile Include="Analysis\ReviewModel.fs" />
 		<Compile Include="Analysis\BookEvaluation.fs" />
+		<Compile Include="Analysis\OpeningRepertoire.fs" />
+		<Compile Include="Analysis\EngineSearch.fs" />
+		<Compile Include="Analysis\RepertoireBuild.fs" />
+		<Compile Include="Analysis\RepertoireTrainer.fs" />
 		<Compile Include="Analysis\BroadcastFocus.fs" />
 		<Compile Include="Analysis\PuzzleDataUtils.fs" />
 		<Compile Include="Analysis\PuzzleEngineAnalysis.fs" />

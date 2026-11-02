@@ -11,6 +11,7 @@ let all: Entry list =
         @ Commands.Pgn.entries
         @ Commands.Engine.entries
         @ Commands.Runs.entries
+        @ Commands.Repertoire.entries
         @ Commands.Bot.entries
         @ Commands.Other.entries
         @ Commands.Gui.entries
@@ -37,6 +38,8 @@ let all: Entry list =
       e [ "book"; "eval" ]
       e [ "book"; "make" ]
       e [ "book"; "export" ]
+      e [ "book"; "repertoire" ]
+      e [ "book"; "bot" ]
       e [ "puzzle"; "run" ]
       e [ "puzzle"; "eret" ]
       e [ "puzzle"; "trend" ]

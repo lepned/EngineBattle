@@ -167,6 +167,7 @@ builder.Services.AddSingleton<OpeningExplorerService>();
 // Register the shutdown token provider so UI/services can link the tournament
 builder.Services.AddSingleton<ShutdownTokenProvider>();
 builder.Services.AddSingleton<TournamentService>();
+builder.Services.AddSingleton<RepertoireBuildService>();
 builder.Services.AddSingleton<TournamentFileService>();
 builder.Services.AddSingleton<JsonFeedService>();
 builder.Services.AddSingleton<WebGUI.Services.Ceres.CeresFeedBridge>();

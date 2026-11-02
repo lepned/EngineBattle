@@ -1,0 +1,114 @@
+@* A list of engine definitions to pick one from: a button, and a list the page draws (a native
+   select's popup keeps the system's thin scrollbar), filtered as you type. The kibitzer and the
+   Repertoire Trainer's Build use it. *@
+
+<div class="ep-picker">
+    <button type="button" class="ep-picker-btn" @onclick="Toggle" title="@Title"
+            aria-haspopup="listbox" aria-expanded="@(open ? "true" : "false")" disabled="@(Engines == null || Engines.Count == 0)">
+        <span class="ep-picker-name">@ButtonText</span>
+        <span aria-hidden="true">▾</span>
+    </button>
+    @if (open)
+    {
+        <div class="ep-picker-backdrop" @onclick="Close"></div>
+        <div class="ep-picker-pop">
+            <input @ref="filterRef" class="ep-picker-filter" type="text" placeholder="Filter engines"
+                   aria-label="Filter engines" @bind="filter" @bind:event="oninput" @bind:after="() => active = 0" @onkeydown="OnKey" />
+            <ul class="ep-picker-list" role="listbox" aria-label="Engines">
+                @foreach (var (e, i) in Items.Select((e, i) => (e, i)))
+                {
+                    <li role="option" aria-selected="@(Same(e.Path, SelectedPath) ? "true" : "false")" title="@e.Path"
+                        class="@(i == active ? "is-active" : "") @(Same(e.Path, SelectedPath) ? "is-selected" : "")"
+                        @onclick="() => Pick(e)" @onmouseover="() => active = i">@e.Name</li>
+                }
+                @if (Items.Count == 0)
+                {
+                    <li class="ep-picker-none">no engine matches</li>
+                }
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>An engine definition: its file and the name shown.</summary>
+    public record Entry(string Path, string Name);
+
+    [Parameter] public IReadOnlyList<Entry> Engines { get; set; }
+    /// <summary>The definition picked now (its path); shown on the button.</summary>
+    [Parameter] public string SelectedPath { get; set; }
+    /// <summary>The button's text when nothing in the list is picked.</summary>
+    [Parameter] public string Placeholder { get; set; } = "choose an engine";
+    /// <summary>The button's text when there are no definitions at all.</summary>
+    [Parameter] public string Empty { get; set; } = "no engine definitions found";
+    [Parameter] public string Title { get; set; } = "Engine";
+    [Parameter] public EventCallback<string> OnPicked { get; set; }
+
+    private bool open;
+    private string filter = "";
+    private int active;
+    private bool focusFilter;
+    private ElementReference filterRef;
+
+    private string ButtonText =>
+        Engines == null || Engines.Count == 0 ? Empty
+        : Engines.FirstOrDefault(e => Same(e.Path, SelectedPath))?.Name
+          ?? (string.IsNullOrWhiteSpace(SelectedPath) ? Placeholder : System.IO.Path.GetFileNameWithoutExtension(SelectedPath));
+
+    private List<Entry> Items =>
+        (Engines ?? Array.Empty<Entry>())
+            .Where(e => string.IsNullOrWhiteSpace(filter) || e.Name.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    /// <summary>One file, however its path is spelled (C:/x/y.json and C:\x\y.json).</summary>
+    public static bool Same(string a, string b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+        try { return string.Equals(System.IO.Path.GetFullPath(a), System.IO.Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+        catch (Exception) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
+    }
+
+    private void Toggle()
+    {
+        if (open) { Close(); return; }
+        open = true;
+        filter = "";
+        active = Math.Max(0, (Engines ?? Array.Empty<Entry>()).ToList().FindIndex(e => Same(e.Path, SelectedPath)));
+        focusFilter = true;
+    }
+
+    private void Close()
+    {
+        open = false;
+        filter = "";
+    }
+
+    private Task Pick(Entry e)
+    {
+        Close();
+        return OnPicked.InvokeAsync(e.Path);
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        var items = Items;
+        switch (e.Key)
+        {
+            case "ArrowDown": active = Math.Min(items.Count - 1, active + 1); break;
+            case "ArrowUp": active = Math.Max(0, active - 1); break;
+            case "Enter":
+                if (active >= 0 && active < items.Count) await Pick(items[active]);
+                break;
+            case "Escape": Close(); break;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusFilter && open)
+        {
+            focusFilter = false;
+            try { await filterRef.FocusAsync(); } catch (Exception) { /* the list closed meanwhile */ }
+        }
+    }
+}

@@ -1,0 +1,103 @@
+.ep-picker {
+    position: relative;
+    min-width: 0;
+    flex: 1;
+}
+
+.ep-picker-btn {
+    width: 100%;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 4px;
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.ep-picker-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.ep-picker-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ep-picker-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+}
+
+.ep-picker-pop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 1401;
+    min-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 6px;
+    background: var(--mud-palette-surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.ep-picker-filter {
+    padding: 6px 8px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 4px;
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+    font-size: 0.9rem;
+    font-family: inherit;
+}
+
+.ep-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 340px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    /* site.css makes scrollbars thin: this list gets a full-width one, in the theme's colours */
+    scrollbar-width: auto;
+    scrollbar-color: var(--mud-palette-text-secondary) var(--mud-palette-background);
+}
+
+.ep-picker-list li {
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ep-picker-list li.is-active {
+    background: var(--mud-palette-lines-default);
+}
+
+.ep-picker-list li.is-selected {
+    font-weight: 600;
+    color: var(--mud-palette-primary);
+}
+
+.ep-picker-list li.ep-picker-none {
+    cursor: default;
+    opacity: 0.7;
+}

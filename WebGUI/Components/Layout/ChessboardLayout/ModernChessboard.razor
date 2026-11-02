@@ -130,6 +130,11 @@
             </div>
         }
 
+        @if (BelowBoard != null)
+        {
+            <div class="mcb-below-board">@BelowBoard</div>
+        }
+
         @if (ShowFenField)
         {
             <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
@@ -346,6 +351,8 @@
         NeedsGutter && ThemeService.Current.FramePct <= 0 ? "transparent" : null;
     /// <summary>Optional content stacked above the move list in Right layout (e.g. an engine widget).</summary>
     [Parameter] public RenderFragment AboveMoveList { get; set; }
+    /// <summary>Optional content under the board and its buttons, as wide as the board (the trainer's answer bar).</summary>
+    [Parameter] public RenderFragment BelowBoard { get; set; }
     /// <summary>Shows the board-size slider above the board. The size itself is global, so a
     /// board on a page without the slider still renders at whatever size was last chosen.</summary>
     [Parameter] public bool ShowSizeSlider { get; set; }

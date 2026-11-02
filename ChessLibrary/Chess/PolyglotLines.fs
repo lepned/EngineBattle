@@ -132,10 +132,10 @@ type MakeSummary =
       Positions: int
       Moves: int }
 
-/// A book from games' first `MaxPly` plies: a move is kept when `MinGames` played it, weighted 2 x wins +
-/// draws (1 each with `Uniform`, for files without results).
-let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (progress: int -> unit) : MakeSummary =
-    let stats = Dictionary<struct (uint64 * uint16), struct (int * int)>()
+/// Each standard game's first `maxPly` moves: `onMove game fen uci kingCastles` per move the board plays,
+/// for the games `keep` takes; Chess960 and other variants are skipped. Games read, used, skipped, broken
+/// (a move the board could not play: used up to it).
+let private walkGames (games: seq<PgnGame>) (maxPly: int) (keep: PgnGame -> bool) (progress: int -> unit) (onMove: PgnGame -> string -> string -> bool -> unit) =
     let mutable total = 0
     let mutable used = 0
     let mutable skipped = 0
@@ -148,10 +148,7 @@ let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (pro
         let variant =
             meta.OtherTags |> List.tryFind (fun t -> t.Key.Equals("Variant", StringComparison.OrdinalIgnoreCase)) |> Option.map (fun t -> t.Value)
         let standardVariant = match variant with None -> true | Some v -> v.Equals("Standard", StringComparison.OrdinalIgnoreCase) || v = ""
-        // White's points: 2 a win, 1 a draw, 0 a loss; a game without a result says nothing - unless
-        // every move weighs 1, where results do not count (an opening file's lines end in *)
-        let whitePoints = match meta.Result with "1-0" -> Some 2 | "0-1" -> Some 0 | "1/2-1/2" -> Some 1 | _ -> None
-        if not standardVariant || (whitePoints.IsNone && not options.Uniform) then skipped <- skipped + 1
+        if not standardVariant || not (keep g) then skipped <- skipped + 1
         else
             let ok =
                 try
@@ -166,7 +163,7 @@ let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (pro
                 let mutable ply = 0
                 let mutable go = true
                 use moves = (g.Mainline :> seq<_>).GetEnumerator()
-                while go && ply < options.MaxPly && moves.MoveNext() do
+                while go && ply < maxPly && moves.MoveNext() do
                     let fen = board.FEN()
                     let san = moves.Current.San.TrimEnd('+', '#', '!', '?')
                     // a move in coordinates (e2e4) as the board accepts it, otherwise SAN
@@ -177,22 +174,38 @@ let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (pro
                     let resolved = if coordinates then Some san else board.GetUciFromSan san
                     match resolved |> Option.filter (fun uci -> (BoardUtils.tryGetMoveAndSanFromUci &board uci).IsSome) with
                     | Some uci ->
-                        let whiteToMove = fen.Split(' ').[1] = "w"
                         // a castle: O-O in SAN, or the king's two-square move in coordinates (a queen e1-g1 is not)
                         let kingCastles =
                             san.StartsWith "O-O" || san.StartsWith "0-0"
                             || (coordinates && List.contains (uci.Substring(0, 4)) [ "e1g1"; "e1c1"; "e8g8"; "e8c8" ]
                                 && PolyglotFormat.pieceAt fen (uci.Substring(0, 2)) = (if uci.[1] = '1' then 'K' else 'k'))
-                        let key = struct (PolyglotFormat.keyOfFen fen, PolyglotFormat.encodeMove uci kingCastles)
-                        let white = defaultArg whitePoints 1
-                        let points = if whiteToMove then white else 2 - white
-                        let struct (n, score) = match stats.TryGetValue key with | true, v -> v | _ -> struct (0, 0)
-                        stats.[key] <- struct (n + 1, score + points)
+                        onMove g fen uci kingCastles
                         board.PlayUciMove uci
                         ply <- ply + 1
                     | None ->
                         broken <- broken + 1
                         go <- false
+    total, used, skipped, broken
+
+/// White's points: 2 a win, 1 a draw, 0 a loss; None for a game without a result.
+let private whitePoints (g: PgnGame) =
+    match g.GameMetaData.Result with "1-0" -> Some 2 | "0-1" -> Some 0 | "1/2-1/2" -> Some 1 | _ -> None
+
+/// A book from games' first `MaxPly` plies: a move is kept when `MinGames` played it, weighted 2 x wins +
+/// draws (1 each with `Uniform`, for files without results).
+let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (progress: int -> unit) : MakeSummary =
+    let stats = Dictionary<struct (uint64 * uint16), struct (int * int)>()
+    // a game without a result says nothing - unless every move weighs 1, where results do not count
+    // (an opening file's lines end in *)
+    let keep (g: PgnGame) = options.Uniform || (whitePoints g).IsSome
+    let total, used, skipped, broken =
+        walkGames games options.MaxPly keep progress (fun g fen uci kingCastles ->
+            let whiteToMove = fen.Split(' ').[1] = "w"
+            let key = struct (PolyglotFormat.keyOfFen fen, PolyglotFormat.encodeMove uci kingCastles)
+            let white = defaultArg (whitePoints g) 1
+            let points = if whiteToMove then white else 2 - white
+            let struct (n, score) = match stats.TryGetValue key with | true, v -> v | _ -> struct (0, 0)
+            stats.[key] <- struct (n + 1, score + points))
     let kept =
         [| for KeyValue (struct (key, move), struct (n, score)) in stats do
              let weight = if options.Uniform then 1 else score
@@ -205,6 +218,24 @@ let makeBook (games: seq<PgnGame>) (options: MakeOptions) (outPath: string) (pro
     { Games = total; Used = used; Skipped = skipped; Broken = broken
       Positions = entries |> Array.distinctBy (fun e -> e.Key) |> Array.length
       Moves = entries.Length }
+
+/// The moves played in the games' first `maxPly` plies, by position (its Polyglot key: an en passant
+/// square that cannot be taken does not count): UCI and how many games played it, most played first. Moves of `skip` (a player's name, "" none) are left
+/// out: what a bot's opponents play against it.
+let playedMoves (games: seq<PgnGame>) (maxPly: int) (skip: string) : IReadOnlyDictionary<uint64, (string * int) list> =
+    let counts = Dictionary<uint64, Dictionary<string, int>>()
+    walkGames games maxPly (fun _ -> true) ignore (fun g fen uci _ ->
+        let whiteToMove = fen.Split(' ').[1] = "w"
+        let mover = if whiteToMove then g.GameMetaData.White else g.GameMetaData.Black
+        if skip = "" || not (mover.Equals(skip, StringComparison.OrdinalIgnoreCase)) then
+            let position = PolyglotFormat.keyOfFen fen
+            let moves = match counts.TryGetValue position with | true, m -> m | _ -> (let m = Dictionary() in counts.[position] <- m; m)
+            moves.[uci] <- (match moves.TryGetValue uci with | true, n -> n | _ -> 0) + 1)
+    |> ignore
+    let result = Dictionary<uint64, (string * int) list>()
+    for KeyValue (position, moves) in counts do
+        result.[position] <- moves |> Seq.map (fun kv -> kv.Key, kv.Value) |> Seq.sortByDescending snd |> List.ofSeq
+    result :> IReadOnlyDictionary<_, _>
 
 // ---------------------------------------------------------------- a book back to opening lines
 
