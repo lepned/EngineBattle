@@ -127,7 +127,7 @@ let lines (a: Analyzer) (fen: string) (multiPv: int) (go: string) : OpeningReper
 /// and the position's eval: one search (go nodes 1 is enough) whose move stats (VerboseMoveStats) give
 /// the policy; none when the position has no legal move. Throws when the engine gives no move stats.
 let policyLines (a: Analyzer) (root: string) (moves: string list) (go: string) : OpeningRepertoire.Line list =
-    let fen = moves |> List.fold (fun f m -> (BoardUtils.tryMakeMove f m).Value) root
+    let fen = BoardUtils.fenAfter root moves
     let status = (BoardUtils.getPositionStatus fen).Status
     if status = "checkmate" || status = "stalemate" then []
     else

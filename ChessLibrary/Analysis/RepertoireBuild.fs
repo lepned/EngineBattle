@@ -69,7 +69,7 @@ let private whiteToMove (fen: string) = fen.Split(' ').[1] = "w"
 /// The side a repertoire from these moves is for: the side that made the last move (after 3...c5,
 /// Black's); with no moves, the side to move.
 let sideOf (fen: string) (moves: string list) =
-    let toMove = whiteToMove (moves |> List.fold (fun f m -> (BoardUtils.tryMakeMove f m).Value) fen)
+    let toMove = whiteToMove (BoardUtils.fenAfter fen moves)
     if moves.IsEmpty then toMove else not toMove
 
 /// A file name for the repertoire: "Repertoire_Black_d4_d5_c4_e6_Nc3_c5.pgn" (at most 16 moves).
@@ -113,7 +113,7 @@ let guiRequest (judgePath: string) (humanPath: string) (bookPath: string) (s: Op
       Go = go
       LimitText = text
       OutPath = outPath
-      Title = (if s.White then "Repertoire for White" else "Repertoire for Black") }
+      Title = OpeningRepertoire.title s.White }
 
 /// The book's moves of a position that are legal there, with their share in percent.
 let bookMoves (path: string) =
@@ -142,6 +142,24 @@ let withContempt (config: EngineConfig) (white: bool) (rating: int) (opponent: i
         options.[o.Name] <- box o.Value
     { config with Options = options }
 
+/// An engine started behind a search agent that keeps its searches in `cachePath`: MultiPV lines with
+/// `go`, or with `policy` the net's policy (move stats switched on where the engine has them). The
+/// caller closes the agent and quits the engine.
+let startAgent (config: EngineConfig) (cachePath: string) (go: string) (limitText: string) (policy: bool) (onSearch: string -> unit) =
+    let a = EngineSearch.start config
+    try
+        if policy && a.Engine.GetAllDefaultOptions().Keys |> Seq.exists (fun k -> k.Equals("VerboseMoveStats", StringComparison.OrdinalIgnoreCase)) then
+            a.Engine.SetOption(EngineTypes.EngineOption.Create "VerboseMoveStats" "true")
+        let search: string -> string list -> int -> OpeningRepertoire.Line list =
+            if policy then fun f m _ -> EngineSearch.policyLines a f m go
+            else fun f m k -> EngineSearch.lines a (BoardUtils.fenAfter f m) k go
+        let agent =
+            new OpeningRepertoire.SearchAgent(config.Name, signature config limitText + (if policy then " | policy" else ""), Some cachePath, search, onSearch)
+        a, agent
+    with _ ->
+        EngineSearch.quit a
+        reraise ()
+
 /// Builds the repertoire and writes it to OutPath. `log` hears what is started and loaded, `onSearch`
 /// the count of positions searched so far. Cancelled, it throws OperationCanceledException: what was
 /// searched is in the caches, and the same request goes on from there. Throws NoContempt when the
@@ -151,43 +169,25 @@ let run (r: Request) (log: string -> unit) (onSearch: int -> unit) (token: Cance
     let counted (_: string) = onSearch (Interlocked.Increment &searched.contents)
     let started = Collections.Generic.List<EngineSearch.Analyzer>()
     let agents = Collections.Generic.List<OpeningRepertoire.SearchAgent>()
-    let cacheName (role: string) = $"{Path.GetFileName r.OutPath}.{role}.cache"
-    let agentFor (role: string) (c: EngineConfig) =
+    let agentFor (role: string) (c: EngineConfig) (go: string) (limitText: string) (policy: bool) =
         log $"Starting {c.Name} ({role})"
-        let a = EngineSearch.start c
+        let a, agent = startAgent c (r.OutPath + $".{role}.cache") go limitText policy counted
         started.Add a
-        let agent =
-            new OpeningRepertoire.SearchAgent(c.Name, signature c r.LimitText, Some(r.OutPath + $".{role}.cache"),
-                                              (fun f m k -> EngineSearch.lines a (List.fold (fun f u -> (BoardUtils.tryMakeMove f u).Value) f m) k r.Go), counted)
         agents.Add agent
-        if agent.Loaded > 0 then log $"  {agent.Loaded} positions from {cacheName role}"
+        let file = $"{Path.GetFileName r.OutPath}.{role}.cache"
+        if agent.Loaded > 0 then log $"  {agent.Loaded} positions from {file}"
         a, agent
     try
-        let _, judge = agentFor "judge" r.Judge
+        let _, judge = agentFor "judge" r.Judge r.Go r.LimitText false
         let chooser =
             r.Ideas
             |> Option.map (fun c ->
-                let a, agent = agentFor "ideas" c
+                let a, agent = agentFor "ideas" c r.Go r.LimitText false
                 let support = Lc0Contempt.supportOf (a.Engine.GetAllDefaultOptions().Keys)
                 if not support.HasContempt then raise (NoContempt $"contempt needs Lc0 (ContemptMode); {c.Name} does not have it")
                 agent)
-        // the human net: one node, its policy is the answer; move stats switched on where it has them
-        let human =
-            r.Human
-            |> Option.map (fun c ->
-                log $"Starting {c.Name} (human)"
-                let a = EngineSearch.start c
-                started.Add a
-                if a.Engine.GetAllDefaultOptions().Keys |> Seq.exists (fun k -> k.Equals("VerboseMoveStats", StringComparison.OrdinalIgnoreCase)) then
-                    a.Engine.SetOption(EngineTypes.EngineOption.Create "VerboseMoveStats" "true")
-                let one = "go nodes 1"
-                let agent =
-                    new OpeningRepertoire.SearchAgent(c.Name, signature c "nodes 1" + " | policy", Some(r.OutPath + ".human.cache"),
-                                                      (fun f m _ -> EngineSearch.policyLines a f m one), counted)
-                agents.Add agent
-                let file = cacheName "human"
-                if agent.Loaded > 0 then log $"  {agent.Loaded} positions from {file}"
-                agent)
+        // the human net: one node, its policy is the answer
+        let human = r.Human |> Option.map (fun c -> snd (agentFor "human" c "go nodes 1" "nodes 1" true))
         let book = match r.Book with Some path -> bookMoves path | None -> fun _ -> []
         log $"{r.Title}: {r.LimitText} per position, {r.Settings.Plies} plies, up to {r.Settings.Replies} opponent replies explored per position"
         let sw = Diagnostics.Stopwatch.StartNew()

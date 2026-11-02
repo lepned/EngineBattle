@@ -33,7 +33,6 @@
                   color: var(--mud-palette-text-primary); font: inherit; cursor: pointer; text-align: left; }
 .rt-drawer-sum { opacity: 0.8; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rt-drawer.is-open .rt-drawer-head { border-bottom: 1px solid var(--mud-palette-lines-default); }
-.rt-drawer > .rt-hint { padding: 8px 10px; }
 .rt-engine-hidden { display: none; }
 .rt-kibitzer { padding: 8px 10px; }
 

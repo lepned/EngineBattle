@@ -15,6 +15,14 @@ open ChessLibrary.MiscTypes
 /// net's move stats) the first move's share of the policy, 0..1, and the position's eval.
 type Line = { Pv: string list; Eval: EvalType; Policy: float option }
 
+/// The texts a repertoire PGN carries that the trainer (RepertoireTrainer) reads back: the game's
+/// Event names the side, and these labels mark our alternatives it accepts.
+let title (white: bool) = if white then "Repertoire for White" else "Repertoire for Black"
+[<Literal>]
+let alsoGoodLabel = "Also good."
+[<Literal>]
+let objectiveBestLabel = "Objective best."
+
 type Settings =
     { /// The side the repertoire is for.
       White: bool
@@ -90,7 +98,6 @@ type Node =
 
 // ---------------------------------------------------------------- search agents
 
-let private positionKey (fen: string) = fen.Split(' ') |> Array.truncate 4 |> String.concat " "
 
 let private evalCode (e: EvalType) =
     match e with
@@ -173,21 +180,26 @@ type SearchAgent(name: string, signature: string, cachePath: string option, sear
                 async {
                     match! inbox.Receive() with
                     | Search(fen, moves, k, reply) ->
-                        let pos = moves |> List.fold (fun f m -> (BoardUtils.tryMakeMove f m).Value) fen |> positionKey
-                        match cache.TryFind pos with
-                        | Some(k0, lines) when k0 >= k ->
-                            reply.Reply(Ok(List.truncate k lines))
-                            return! loop cache (hits + 1) searches
-                        | _ ->
-                            match (try Ok(search fen moves k) with e -> Error e) with
-                            | Ok lines ->
-                                writer |> Option.iter (fun w -> w.WriteLine(cacheLine (pos + "|" + string k) lines))
-                                onSearch name
-                                reply.Reply(Ok lines)
-                                return! loop (cache.Add(pos, (k, lines))) hits (searches + 1)
-                            | Error e ->
-                                reply.Reply(Error e)
-                                return! loop cache hits searches
+                        // a move that does not play fails this search, not the agent (it would never answer again)
+                        match (try Ok(BoardUtils.fenAfter fen moves |> BoardUtils.positionKey) with e -> Error e) with
+                        | Error e ->
+                            reply.Reply(Error e)
+                            return! loop cache hits searches
+                        | Ok pos ->
+                            match cache.TryFind pos with
+                            | Some(k0, lines) when k0 >= k ->
+                                reply.Reply(Ok(List.truncate k lines))
+                                return! loop cache (hits + 1) searches
+                            | _ ->
+                                match (try Ok(search fen moves k) with e -> Error e) with
+                                | Ok lines ->
+                                    writer |> Option.iter (fun w -> w.WriteLine(cacheLine (pos + "|" + string k) lines))
+                                    onSearch name
+                                    reply.Reply(Ok lines)
+                                    return! loop (cache.Add(pos, (k, lines))) hits (searches + 1)
+                                | Error e ->
+                                    reply.Reply(Error e)
+                                    return! loop cache hits searches
                     | Count reply ->
                         reply.Reply((hits, searches))
                         return! loop cache hits searches
@@ -310,7 +322,7 @@ let private ours (c: Ctx) (e: EvalType) = if c.S.White then pawns e else -(pawns
 /// Where a position was explored before, at least as deep as `plies` would: that line from where it
 /// parts from `path` (reversed UCI from Start), "4.Nf3 Nf6 5.Bc4".
 let private transposition (c: Ctx) (path: string list) (plies: int) (fen: string) =
-    match c.Visited.TryGetValue(positionKey fen) with
+    match c.Visited.TryGetValue(BoardUtils.positionKey fen) with
     | true, (first, left) when left >= plies ->
         let current = List.rev path
         let common = Seq.zip first current |> Seq.takeWhile (fun (a, b) -> a = b) |> Seq.length
@@ -318,7 +330,7 @@ let private transposition (c: Ctx) (path: string list) (plies: int) (fen: string
         Some(numbered from (List.skip common first))
     | _ -> None
 
-let private visit (c: Ctx) (path: string list) (plies: int) (fen: string) = c.Visited.[positionKey fen] <- (List.rev path, plies)
+let private visit (c: Ctx) (path: string list) (plies: int) (fen: string) = c.Visited.[BoardUtils.positionKey fen] <- (List.rev path, plies)
 
 /// The opponent's best is an only move: its second best is OnlyMove worse for it and leaves us
 /// OnlyMove ahead. A best move that only wins more (a refutation of ours) is not one.
@@ -425,6 +437,8 @@ let rec private ourMove (c: Ctx) (fen: string) (plies: int) (ext: int) (answer: 
         match lines with
         | [] -> return []
         | best :: _ ->
+            // an idea after which the opponent must find Traps only moves in a row
+            let trap (only: string list) = c.S.Traps > 0 && only.Length >= c.S.Traps
             let objective = ours c best.Eval
             if answer.IsSome || abs objective >= c.S.Decided then
                 return! pvChain c fen best.Pv c.S.PvPlies (defaultArg answer "") (evalTag best.Eval)
@@ -453,7 +467,6 @@ let rec private ourMove (c: Ctx) (fen: string) (plies: int) (ext: int) (answer: 
                                         return j, only
                                     })
                                 |> Async.Sequential
-                            let trap (only: string list) = c.S.Traps > 0 && only.Length >= c.S.Traps
                             let accepted =
                                 weighed
                                 |> Array.filter (fun (j, only) -> objective - ours c j.Eval <= c.S.Margin || trap only)
@@ -478,7 +491,6 @@ let rec private ourMove (c: Ctx) (fen: string) (plies: int) (ext: int) (answer: 
                         }
                 let opponent = if c.S.White then "Black" else "White"
                 let must (only: string list) = if only.IsEmpty then "" else $"""{opponent} must find {String.concat " " only}."""
-                let trap (only: string list) = c.S.Traps > 0 && only.Length >= c.S.Traps
                 let note =
                     join
                         [ (if move <> best.Pv.Head then $"Idea; objective best {numbered fen [ best.Pv.Head ]} ({evalText best.Eval})." else "")
@@ -486,11 +498,11 @@ let rec private ourMove (c: Ctx) (fen: string) (plies: int) (ext: int) (answer: 
                           (match transposed with Some t -> $"Transposes to {t}." | None -> "") ]
                 // a line that ends here goes on with the engine's moves, playable like the rest
                 let! next' = if replies.IsEmpty && transposed.IsNone then pvChain c next picked.Pv.Tail (c.S.PvPlies - 1) "" "" else async { return replies }
-                if transposed.IsNone then c.Expanded.[positionKey next] <- next'
+                if transposed.IsNone then c.Expanded.[BoardUtils.positionKey next] <- next'
                 let main =
                     { node fen move "" (join [ evalTag picked.Eval; note ]) next' with
                         Critical = trap only
-                        Transposes = (if transposed.IsSome then positionKey next else "") }
+                        Transposes = (if transposed.IsSome then BoardUtils.positionKey next else "") }
                 // the objective best is always there to play when the idea is another move
                 let ideas =
                     if move <> best.Pv.Head && not (ideas |> List.exists (fun (j, _) -> j.Pv.Head = best.Pv.Head)) then (best, []) :: ideas
@@ -502,7 +514,7 @@ let rec private ourMove (c: Ctx) (fen: string) (plies: int) (ext: int) (answer: 
                     |> List.truncate (max 1 (c.S.Ideas - 1))
                     |> List.map (fun (j, only) ->
                         let objectiveBest = j.Pv.Head = best.Pv.Head
-                        let label = if objectiveBest then "Objective best." else "Also good."
+                        let label = if objectiveBest then objectiveBestLabel else alsoGoodLabel
                         async {
                             let! chain = pvChain c fen j.Pv c.S.PvPlies "" (join [ evalTag j.Eval; label; must only ])
                             // beside a trap the objective best stays: its comment names it
@@ -604,7 +616,7 @@ and private oppMove (c: Ctx) (fen: string) (plies: int) (ext: int) (path: string
                                     async {
                                         if explored then visit c path' plies' f
                                         let! answer = ourMove c f plies' ext' (if explored then None elif punished then Some "!" else Some "") path'
-                                        if explored then c.Expanded.[positionKey f] <- answer
+                                        if explored then c.Expanded.[BoardUtils.positionKey f] <- answer
                                         return answer
                                     }
                             let note =
@@ -627,7 +639,7 @@ and private oppMove (c: Ctx) (fen: string) (plies: int) (ext: int) (path: string
                             return
                                 { node fen m nag (join [ evalTag e; note; book; people; transposes ]) answer with
                                     Critical = isCritical
-                                    Transposes = (if transposed.IsSome then positionKey f else "") }
+                                    Transposes = (if transposed.IsSome then BoardUtils.positionKey f else "") }
                         })
                     |> Async.Sequential
                 return List.ofArray nodes
@@ -825,11 +837,6 @@ let private lineNote (l: Line) =
     | Some p -> "P " + (100.0 * p).ToString("0", CultureInfo.InvariantCulture) + "%"
     | None -> evalTag l.Eval
 
-/// A castle in UCI as the standard board writes it: the king's two-square move.
-let private castles (fen: string) (uci: string) =
-    List.contains (uci.Substring(0, 4)) [ "e1g1"; "e1c1"; "e8g8"; "e8c8" ]
-    && PolyglotFormat.pieceAt fen (uci.Substring(0, 2)) = (if uci.[1] = '1' then 'K' else 'k')
-
 /// An opening book for a bot that plays both sides from the start position, searched by one engine: in
 /// each position of ours the best move and those within Within of it; the opponent's replies are its
 /// best ones within Window and every move the games (`played`, by Polyglot key: UCI and times played)
@@ -845,10 +852,10 @@ let botBook (s: BotBookSettings) (judge: SearchAgent) (played: uint64 -> (string
             let ours (e: EvalType) = if white then pawns e else -(pawns e)
             let visited = Dictionary<string, int>()
             let fresh (fen: string) (plies: int) =
-                match visited.TryGetValue(positionKey fen) with
+                match visited.TryGetValue(BoardUtils.positionKey fen) with
                 | true, left when left >= plies -> false
                 | _ ->
-                    visited.[positionKey fen] <- plies
+                    visited.[BoardUtils.positionKey fen] <- plies
                     true
             let rec ourMove (fen: string) (plies: int) : Async<Node list> =
                 async {
@@ -872,7 +879,7 @@ let botBook (s: BotBookSettings) (judge: SearchAgent) (played: uint64 -> (string
                                 |> List.map (fun l ->
                                     async {
                                         let m = l.Pv.Head
-                                        entries.Add(struct (PolyglotFormat.keyOfFen fen, PolyglotFormat.encodeMove m (castles fen m))) |> ignore
+                                        entries.Add(struct (PolyglotFormat.keyOfFen fen, PolyglotFormat.encodeMove m (PolyglotFormat.isKingCastle fen m))) |> ignore
                                         let! next = if decided then async { return [] } else oppMove (after fen m) (plies - 1) None
                                         return node fen m "" (lineNote l) next
                                     })

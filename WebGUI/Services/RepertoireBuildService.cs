@@ -76,8 +76,7 @@ namespace WebGUI.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Repertoire build of {Path} failed", request.OutPath);
-                    var message = ex is RepertoireBuild.NoContempt nc ? nc.Data0 : ex.Message;
-                    Finish(BuildState.Failed, null, message);
+                    Finish(BuildState.Failed, null, ex.Message);
                 }
             });
             return true;

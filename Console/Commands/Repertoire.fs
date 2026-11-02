@@ -53,9 +53,17 @@ let repertoireSpec =
             "eb-cli book repertoire lc0.json --moves \"e4 d5\" --side b --book human.bin --plies 14", "Also the moves people play, deeper"
             "eb-cli book repertoire sf.json --moves \"e4 c5 Nf3 e6\" --side b --human maia1500.json", "The replies 1500 players make, their mistakes punished" ] }
 
-/// What makes a cache valid: the engine, its options and the limit.
-let private signature (config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) (lim: Limit) =
-    ChessLibrary.RepertoireBuild.signature config lim.Text
+/// A count option: at least 1, else its default.
+let private countOf (p: Parsed) (name: string) (dflt: int) =
+    match intOf p name with
+    | Some n when n < 1 -> raise (Usage $"--{name} must be at least 1, got {n}")
+    | n -> defaultArg n dflt
+
+/// A pawns (or share) option: not negative, else its default.
+let private pawnsOf (p: Parsed) (name: string) (dflt: float) =
+    match floatOf p name with
+    | Some x when x < 0.0 -> raise (Usage $"--{name} cannot be negative, got {x}")
+    | x -> defaultArg x dflt
 
 let repertoire (p: Parsed) =
     let config = engine p "engine" "uci"
@@ -68,14 +76,8 @@ let repertoire (p: Parsed) =
         | Some "b" | Some "black" -> false
         | Some other -> raise (Usage $"--side expects w or b, got '{other}'")
         | None -> raise (Usage "give the side the repertoire is for: --side w or --side b")
-    let count name dflt =
-        match intOf p name with
-        | Some n when n < 1 -> raise (Usage $"--{name} must be at least 1, got {n}")
-        | n -> defaultArg n dflt
-    let pawns name dflt =
-        match floatOf p name with
-        | Some x when x < 0.0 -> raise (Usage $"--{name} cannot be negative, got {x}")
-        | x -> defaultArg x dflt
+    let count = countOf p
+    let pawns = pawnsOf p
     let settings =
         { defaults with
             White = white
@@ -131,7 +133,7 @@ let repertoire (p: Parsed) =
           Go = lim.Go
           LimitText = lim.Text
           OutPath = outPath
-          Title = $"Repertoire for {sideName}" }
+          Title = ChessLibrary.OpeningRepertoire.title white }
     let token = onCtrlC ()
     let onSearch (n: int) = if n % 10 = 0 then info $"  {n} positions searched"
     try
@@ -179,14 +181,8 @@ let botSpec =
 let bot (p: Parsed) =
     let config = engine p "engine" "uci"
     let lim = limit p 10_000
-    let count name dflt =
-        match intOf p name with
-        | Some n when n < 1 -> raise (Usage $"--{name} must be at least 1, got {n}")
-        | n -> defaultArg n dflt
-    let pawns name dflt =
-        match floatOf p name with
-        | Some x when x < 0.0 -> raise (Usage $"--{name} cannot be negative, got {x}")
-        | x -> defaultArg x dflt
+    let count = countOf p
+    let pawns = pawnsOf p
     let first =
         (defaultArg (valueOf p "first") "e4,d4,c4,Nf3").Split(',', StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
         |> Array.map (fun san ->
@@ -228,12 +224,7 @@ let bot (p: Parsed) =
         let n = Threading.Interlocked.Increment &searched.contents
         if n % 10 = 0 then info $"  {n} positions searched"
     info $"Starting {config.Name}"
-    let analyzer = Engines.start config
-    let agent =
-        if policy then
-            new ChessLibrary.OpeningRepertoire.SearchAgent(config.Name, signature config lim + " | policy", Some(outPath + ".cache"), (fun f m _ -> Engines.policyLines analyzer f m lim), onSearch)
-        else
-            new ChessLibrary.OpeningRepertoire.SearchAgent(config.Name, signature config lim, Some(outPath + ".cache"), (fun f m k -> Engines.lines analyzer (after f m) k lim), onSearch)
+    let analyzer, agent = ChessLibrary.RepertoireBuild.startAgent config (outPath + ".cache") lim.Go lim.Text policy onSearch
     try
         try
             if agent.Loaded > 0 then info $"  {agent.Loaded} positions from {Path.GetFileName outPath}.cache"

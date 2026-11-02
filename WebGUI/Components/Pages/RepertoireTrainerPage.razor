@@ -94,12 +94,15 @@
         engineMounted = engineOn;
         if (engineOn) LoadDefaultEngine();
         BuildService.Changed += OnBuildChanged;
-        // the page opens in Build: the board is the opening to build from
-        building = true;
         ReadEngineFolder();
     }
 
-    public void Dispose() => BuildService.Changed -= OnBuildChanged;
+    public void Dispose()
+    {
+        BuildService.Changed -= OnBuildChanged;
+        // a line still being played out stops with the page
+        syncGeneration++;
+    }
 
     // ---------------------------------------------------------------- the board's bar and the right rail
 
@@ -269,8 +272,8 @@
 
     private void OnEngineEval((double? Cp, int? Mate, string Fen) eval)
     {
-        engineEval = eval.Mate is int m ? $"#{m}"
-            : eval.Cp is double cp ? cp.ToString("+0.00;-0.00", System.Globalization.CultureInfo.InvariantCulture)
+        engineEval = eval.Mate is int m ? AnalysisText.Eval(EvalType.NewMate(m))
+            : eval.Cp is double cp ? AnalysisText.Eval(EvalType.NewCP(cp))
             : null;
         StateHasChanged();
     }
@@ -328,6 +331,7 @@
     private async Task OnBoardFen(string newFen)
     {
         if (applying) return;
+        if (building) RefreshBuildFrom();
         if (EngineAllowed) await Notifier.UpdateFen(board.FEN());
     }
 
@@ -405,7 +409,7 @@
     private async Task OnBoardMove(string uci)
     {
         // in Build the board is the opening to build from; Train sets it up again
-        if (building) { boardTouched = true; await TellEngine(); StateHasChanged(); return; }
+        if (building) { boardTouched = true; RefreshBuildFrom(); await TellEngine(); StateHasChanged(); return; }
         if (applying || state == null) return;
         // after the line the board is the trainee's to look around on; Next line sets it up again
         if (state.Over) { await TellEngine(); return; }
@@ -480,6 +484,8 @@
                     logger.LogWarning("The board refused {Move} in the repertoire line", uci);
                     break;
                 }
+                // a newer Sync may have started the board over while this move was played
+                if (generation != syncGeneration) return;
                 shown.Add(uci);
             }
             fen = board.FEN();
@@ -506,8 +512,7 @@
         return Task.CompletedTask;
     }
 
-    private static string Eval(RT.Node n) =>
-        n.Eval is { } e ? (e.Value >= 0 ? "+" : "") + e.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "";
+    private static string Eval(RT.Node n) => n.Eval is { } e ? AnalysisText.Eval(EvalType.NewCP(e.Value)) : "";
 
     private string Done => state.Over ? " The line is done." : "";
 
@@ -570,6 +575,7 @@
 
     // ---------------------------------------------------------------- Build
 
+    // the page opens in Build: the board is the opening to build from
     private bool building = true;
     // the board was played on or navigated outside a line: Train sets it up again
     private bool boardTouched;
@@ -604,23 +610,25 @@
             await EnsureOrientation();
             await Sync(force: true);
         }
-        else
+        else if (build)
         {
             boardTouched = true;
             ReadEngineFolder();
+            RefreshBuildFrom();
         }
         StateHasChanged();
         await TellEngine();
     }
 
-    // The position on the board (to the cursor): what the repertoire is built from.
-    private (string Fen, Microsoft.FSharp.Collections.FSharpList<string> Moves) BuildFrom
+    // The position on the board (to the cursor): what the repertoire is built from. Read when the board
+    // changes in Build, not at every render (a build renders the page at every search).
+    private (string Fen, Microsoft.FSharp.Collections.FSharpList<string> Moves) BuildFrom =
+        (MiscTypes.startPosition, Microsoft.FSharp.Collections.FSharpList<string>.Empty);
+
+    private void RefreshBuildFrom()
     {
-        get
-        {
-            var parsed = RB.ofPositionCommand(board.PositionWithMovesFromGraph());
-            return (parsed.Item1, parsed.Item2);
-        }
+        var parsed = RB.ofPositionCommand(board.PositionWithMovesFromGraph());
+        BuildFrom = (parsed.Item1, parsed.Item2);
     }
 
     private bool BuildWhite => buildSide ?? RB.sideOf(BuildFrom.Fen, BuildFrom.Moves);
@@ -683,7 +691,7 @@
             if (buildMoves < 1 || limitValue < 1) throw new InvalidOperationException("moves ahead and the search limit must be at least 1");
             var from = BuildFrom;
             // the position at the cursor, which the build starts from (not the board's last one)
-            var at = from.Moves.Aggregate(from.Fen, (f, m) => BoardUtils.tryMakeMove(f, m).Value);
+            var at = BoardUtils.fenAfter(from.Fen, from.Moves);
             var status = BoardUtils.getPositionStatus(at).Status;
             if (status == "checkmate" || status == "stalemate") throw new InvalidOperationException($"the position is {status}: nothing to explore");
             var book = buildBook?.Trim() ?? "";

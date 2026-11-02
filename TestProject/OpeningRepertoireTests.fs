@@ -322,3 +322,36 @@ let ``an eval that rounds to zero from below is written 0.00, not -0.00`` () =
     Assert.Contains("1...e5 is better (+0.00).", pgn)
     Assert.DoesNotContain("-0.00", pgn)
     agent.Close()
+
+[<Fact>]
+let ``a search from moves that do not play fails that search, and the agent goes on answering`` () =
+    let agent = judge [ [], [ "e2e4", 0.3 ] ]
+    // e2e5 is no move: an error for this search (it must not stop the agent, which would never answer
+    // again). Waited for with a limit, so a dead agent fails the test instead of hanging it.
+    let bad = Async.StartAsTask(agent.SearchFrom(start, [ "e2e5" ], 1))
+    let failed = try (bad.Wait 5000 |> ignore; false) with _ -> true
+    Assert.True(failed, "the search from a move that does not play did not fail")
+    let good = Async.StartAsTask(agent.Search(start, 1))
+    Assert.True(good.Wait 5000, "the agent stopped answering")
+    Assert.Equal<string list>([ "e2e4" ], good.Result.Head.Pv)
+    agent.Close()
+
+[<Fact>]
+let ``the trainer reads what the writer writes: the side from the Event, our alternatives from their label`` () =
+    // Black's level answer to 1.e4: c5 is played, e5 within the margin stays beside it as an alternative
+    let agent =
+        judge
+            [ [ "e2e4" ], [ "c7c5", -0.1; "e7e5", -0.05 ]
+              [ "e2e4"; "c7c5" ], [ "g1f3", -0.1 ]
+              [ "e2e4"; "e7e5" ], [ "g1f3", -0.05 ] ]
+    let settings = { Settings.Defaults with White = false; Plies = 2; Traps = 0 }
+    let pgn = (OpeningRepertoire.build settings agent None None (fun _ -> []) start [ "e2e4" ] (title false) |> Async.RunSynchronously).Pgn
+    agent.Close()
+    Assert.Contains(alsoGoodLabel, pgn)
+    match RepertoireTrainer.load pgn true with
+    | Error e -> failwith e
+    | Ok tree ->
+        Assert.False tree.White
+        let black = tree.Root.Head.Next
+        Assert.Equal<string list>([ "c5"; "e5" ], black |> List.map (fun n -> n.San))
+        Assert.Equal<bool list>([ false; true ], black |> List.map (fun n -> n.AlsoGood))

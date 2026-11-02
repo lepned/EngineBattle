@@ -10,7 +10,6 @@ open ChessLibrary.PGNTypes
 let private startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 /// A position without its move counters: what makes two lines the same opening, and the cache key.
-let private positionKey (fen: string) = fen.Split(' ') |> Array.truncate 4 |> String.concat " "
 
 /// The book's moves for the board's position that are legal there (a damaged or foreign book can
 /// hold others) and have a weight: UCI, SAN, weight. The one rule for the tournament and the page.
@@ -34,7 +33,7 @@ let private drawLineCached (cache: Cache) (lookup: uint64 -> PolyglotFormat.Entr
     let mutable go = true
     while go && moves.Count < maxPly do
         let fen = board.FEN()
-        let position = positionKey fen
+        let position = BoardUtils.positionKey fen
         let candidates =
             match cache.TryGetValue position with
             | true, c -> c
@@ -92,7 +91,7 @@ let lines (path: string) (count: int) (seed: int) (maxPly: int) : PgnGame[] =
     while result.Count < count && misses < 2000 do
         let moves, fen = drawLineCached cache lookup rng maxPly
         // the position decides what is new: transpositions are one opening, as for PGN books
-        let key = positionKey fen
+        let key = BoardUtils.positionKey fen
         if not moves.IsEmpty && seen.Add key then
             result.Add(toPgnGame (result.Count + 1) name moves)
             misses <- 0
@@ -177,8 +176,7 @@ let private walkGames (games: seq<PgnGame>) (maxPly: int) (keep: PgnGame -> bool
                         // a castle: O-O in SAN, or the king's two-square move in coordinates (a queen e1-g1 is not)
                         let kingCastles =
                             san.StartsWith "O-O" || san.StartsWith "0-0"
-                            || (coordinates && List.contains (uci.Substring(0, 4)) [ "e1g1"; "e1c1"; "e8g8"; "e8c8" ]
-                                && PolyglotFormat.pieceAt fen (uci.Substring(0, 2)) = (if uci.[1] = '1' then 'K' else 'k'))
+                            || (coordinates && PolyglotFormat.isKingCastle fen uci)
                         onMove g fen uci kingCastles
                         board.PlayUciMove uci
                         ply <- ply + 1
@@ -257,7 +255,7 @@ let exportTree (path: string) (maxPly: int) (minShare: float) (maxLines: int) : 
         else
             let board = Board()
             board.LoadFen fen
-            let position = positionKey fen
+            let position = BoardUtils.positionKey fen
             let left = maxPly - moves.Length
             let again = match walked.TryGetValue position with | true, l -> l >= left | _ -> false
             if not again then walked.[position] <- left

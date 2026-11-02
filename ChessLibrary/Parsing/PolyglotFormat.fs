@@ -307,6 +307,13 @@ let moveToUci (fen: string) (move: uint16) =
     | Some c -> c
     | None -> from + dest + promo
 
+/// A castle in UCI as the standard board writes it: the king's two-square move from its square (a
+/// queen's e1-g1 is not one).
+let isKingCastle (fen: string) (uci: string) =
+    uci.Length >= 4
+    && List.contains (uci.Substring(0, 4)) [ "e1g1"; "e1c1"; "e8g8"; "e8c8" ]
+    && pieceAt fen (uci.Substring(0, 2)) = (if uci.[1] = '1' then 'K' else 'k')
+
 /// A UCI move as Polyglot's bit field, the inverse of moveToUci: a castle (the king two squares from
 /// e1/e8 in a standard position) is written as the king taking its rook (e1g1 -> e1h1).
 let encodeMove (uci: string) (kingCastles: bool) : uint16 =

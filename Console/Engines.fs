@@ -16,13 +16,6 @@ let quit a = ChessLibrary.EngineSearch.quit a
 let search (a: Analyzer) (fen: string) (moves: string list) (limit: Limit) (verbose: bool) =
     ChessLibrary.EngineSearch.search a fen moves limit.Go verbose
 
-/// Every line of a MultiPV search, best first (EngineSearch.lines).
-let lines (a: Analyzer) (fen: string) (multiPv: int) (limit: Limit) = ChessLibrary.EngineSearch.lines a fen multiPv limit.Go
-
-/// Every legal move by the net's policy (EngineSearch.policyLines).
-let policyLines (a: Analyzer) (root: string) (moves: string list) (limit: Limit) =
-    ChessLibrary.EngineSearch.policyLines a root moves limit.Go
-
 /// An eval for JSON, from White's view: pawns (0.35) or mate in N, never both; nothing when the engine gave none.
 type EvalJson =
     { Pawns: Nullable<float>

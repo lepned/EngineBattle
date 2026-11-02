@@ -39,7 +39,6 @@ type Tree =
 
 // ---------------------------------------------------------------- reading the PGN
 
-let private positionKey (fen: string) = fen.Split(' ') |> Array.truncate 4 |> String.concat " "
 
 let private evalRegex = Regex(@"\[%eval\s+(#?-?[0-9.]+)\]", RegexOptions.Compiled)
 let private shareRegex = Regex(@"(\S+) (\d+(?:\.\d+)?)%\.", RegexOptions.Compiled)
@@ -63,11 +62,6 @@ let private shareOf (comment: string) =
 /// The comment without the [%eval] tag, as the page shows it.
 let text (comment: string) = evalRegex.Replace(comment, "").Trim()
 
-let private uciOf (fen: string) (san: string) =
-    match BoardUtils.pvToUci fen san with
-    | Some uci when uci <> "" && not (uci.Contains ' ') -> Some uci
-    | _ -> None
-
 /// A line of PlyMoves (each with its variations, the alternatives to it) as nodes; the opponent's
 /// alternatives are marked "?"/"??" by how much winning chance they give away against the first.
 let rec private nodesOf (white: bool) (fen: string) (line: PlyLine) (from: int) : Node list =
@@ -79,7 +73,7 @@ let rec private nodesOf (white: bool) (fen: string) (line: PlyLine) (from: int) 
         let built =
             alternatives
             |> Seq.choose (fun (m, l, i) ->
-                uciOf fen m.San
+                BoardUtils.tryParseSan fen m.San
                 |> Option.map (fun uci ->
                     let next = (BoardUtils.tryMakeMove fen uci).Value
                     let children = nodesOf white next l (i + 1)
@@ -89,7 +83,7 @@ let rec private nodesOf (white: bool) (fen: string) (line: PlyLine) (from: int) 
                       Comment = m.Comment
                       Eval = evalOf m.Comment
                       Share = shareOf m.Comment
-                      AlsoGood = ours && (m.Comment.Contains "Also good." || m.Comment.Contains "Objective best.")
+                      AlsoGood = ours && (m.Comment.Contains OpeningRepertoire.alsoGoodLabel || m.Comment.Contains OpeningRepertoire.objectiveBestLabel)
                       Mistake = ""
                       HasTrap = false
                       Next = children }))
@@ -115,7 +109,7 @@ let load (pgn: string) (white: bool) : Result<Tree, string> =
     | Some game ->
         let side =
             let e = game.GameMetaData.Event
-            if e.Contains "for Black" then false elif e.Contains "for White" then true else white
+            if e.Contains(OpeningRepertoire.title false) then false elif e.Contains(OpeningRepertoire.title true) then true else white
         let fen = if String.IsNullOrEmpty game.GameMetaData.Fen then MiscTypes.startPosition else game.GameMetaData.Fen
         let root = nodesOf side fen game.Mainline 0
         if root.IsEmpty then Error "the game has no moves"
@@ -123,7 +117,7 @@ let load (pgn: string) (white: bool) : Result<Tree, string> =
             let ours = HashSet<string>()
             let rec count (nodes: Node list) =
                 for n in nodes do
-                    if (n.Fen.Split(' ').[1] = "w") = side && n.Comment <> "" then ours.Add(positionKey n.Fen) |> ignore
+                    if (n.Fen.Split(' ').[1] = "w") = side && n.Comment <> "" then ours.Add(BoardUtils.positionKey n.Fen) |> ignore
                     count n.Next
             count root
             // a game without comments has nothing to train (and would be played through as one line)
@@ -144,7 +138,7 @@ let interval (box: int) = match box with 1 -> 0 | 2 -> 2 | 3 -> 5 | 4 -> 12 | _ 
 
 /// A position seen before whose time has come (a new one is not due, it is new).
 let private due (p: Progress) (fen: string) =
-    match p.Cards.TryFind(positionKey fen) with
+    match p.Cards.TryFind(BoardUtils.positionKey fen) with
     | Some c -> c.DueAt <= p.Lines
     | None -> false
 
@@ -247,7 +241,7 @@ let rec private hasDue (s: State) (n: Node) =
 
 /// Positions of ours below never seen.
 let rec private hasNew (s: State) (n: Node) =
-    (trained s n && not (s.Progress.Cards.ContainsKey(positionKey n.Fen))) || n.Next |> List.exists (hasNew s)
+    (trained s n && not (s.Progress.Cards.ContainsKey(BoardUtils.positionKey n.Fen))) || n.Next |> List.exists (hasNew s)
 
 /// The opponent's move, by share (5% when none is known): a line with a due position weighs four
 /// times as much, one seen to the end and not due a quarter.
@@ -300,7 +294,7 @@ let rec private playOn (s: State) (roll: float) (feedback: Feedback) : State =
             | None -> if s.Played |> List.forall (fun n -> n.Comment = "") then { s with Feedback = NothingToTrain } else finish s LineDone
 
 // a new position starts in box 1: found, it goes to 2 and comes back after a few lines
-let private card (s: State) = s.Progress.Cards.TryFind(positionKey s.Fen) |> Option.defaultValue { Box = 1; DueAt = 0; Misses = 0 }
+let private card (s: State) = s.Progress.Cards.TryFind(BoardUtils.positionKey s.Fen) |> Option.defaultValue { Box = 1; DueAt = 0; Misses = 0 }
 
 let private mark (s: State) (right: bool) =
     let c = card s
@@ -309,7 +303,7 @@ let private mark (s: State) (right: bool) =
             let box = min 5 (c.Box + 1)
             { c with Box = box; DueAt = s.Progress.Lines + 1 + interval box }
         else { c with Box = 1; DueAt = s.Progress.Lines + 1; Misses = c.Misses + 1 }
-    { s with Progress = { s.Progress with Cards = s.Progress.Cards.Add(positionKey s.Fen, c') }; Changed = true }
+    { s with Progress = { s.Progress with Cards = s.Progress.Cards.Add(BoardUtils.positionKey s.Fen, c') }; Changed = true }
 
 let private newLine (s: State) (roll: float) =
     playOn { s with Played = []; Here = s.Tree.Root; Fen = s.Tree.StartFen; Opponent = None; Answered = None; Feedback = NoFeedback; Missed = false; Over = false } roll NoFeedback
@@ -358,7 +352,7 @@ let counts (s: State) : Counts =
     let rec walk (nodes: Node list) =
         for n in nodes do
             if oursAt s.Tree n.Fen && n.Comment <> "" then
-                let key = positionKey n.Fen
+                let key = BoardUtils.positionKey n.Fen
                 if due s.Progress n.Fen then dueNow.Add key |> ignore
                 elif not (s.Progress.Cards.ContainsKey key) then unseen.Add key |> ignore
             walk n.Next

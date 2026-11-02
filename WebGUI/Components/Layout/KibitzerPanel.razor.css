@@ -30,10 +30,6 @@
     min-width: 0;
 }
 
-.kib-engine-select {
-    flex: 1;
-}
-
 .kib-power {
     width: 34px;
     height: 32px;

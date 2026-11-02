@@ -1039,6 +1039,9 @@ let legalMovesOf (fen: string) : MoveNotation[] =
     result |> Array.map (fun m -> { m with IsIrreversible = true })
   else result
 
+/// A position's key for caches and transpositions: the FEN's first four fields, without the clocks.
+let positionKey (fen: string) = fen.Split(' ') |> Array.truncate 4 |> String.concat " "
+
 /// Applies one legal move (UCI, e.g. "e2e4"/"e7e8q") to a FEN and returns the resulting
 /// FEN; None when the position is invalid or the move is not legal in it (python-chess
 /// push() parity in FEN-in/FEN-out form). Counters, castling rights and the en-passant
@@ -1066,6 +1069,10 @@ let tryMakeMove (fen: string) (uciMove: string) : string option =
 // generator's own SAN regardless of style ("Qxf7+", "O-O" vs "0-0", "e8=Q" vs "e8Q").
 let private normalizeSanToken (s: string) =
   s.Trim().TrimEnd('+', '#', '!', '?').Replace("O", "0").Replace("o", "0").Replace("=", "")
+
+/// The FEN after UCI moves played from a FEN; the moves must be legal there.
+let fenAfter (fen: string) (moves: string seq) =
+  moves |> Seq.fold (fun f m -> (tryMakeMove f m).Value) fen
 
 /// Resolves a short-SAN move ("Nf3", "exd5", "0-0", "e8=Q") to its UCI string by matching
 /// against the generator's own SAN for the position — disambiguation, castling spelling

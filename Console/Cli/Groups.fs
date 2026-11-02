@@ -143,8 +143,7 @@ let movesFrom (p: Parsed) (fenText: string) =
         | None -> raise (Usage $"--moves: '{line}' is not a legal line from {fenText}")
 
 /// The FEN after playing moves.
-let after (fenText: string) (uciMoves: string list) =
-    uciMoves |> List.fold (fun f m -> (ChessLibrary.BoardUtils.tryMakeMove f m).Value) fenText
+let after (fenText: string) (uciMoves: string list) = ChessLibrary.BoardUtils.fenAfter fenText uciMoves
 
 // ---------------------------------------------------------------- tablebases
 
