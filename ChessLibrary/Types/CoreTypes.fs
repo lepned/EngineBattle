@@ -865,8 +865,20 @@ module TypesDef =
 
         member x.FindTimeControl id = x.TimeControl.GetTimeConfig id
 
+        /// Time settings to read: a tournament from the live feed may carry none, or no list.
+        member x.HasTimeConfigs =
+          not (obj.ReferenceEquals(box x.TimeControl, null))
+          && not (obj.ReferenceEquals(box x.TimeControl.TimeConfigs, null))
+          && not x.TimeControl.TimeConfigs.IsEmpty
+
+        /// A node-limited time setting's text ("150.0K nodes") for a time control id, else null.
+        member x.NodeLimitText (id: int) : string =
+          if not x.HasTimeConfigs then null else
+          let tc = x.FindTimeControl id
+          if tc.NodeLimit then tc.ToString() else null
+
         member x.TimeControlTextForPlayer (id:int) =
-          if obj.ReferenceEquals(box x.TimeControl, null) then "" else
+          if not x.HasTimeConfigs then "" else
           let tc = x.FindTimeControl id
           tc.ToString()
 

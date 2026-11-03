@@ -761,9 +761,7 @@ public partial class Tournaments
 	private string NodeLimitText(bool white)
 	{
 		var cfg = white ? WhiteEngineConfig : BlackEngineConfig;
-		if (cfg == null || tournament == null || tournament.TimeControl.TimeConfigs.IsEmpty) return null;
-		var tc = tournament.FindTimeControl(cfg.TimeControlID);
-		return tc.NodeLimit ? tc.ToString() : null;
+		return cfg == null || tournament == null ? null : tournament.NodeLimitText(cfg.TimeControlID);
 	}
 
 	/// Time trouble is a clock's; a node-limited side is never in it.

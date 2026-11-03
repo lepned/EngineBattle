@@ -319,3 +319,14 @@ let ``a cancelled game is not scored; a feed game with a reason the decoder does
     Assert.False(ChessLibrary.FeedStats.isScored { r with Result = "1/2-1/2"; Reason = ChessLibrary.MiscTypes.ResultReason.Cancel })
     // the wire falls back to NotStarted for an unknown reason: that game was played
     Assert.True(ChessLibrary.FeedStats.isScored { r with Reason = ChessLibrary.MiscTypes.ResultReason.NotStarted })
+
+[<Theory>]
+[<InlineData("{}")>]
+[<InlineData("{\"TimeControl\":{}}")>]
+let ``a fed tournament without time settings has no node limit and no time control text`` (tournament: string) =
+    // a sender such as Ceres may leave the time control out: the page reads both for every move
+    match tryParseUpdate ("{\"type\":\"StartOfTournament\",\"tournament\":" + tournament + "}") with
+    | Some (Update.StartOfTournament { Tournament = Some t }) ->
+        Assert.Null(t.NodeLimitText 1)
+        Assert.Equal("", t.TimeControlTextForPlayer 1)
+    | other -> Assert.True(false, $"expected a StartOfTournament with a tournament, got {other}")
