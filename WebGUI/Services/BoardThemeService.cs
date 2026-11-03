@@ -10,7 +10,7 @@ public record BoardTheme(
     bool TournamentCoordinates = true,
     string CoordFontCss = "min(2cqi, 12px)",
     string CoordColor = "",
-    string HighlightStyle = "replace",
+    string HighlightStyle = "tint",
     string SelRingColor = "",
     string ArrowColor = "#9D8989",
     string PolicyLabelColor = "#FFEB3B",
@@ -241,7 +241,7 @@ public class BoardThemeService
     public static BoardTheme Resolve(GlobalSettings s)
     {
         var pieceSet = string.IsNullOrWhiteSpace(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
-        var highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
+        var highlightStyle = s.BoardHighlightStyle is "replace" or "frame" ? s.BoardHighlightStyle : "tint";
         var selRing = s.BoardSelectionRingColor ?? "";
         var arrow = string.IsNullOrEmpty(s.BoardArrowColor) ? "#9D8989" : s.BoardArrowColor;
         var policyLabel = string.IsNullOrEmpty(s.BoardPolicyLabelColor) ? "#FFEB3B" : s.BoardPolicyLabelColor;

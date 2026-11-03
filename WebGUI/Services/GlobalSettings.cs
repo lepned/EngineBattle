@@ -339,7 +339,7 @@ public class GlobalSettings
     public string EvalBarPlacement { get; set; } = "left";       // left | right — side of the board (dual analysis always uses both)
     public string BoardFrameWidth { get; set; } = "medium";      // off | thin | medium | thick — frame around the board
     public string BoardFrameColor { get; set; } = "";            // "" = default dark frame
-    public string BoardHighlightStyle { get; set; } = "replace"; // replace | tint | frame
+    public string BoardHighlightStyle { get; set; } = "tint"; // tint | replace | frame
     public string BoardMoveHighlightColor { get; set; } = "";    // "" = theme's highlight; hex = override on any preset
     public string BoardSelectionRingColor { get; set; } = "";    // "" = default green ring
     public string BoardArrowColor { get; set; } = "";            // "" = default (#9D8989)

@@ -700,7 +700,7 @@
     private string frameWidth = "off";
     private string frameColorMode = "auto";
     private string frameColor = "#3B3733";
-    private string highlightStyle = "replace";
+    private string highlightStyle = "tint";
     private string moveHighlightMode = "auto";
     private string moveHighlightColor = "#FAFAD2";
     private bool showEvalBar = true;
@@ -839,7 +839,7 @@
         frameWidth = s.BoardFrameWidth is "thin" or "medium" or "thick" ? s.BoardFrameWidth : "off";
         frameColorMode = string.IsNullOrEmpty(s.BoardFrameColor) ? "auto" : "custom";
         if (frameColorMode == "custom") frameColor = s.BoardFrameColor;
-        highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
+        highlightStyle = s.BoardHighlightStyle is "replace" or "frame" ? s.BoardHighlightStyle : "tint";
         moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
         if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
         showEvalBar = s.ShowEvalBar;
