@@ -14,7 +14,8 @@ open ChessLibrary.EngineProtocol
 open ChessLibrary.CustomException
 
 let appendGameDescription (sb:StringBuilder) (tourny:Tournament) (player1:ChessEngine) (player2:ChessEngine) (openingMoves: ResizeArray<string>) fen =
-    let append (txt:string) = sb.Append txt |> ignore
+    // everything here is inside the {TournamentOptions ...} comment
+    let append (txt:string) = sb.Append(PGNWriter.commentText txt) |> ignore
     let isEpd =
         match tourny.Opening.OpeningsPath with
         |Some path ->
@@ -23,13 +24,14 @@ let appendGameDescription (sb:StringBuilder) (tourny:Tournament) (player1:ChessE
         |_ -> false
     let tcWhite = tourny.TimeControl.GetTimeConfig player1.Config.TimeControlID
     let tcBlack = tourny.TimeControl.GetTimeConfig player2.Config.TimeControlID
-    let tournyData = "{TournamentOptions: " + tourny.PGNSummary() + (if isEpd then sprintf " FEN=%s;" fen else "")
+    let tournyData = "TournamentOptions: " + tourny.PGNSummary() + (if isEpd then sprintf " FEN=%s;" fen else "")
     let moveOverheadMs = tourny.MoveOverhead.TotalMilliseconds
     let whiteEngineData = $" WhiteEngineOptions: TimeControl: {tcWhite.ToString()}; {player1.Config.Information moveOverheadMs}"
     let blackEngineData = $" BlackEngineOptions: TimeControl: {tcBlack.ToString()}; {player2.Config.Information moveOverheadMs}"
     let wCmds = if player1.IsLc0 then $" (White commands: {UciOptions.createCommandsFromConfig player1.Config})" else ""
     let bCmds = if player2.IsLc0 then $" (Black commands: {UciOptions.createCommandsFromConfig player2.Config})" else ""
     let whiteArgs, blackArgs = player1.Config.Args, player2.Config.Args
+    sb.Append '{' |> ignore
     append tournyData
     append whiteEngineData
     if String.IsNullOrEmpty whiteArgs |> not then append $" (Args: {whiteArgs})"
@@ -37,10 +39,9 @@ let appendGameDescription (sb:StringBuilder) (tourny:Tournament) (player1:ChessE
     if String.IsNullOrEmpty blackArgs |> not then append $" (Args: {blackArgs})"
     append wCmds
     append bCmds
-    append ("}" + Environment.NewLine)
+    sb.Append("}" + Environment.NewLine) |> ignore
     if openingMoves.Count > 0 then
-        let opMoves = PGNWriter.writeOpeningPGNMoves openingMoves
-        append opMoves
+        sb.Append(PGNWriter.writeOpeningPGNMoves openingMoves) |> ignore
 
 let checkAndPrepareContempt (engine1: ChessEngine) (engine2: ChessEngine) =
     let hasKeyCI (options: IDictionary<string, 'a>) (key: string) =

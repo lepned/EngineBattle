@@ -28,6 +28,17 @@ let ``a quote or backslash in a tag value is escaped, and read back as itself`` 
   Assert.Equal("Cup \"A\" \\ final", game.GameMetaData.Event)
 
 [<Fact>]
+let ``a brace in the game description comment does not end the comment and add moves`` () =
+  // a UCI option value like Mycel's UciLog=..._{pid}.log
+  let options = "WhiteEngineOptions: UciLog=C:/Logs/mycel_{pid}.log; SearchMode=MCGS;"
+  let mainline (comment: string) =
+    let text = sprintf "[Event \"t\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"*\"]\n\n{%s}\n1. e4 e5 *\n" comment
+    (FullPGNParser.parseFullPgnGame text).Mainline |> Seq.map _.San |> Seq.toList
+  Assert.NotEqual<string list>([ "e4"; "e5" ], mainline options)   // as it was: "o g e4 e5"
+  Assert.Equal<string list>([ "e4"; "e5" ], mainline (PGNWriter.commentText options))
+  Assert.Equal("mycel_(pid).log", (PGNWriter.commentText "mycel_{pid}.log"))
+
+[<Fact>]
 let ``a game from a FEN has SetUp, and a Chess960 one its Variant, before the FEN`` () =
   let fen = "bqrknbnr/pppppppp/8/8/8/8/PPPPPPPP/RQNBKRBN w FAhc - 0 1"
   let _, text = header { GameMetadata.Empty with Fen = fen; OtherTags = [ { Key = "Variant"; Value = "Chess960" } ] }

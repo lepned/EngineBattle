@@ -27,6 +27,10 @@ let getResultsFromPGNGame (game:PgnGame) =
     GameDeviations = 0
   }
 
+/// Text that goes inside a PGN {comment}: a brace in it (a UCI option like "log_{pid}.log") would end the comment early.
+let commentText (text: string) =
+  if isNull text then "" else text.Replace('{', '(').Replace('}', ')')
+
 /// Writes the opening PGN moves.
 /// <param name="moves">The sequence of moves.</param>
 /// <returns>A string containing the opening PGN moves.</returns>
